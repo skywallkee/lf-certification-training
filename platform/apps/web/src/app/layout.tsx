@@ -5,6 +5,12 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { en } from "@/messages/en";
 
+/**
+ * Every page reads the database or the session, so nothing is prerendered at build time. This also lets the
+ * container image be built without DATABASE_URL or auth secrets.
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: { default: en.appName, template: `%s · ${en.appName}` },
   description: "Free study cockpit for the 17 Golden Kubestronaut certifications.",
