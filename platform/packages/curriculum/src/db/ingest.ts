@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, notInArray } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
+import type { Content } from "../content.ts";
 import type { Cert, Curriculum } from "../load.ts";
 import { sourceUrl } from "../queries.ts";
 import * as schema from "./schema.ts";
@@ -129,13 +130,125 @@ export async function ingestCurriculum(db: Db, curriculum: Curriculum): Promise<
   return result;
 }
 
-/** Opens a pool, applies migrations, ingests, and closes the pool. */
-export async function migrateAndIngest(databaseUrl: string, curriculum: Curriculum): Promise<IngestResult> {
+export interface ContentIngestResult {
+  lessons: number;
+  questions: number;
+  removedLessons: number;
+  removedQuestions: number;
+}
+
+/**
+ * Upserts lessons and questions and deletes rows whose file no longer exists (or that were left out,
+ * such as the sample set when includeSample is false). Run after ingestCurriculum: rows reference
+ * certification.code.
+ */
+export async function ingestContent(db: Db, content: Content): Promise<ContentIngestResult> {
+  return db.transaction(async (tx) => {
+    for (const l of content.lessons) {
+      const values = {
+        certCode: l.cert,
+        title: l.title,
+        summary: l.summary,
+        minutes: l.minutes,
+        body: l.body,
+        docs: l.docs,
+        competencyRefs: l.competencies,
+        mock: l.mock,
+        file: l.file,
+        contentHash: l.hash,
+      };
+      await tx
+        .insert(schema.lesson)
+        .values({ id: l.id, ...values })
+        .onConflictDoUpdate({ target: schema.lesson.id, set: { ...values, updatedAt: new Date() } });
+    }
+    for (const q of content.questions) {
+      const values = {
+        certCode: q.cert,
+        kind: q.kind,
+        stem: q.stem,
+        options: q.options.map((o) => ({ id: o.id, text: o.text, correct: o.correct })),
+        explanation: q.explanation,
+        sourceTitle: q.source.title,
+        sourceUrl: q.source.url,
+        competencyRefs: q.competencies,
+        mock: q.mock,
+        knownIssue: q.knownIssue ?? null,
+        file: q.file,
+        contentHash: q.hash,
+      };
+      await tx
+        .insert(schema.question)
+        .values({ id: q.id, ...values })
+        .onConflictDoUpdate({ target: schema.question.id, set: { ...values, updatedAt: new Date() } });
+    }
+    const lessonIds = content.lessons.map((l) => l.id);
+    const questionIds = content.questions.map((q) => q.id);
+    const removedLessons = await tx
+      .delete(schema.lesson)
+      .where(lessonIds.length > 0 ? notInArray(schema.lesson.id, lessonIds) : undefined)
+      .returning({ id: schema.lesson.id });
+    const removedQuestions = await tx
+      .delete(schema.question)
+      .where(questionIds.length > 0 ? notInArray(schema.question.id, questionIds) : undefined)
+      .returning({ id: schema.question.id });
+    return {
+      lessons: content.lessons.length,
+      questions: content.questions.length,
+      removedLessons: removedLessons.length,
+      removedQuestions: removedQuestions.length,
+    };
+  });
+}
+
+/** Deletes every lesson and question marked mock: the one-step removal of the sample set. */
+export async function removeSampleContent(db: Db): Promise<{ lessons: number; questions: number }> {
+  const lessons = await db.delete(schema.lesson).where(eq(schema.lesson.mock, true)).returning({ id: schema.lesson.id });
+  const questions = await db.delete(schema.question).where(eq(schema.question.mock, true)).returning({ id: schema.question.id });
+  return { lessons: lessons.length, questions: questions.length };
+}
+
+/** Applies the curriculum package's migrations. */
+export async function migrateCurriculum(db: Db): Promise<void> {
+  await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+}
+
+/** Opens a pool, applies migrations, ingests, and closes the pool. Content is optional so the curriculum can load alone. */
+export async function migrateAndIngest(
+  databaseUrl: string,
+  curriculum: Curriculum,
+  content?: Content,
+  opts: { includeSample?: boolean } = {},
+): Promise<IngestResult & { content?: ContentIngestResult }> {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
   try {
     const db = drizzle(pool, { schema });
-    await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
-    return await ingestCurriculum(db, curriculum);
+    await migrateCurriculum(db);
+    const [run] = await db
+      .insert(schema.ingestRun)
+      .values({ includeSample: opts.includeSample ?? true })
+      .returning({ id: schema.ingestRun.id });
+    try {
+      const result = await ingestCurriculum(db, curriculum);
+      const contentResult = content ? await ingestContent(db, content) : undefined;
+      await db
+        .update(schema.ingestRun)
+        .set({
+          finishedAt: new Date(),
+          ok: true,
+          curriculumVersionsAdded: result.inserted.length,
+          lessons: contentResult?.lessons ?? 0,
+          questions: contentResult?.questions ?? 0,
+        })
+        .where(eq(schema.ingestRun.id, run!.id));
+      return contentResult ? { ...result, content: contentResult } : result;
+    } catch (err) {
+      await db
+        .update(schema.ingestRun)
+        .set({ finishedAt: new Date(), ok: false, message: (err as Error).message.slice(0, 2000) })
+        .where(eq(schema.ingestRun.id, run!.id));
+      throw err;
+    }
   } finally {
     await pool.end();
   }

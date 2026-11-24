@@ -1,0 +1,273 @@
+# Sample question bank for KCNA. Mock items for building and testing the app, not study material.
+mock: true
+questions:
+  - id: sample-kcna-001
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/kubernetes-core-concepts]
+    stem: "What is the smallest deployable unit you can create in Kubernetes?"
+    options:
+      - { id: a, text: "A container" }
+      - { id: b, text: "A Pod", correct: true }
+      - { id: c, text: "A Deployment" }
+      - { id: d, text: "A node" }
+    explanation: "Kubernetes schedules Pods, not bare containers. A Pod wraps one or more containers that share network and storage."
+    source: { title: "Kubernetes docs: Pods", url: "https://kubernetes.io/docs/concepts/workloads/pods/" }
+  - id: sample-kcna-002
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/kubernetes-core-concepts]
+    stem: "Which object keeps a stated number of identical Pods running and is usually managed by a Deployment?"
+    options:
+      - { id: a, text: "ReplicaSet", correct: true }
+      - { id: b, text: "DaemonSet" }
+      - { id: c, text: "Job" }
+      - { id: d, text: "ConfigMap" }
+    explanation: "A Deployment manages ReplicaSets, and each ReplicaSet keeps its Pod count at the target."
+    source: { title: "Kubernetes docs: ReplicaSet", url: "https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/" }
+  - id: sample-kcna-003
+    kind: multiple
+    competencies: [kcna/kubernetes-fundamentals/kubernetes-core-concepts]
+    stem: "Which of these are control plane components? Choose two."
+    options:
+      - { id: a, text: "kube-apiserver", correct: true }
+      - { id: b, text: "kubelet" }
+      - { id: c, text: "etcd", correct: true }
+      - { id: d, text: "kube-proxy" }
+    explanation: "The API server, etcd, the scheduler and the controller manager form the control plane. The kubelet and kube-proxy run on every node."
+    source: { title: "Kubernetes docs: Components", url: "https://kubernetes.io/docs/concepts/overview/components/" }
+  - id: sample-kcna-004
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/kubernetes-core-concepts]
+    stem: |
+      A Service has this selector, but `kubectl get endpoints web` shows no addresses. What is the most likely cause?
+
+      ```yaml
+      selector:
+        app: web
+      ```
+    options:
+      - { id: a, text: "The Service type must be LoadBalancer" }
+      - { id: b, text: "No running Pod carries the label app=web", correct: true }
+      - { id: c, text: "The cluster has no Ingress controller" }
+      - { id: d, text: "Endpoints only appear after a restart of kube-proxy" }
+    explanation: "A Service's endpoints are the ready Pods that match its selector. No matching ready Pods means no endpoints."
+    source: { title: "Kubernetes docs: Service", url: "https://kubernetes.io/docs/concepts/services-networking/service/" }
+  - id: sample-kcna-005
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/administration]
+    stem: "Which command shows the nodes of a cluster with their status?"
+    options:
+      - { id: a, text: "kubectl get nodes", correct: true }
+      - { id: b, text: "kubectl describe cluster" }
+      - { id: c, text: "kubectl list nodes" }
+      - { id: d, text: "kubectl nodes status" }
+    explanation: "`kubectl get nodes` lists nodes with their Ready status, roles, age and version."
+    source: { title: "kubectl reference: get", url: "https://kubernetes.io/docs/reference/kubectl/generated/kubectl_get/" }
+  - id: sample-kcna-006
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/administration]
+    stem: "What do Namespaces provide?"
+    options:
+      - { id: a, text: "Separate physical clusters" }
+      - { id: b, text: "A scope for names and a unit for quotas and access control", correct: true }
+      - { id: c, text: "Network isolation between all Pods by default" }
+      - { id: d, text: "Separate etcd databases" }
+    explanation: "Namespaces scope object names and are where ResourceQuotas and RBAC bindings apply. They do not isolate network traffic on their own."
+    source: { title: "Kubernetes docs: Namespaces", url: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/" }
+  - id: sample-kcna-007
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/scheduling]
+    stem: "Which component decides which node a new Pod runs on?"
+    options:
+      - { id: a, text: "kubelet" }
+      - { id: b, text: "kube-scheduler", correct: true }
+      - { id: c, text: "kube-controller-manager" }
+      - { id: d, text: "etcd" }
+    explanation: "The scheduler watches for unscheduled Pods and binds each one to a node that fits."
+    source: { title: "Kubernetes docs: Scheduler", url: "https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/" }
+  - id: sample-kcna-008
+    kind: multiple
+    competencies: [kcna/kubernetes-fundamentals/scheduling]
+    stem: "Which settings influence where a Pod is scheduled? Choose three."
+    options:
+      - { id: a, text: "nodeSelector", correct: true }
+      - { id: b, text: "Taints and tolerations", correct: true }
+      - { id: c, text: "Node affinity", correct: true }
+      - { id: d, text: "The container image tag" }
+    explanation: "nodeSelector, affinity rules and taints with tolerations all constrain placement. The image tag does not."
+    source: { title: "Kubernetes docs: Assigning Pods to nodes", url: "https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/" }
+  - id: sample-kcna-009
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/containerization]
+    stem: "What makes up a container image?"
+    options:
+      - { id: a, text: "A full virtual machine disk" }
+      - { id: b, text: "Read-only filesystem layers plus configuration metadata", correct: true }
+      - { id: c, text: "A running process and its memory" }
+      - { id: d, text: "A Kubernetes manifest" }
+    explanation: "Images are stacks of read-only layers with metadata such as the entrypoint. A container adds a writable layer at run time."
+    source: { title: "Kubernetes docs: Images", url: "https://kubernetes.io/docs/concepts/containers/images/" }
+  - id: sample-kcna-010
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/containerization]
+    stem: "Which interface lets the kubelet work with different container runtimes such as containerd and CRI-O?"
+    options:
+      - { id: a, text: "CNI" }
+      - { id: b, text: "CSI" }
+      - { id: c, text: "CRI", correct: true }
+      - { id: d, text: "OCI" }
+    explanation: "The Container Runtime Interface is the gRPC API between the kubelet and the runtime."
+    source: { title: "Kubernetes docs: Container runtimes", url: "https://kubernetes.io/docs/setup/production-environment/container-runtimes/" }
+  - id: sample-kcna-011
+    kind: single
+    competencies: [kcna/container-orchestration/networking]
+    stem: "In the Kubernetes network model, how do Pods on different nodes reach each other?"
+    options:
+      - { id: a, text: "Through NAT on every node" }
+      - { id: b, text: "Directly by Pod IP, without NAT", correct: true }
+      - { id: c, text: "Only through a Service" }
+      - { id: d, text: "Only through an Ingress" }
+    explanation: "Every Pod gets its own IP, and Pods can reach each other without NAT. The CNI plugin makes that true."
+    source: { title: "Kubernetes docs: Cluster networking", url: "https://kubernetes.io/docs/concepts/cluster-administration/networking/" }
+  - id: sample-kcna-012
+    kind: single
+    competencies: [kcna/container-orchestration/networking]
+    stem: "Which Service type exposes a Service on a static port of every node?"
+    options:
+      - { id: a, text: "ClusterIP" }
+      - { id: b, text: "NodePort", correct: true }
+      - { id: c, text: "ExternalName" }
+      - { id: d, text: "Headless" }
+    explanation: "NodePort opens the same port, by default in the 30000 to 32767 range, on every node."
+    source: { title: "Kubernetes docs: Service types", url: "https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types" }
+  - id: sample-kcna-013
+    kind: single
+    competencies: [kcna/container-orchestration/security]
+    stem: "Which object should hold a database password for a Pod?"
+    options:
+      - { id: a, text: "ConfigMap" }
+      - { id: b, text: "Secret", correct: true }
+      - { id: c, text: "Annotation on the Pod" }
+      - { id: d, text: "An environment variable in the image" }
+    explanation: "Secrets are meant for sensitive values. They are base64 encoded, not encrypted, unless encryption at rest is configured."
+    source: { title: "Kubernetes docs: Secrets", url: "https://kubernetes.io/docs/concepts/configuration/secret/" }
+  - id: sample-kcna-014
+    kind: multiple
+    competencies: [kcna/container-orchestration/security]
+    stem: "Which practices reduce what a compromised container can do? Choose two."
+    options:
+      - { id: a, text: "Run as a non-root user", correct: true }
+      - { id: b, text: "Mount the host's root filesystem" }
+      - { id: c, text: "Drop Linux capabilities the app does not need", correct: true }
+      - { id: d, text: "Use privileged: true" }
+    explanation: "Running as non-root and dropping capabilities limit damage. Host mounts and privileged mode widen it."
+    source: { title: "Kubernetes docs: Security context", url: "https://kubernetes.io/docs/tasks/configure-pod-container/security-context/" }
+  - id: sample-kcna-015
+    kind: single
+    competencies: [kcna/container-orchestration/troubleshooting]
+    stem: "A Pod shows CrashLoopBackOff. Which command shows the output of the last crashed container?"
+    options:
+      - { id: a, text: "kubectl logs <pod> --previous", correct: true }
+      - { id: b, text: "kubectl get events --crash" }
+      - { id: c, text: "kubectl describe node" }
+      - { id: d, text: "kubectl top pod" }
+    explanation: "`--previous` returns logs from the prior instance of the container, which is the one that crashed."
+    source: { title: "kubectl reference: logs", url: "https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/" }
+  - id: sample-kcna-016
+    kind: single
+    competencies: [kcna/container-orchestration/storage]
+    stem: "What does a PersistentVolumeClaim represent?"
+    options:
+      - { id: a, text: "A request for storage by a user", correct: true }
+      - { id: b, text: "A disk attached to a node" }
+      - { id: c, text: "A backup of a volume" }
+      - { id: d, text: "A storage driver" }
+    explanation: "A claim requests size and access mode; it binds to a PersistentVolume that satisfies it."
+    source: { title: "Kubernetes docs: Persistent volumes", url: "https://kubernetes.io/docs/concepts/storage/persistent-volumes/" }
+  - id: sample-kcna-017
+    kind: single
+    competencies: [kcna/cloud-native-application-delivery/application-delivery]
+    stem: "What is GitOps?"
+    options:
+      - { id: a, text: "Storing container images in Git" }
+      - { id: b, text: "Declaring desired state in Git and having an agent reconcile the cluster to it", correct: true }
+      - { id: c, text: "Running Git inside a Pod" }
+      - { id: d, text: "Using Git hooks to run kubectl" }
+    explanation: "In GitOps, Git holds the desired state and a controller such as Argo CD or Flux pulls and applies it continuously."
+    source: { title: "OpenGitOps principles", url: "https://opengitops.dev/" }
+  - id: sample-kcna-018
+    kind: single
+    competencies: [kcna/cloud-native-application-delivery/application-delivery]
+    stem: "Which tool packages Kubernetes manifests as versioned charts?"
+    options:
+      - { id: a, text: "Helm", correct: true }
+      - { id: b, text: "Prometheus" }
+      - { id: c, text: "containerd" }
+      - { id: d, text: "CoreDNS" }
+    explanation: "Helm charts bundle templated manifests with default values and a version."
+    source: { title: "Helm docs: Charts", url: "https://helm.sh/docs/topics/charts/" }
+  - id: sample-kcna-019
+    kind: single
+    competencies: [kcna/cloud-native-architecture/observability]
+    stem: "How does Prometheus usually collect metrics?"
+    options:
+      - { id: a, text: "Applications push to Prometheus over UDP" }
+      - { id: b, text: "Prometheus scrapes HTTP endpoints on its targets", correct: true }
+      - { id: c, text: "It reads container logs" }
+      - { id: d, text: "It queries etcd" }
+    explanation: "Prometheus pulls metrics by scraping targets on a schedule. A Pushgateway exists for short-lived jobs."
+    source: { title: "Prometheus docs: Overview", url: "https://prometheus.io/docs/introduction/overview/" }
+  - id: sample-kcna-020
+    kind: multiple
+    competencies: [kcna/cloud-native-architecture/observability]
+    stem: "Which are signals that OpenTelemetry defines? Choose three."
+    options:
+      - { id: a, text: "Traces", correct: true }
+      - { id: b, text: "Metrics", correct: true }
+      - { id: c, text: "Logs", correct: true }
+      - { id: d, text: "Dashboards" }
+    explanation: "OpenTelemetry covers traces, metrics and logs. Dashboards belong to backends such as Grafana."
+    source: { title: "OpenTelemetry docs: Signals", url: "https://opentelemetry.io/docs/concepts/signals/" }
+  - id: sample-kcna-021
+    kind: single
+    competencies: [kcna/cloud-native-architecture/cloud-native-ecosystem-principles]
+    stem: "Which foundation hosts Kubernetes?"
+    options:
+      - { id: a, text: "Apache Software Foundation" }
+      - { id: b, text: "Cloud Native Computing Foundation", correct: true }
+      - { id: c, text: "OpenJS Foundation" }
+      - { id: d, text: "Eclipse Foundation" }
+    explanation: "The CNCF, part of the Linux Foundation, hosts Kubernetes and many other cloud native projects."
+    source: { title: "CNCF: Projects", url: "https://www.cncf.io/projects/" }
+  - id: sample-kcna-022
+    kind: single
+    competencies: [kcna/cloud-native-architecture/cloud-native-ecosystem-principles]
+    stem: "What does autoscaling with the HorizontalPodAutoscaler change?"
+    options:
+      - { id: a, text: "The CPU limit of each Pod" }
+      - { id: b, text: "The number of Pod replicas", correct: true }
+      - { id: c, text: "The number of nodes" }
+      - { id: d, text: "The container image" }
+    explanation: "The HPA adjusts the replica count of a workload based on observed metrics."
+    source: { title: "Kubernetes docs: Horizontal Pod autoscaling", url: "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" }
+  - id: sample-kcna-023
+    kind: single
+    competencies: [kcna/cloud-native-architecture/cloud-native-community-collaboration]
+    stem: "What is a Kubernetes Special Interest Group (SIG) responsible for?"
+    options:
+      - { id: a, text: "Selling support contracts" }
+      - { id: b, text: "Owning one area of the project, such as networking or storage", correct: true }
+      - { id: c, text: "Certifying engineers" }
+      - { id: d, text: "Hosting clusters" }
+    explanation: "Kubernetes SIGs own areas of the codebase and its decisions, for example SIG Network or SIG Storage."
+    source: { title: "Kubernetes community: SIGs", url: "https://github.com/kubernetes/community/blob/master/sig-list.md" }
+  - id: sample-kcna-024
+    kind: single
+    competencies: [kcna/kubernetes-fundamentals/kubernetes-core-concepts]
+    stem: "Which object runs one copy of a Pod on every node, for example a log agent?"
+    options:
+      - { id: a, text: "StatefulSet" }
+      - { id: b, text: "DaemonSet", correct: true }
+      - { id: c, text: "Deployment" }
+      - { id: d, text: "CronJob" }
+    explanation: "A DaemonSet ensures every eligible node runs one copy of its Pod."
+    source: { title: "Kubernetes docs: DaemonSet", url: "https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/" }

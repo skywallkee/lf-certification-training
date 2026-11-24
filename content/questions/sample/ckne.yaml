@@ -1,0 +1,164 @@
+# Sample question bank for CKNE. Mock items for building and testing the app, not study material.
+mock: true
+questions:
+  - id: sample-ckne-001
+    kind: single
+    competencies: [ckne/core-infrastructure-cni/installing-configuring-cni-plugins]
+    stem: "Where does the container runtime look for CNI network configuration by default?"
+    options:
+      - { id: a, text: "/etc/cni/net.d", correct: true }
+      - { id: b, text: "/etc/kubernetes/cni" }
+      - { id: c, text: "/var/lib/kubelet/cni" }
+      - { id: d, text: "/opt/cni/conf" }
+    explanation: "Configuration files live in /etc/cni/net.d and plugin binaries in /opt/cni/bin."
+    source: { title: "Kubernetes docs: Network plugins", url: "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/" }
+  - id: sample-ckne-002
+    kind: single
+    competencies: [ckne/core-infrastructure-cni/installing-configuring-cni-plugins]
+    stem: "A new node stays NotReady with the message that the network plugin is not ready. What is missing?"
+    options:
+      - { id: a, text: "A CNI configuration on the node", correct: true }
+      - { id: b, text: "A Service of type LoadBalancer" }
+      - { id: c, text: "An Ingress controller" }
+      - { id: d, text: "A default StorageClass" }
+    explanation: "The kubelet reports the node NotReady until a CNI plugin is configured."
+    source: { title: "Kubernetes docs: Network plugins", url: "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/" }
+  - id: sample-ckne-003
+    kind: single
+    competencies: [ckne/core-infrastructure-cni/managing-ipam-pod-cidr-allocation]
+    stem: "Which component's flag sets the cluster-wide Pod CIDR when node IPAM is done by Kubernetes?"
+    options:
+      - { id: a, text: "kube-controller-manager --cluster-cidr", correct: true }
+      - { id: b, text: "kubelet --pod-cidr-range" }
+      - { id: c, text: "kube-proxy --pod-network" }
+      - { id: d, text: "etcd --cidr" }
+    explanation: "With --allocate-node-cidrs, the controller manager carves per-node ranges from --cluster-cidr."
+    source: { title: "kube-controller-manager reference", url: "https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/" }
+  - id: sample-ckne-004
+    kind: multiple
+    competencies: [ckne/core-infrastructure-cni/linux-tools-iptables-ip-tcpdump]
+    stem: "Which tools inspect packets or routes on a node? Choose two."
+    options:
+      - { id: a, text: "tcpdump", correct: true }
+      - { id: b, text: "ip route", correct: true }
+      - { id: c, text: "kubectl top" }
+      - { id: d, text: "helm list" }
+    explanation: "tcpdump captures packets and `ip route` shows the routing table."
+    source: { title: "Kubernetes docs: Debug cluster", url: "https://kubernetes.io/docs/tasks/debug/debug-cluster/" }
+  - id: sample-ckne-005
+    kind: single
+    competencies: [ckne/core-infrastructure-cni/troubleshooting-pod-connectivity-dns-pod]
+    stem: "From inside a Pod, which file shows the nameserver and search domains it uses?"
+    options:
+      - { id: a, text: "/etc/resolv.conf", correct: true }
+      - { id: b, text: "/etc/hosts.allow" }
+      - { id: c, text: "/etc/nsswitch.d" }
+      - { id: d, text: "/var/run/dns" }
+    explanation: "The kubelet writes the Pod's resolv.conf with the cluster DNS Service IP and search domains."
+    source: { title: "Kubernetes docs: Debugging DNS resolution", url: "https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/" }
+  - id: sample-ckne-006
+    kind: single
+    competencies: [ckne/service-networking-dns/customizing-coredns-services]
+    stem: "Where is the CoreDNS Corefile stored on a kubeadm cluster?"
+    options:
+      - { id: a, text: "In the coredns ConfigMap in kube-system", correct: true }
+      - { id: b, text: "In /etc/coredns on every node" }
+      - { id: c, text: "In etcd under /coredns" }
+      - { id: d, text: "In the kubelet configuration" }
+    explanation: "Edit the coredns ConfigMap; the reload plugin applies changes."
+    source: { title: "Kubernetes docs: Customizing DNS service", url: "https://kubernetes.io/docs/tasks/administer-cluster/dns-custom-nameservers/" }
+  - id: sample-ckne-007
+    kind: single
+    competencies: [ckne/service-networking-dns/customizing-coredns-services]
+    stem: |
+      What does this Corefile block do?
+
+      ```text
+      corp.example:53 {
+          forward . 10.0.0.10
+      }
+      ```
+    options:
+      - { id: a, text: "Sends lookups for corp.example to 10.0.0.10", correct: true }
+      - { id: b, text: "Blocks corp.example" }
+      - { id: c, text: "Caches corp.example for 10 seconds" }
+      - { id: d, text: "Serves corp.example from Kubernetes Services" }
+    explanation: "A server block for a zone with `forward` sends that zone's queries to the given resolver."
+    source: { title: "CoreDNS docs: forward", url: "https://coredns.io/plugins/forward/" }
+  - id: sample-ckne-008
+    kind: single
+    competencies: [ckne/service-networking-dns/understanding-kube-proxy-cni-alternatives]
+    stem: "Which kube-proxy mode uses the Linux kernel's IP Virtual Server?"
+    options:
+      - { id: a, text: "ipvs", correct: true }
+      - { id: b, text: "userspace-v2" }
+      - { id: c, text: "ebpf" }
+      - { id: d, text: "tc" }
+    explanation: "kube-proxy supports iptables, ipvs and nftables modes on Linux."
+    source: { title: "Kubernetes docs: Virtual IPs and service proxies", url: "https://kubernetes.io/docs/reference/networking/virtual-ips/" }
+  - id: sample-ckne-009
+    kind: single
+    competencies: [ckne/service-networking-dns/managing-traffic-gateway-api-gateway]
+    stem: "In the Gateway API, which object does an application developer usually own?"
+    options:
+      - { id: a, text: "HTTPRoute", correct: true }
+      - { id: b, text: "GatewayClass" }
+      - { id: c, text: "Gateway" }
+      - { id: d, text: "IngressClass" }
+    explanation: "Infrastructure providers own GatewayClasses, cluster operators own Gateways, and developers own routes."
+    source: { title: "Gateway API docs: Roles", url: "https://gateway-api.sigs.k8s.io/concepts/roles-and-personas/" }
+  - id: sample-ckne-010
+    kind: single
+    competencies: [ckne/service-networking-dns/managing-traffic-gateway-api-gateway]
+    stem: "Which field of an HTTPRoute names the Gateway it attaches to?"
+    options:
+      - { id: a, text: "spec.parentRefs", correct: true }
+      - { id: b, text: "spec.gatewayName" }
+      - { id: c, text: "spec.backendRefs" }
+      - { id: d, text: "metadata.ownerReferences" }
+    explanation: "Routes attach to Gateways through parentRefs; backendRefs name the Services traffic goes to."
+    source: { title: "Gateway API docs: HTTPRoute", url: "https://gateway-api.sigs.k8s.io/api-types/httproute/" }
+  - id: sample-ckne-011
+    kind: multiple
+    competencies: [ckne/network-security-policy/securing-traffic-network-policies]
+    stem: "Which selectors can a NetworkPolicy rule use to pick peers? Choose three."
+    options:
+      - { id: a, text: "podSelector", correct: true }
+      - { id: b, text: "namespaceSelector", correct: true }
+      - { id: c, text: "ipBlock", correct: true }
+      - { id: d, text: "serviceAccountSelector" }
+    explanation: "Peers are chosen by podSelector, namespaceSelector, a combination of both, or ipBlock."
+    source: { title: "Kubernetes docs: Network policies", url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/" }
+  - id: sample-ckne-012
+    kind: single
+    competencies: [ckne/network-security-policy/securing-traffic-network-policies]
+    stem: "A cluster accepts NetworkPolicy objects, but traffic is not blocked. What is the likely cause?"
+    options:
+      - { id: a, text: "The CNI plugin does not enforce NetworkPolicy", correct: true }
+      - { id: b, text: "Policies need a restart of the API server" }
+      - { id: c, text: "Policies only apply to Services" }
+      - { id: d, text: "Policies only work in kube-system" }
+    explanation: "The API stores policies on any cluster; only an enforcing CNI turns them into packet filtering."
+    source: { title: "Kubernetes docs: Network policies, prerequisites", url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/#prerequisites" }
+  - id: sample-ckne-013
+    kind: single
+    competencies: [ckne/network-security-policy/managing-tls-certificates-gateway-api]
+    stem: "Where does a Gateway listener reference the certificate for HTTPS?"
+    options:
+      - { id: a, text: "listeners[].tls.certificateRefs", correct: true }
+      - { id: b, text: "spec.tlsSecret" }
+      - { id: c, text: "HTTPRoute spec.tls" }
+      - { id: d, text: "GatewayClass parametersRef" }
+    explanation: "TLS termination is configured per listener with certificateRefs, usually pointing at a Secret."
+    source: { title: "Gateway API docs: TLS", url: "https://gateway-api.sigs.k8s.io/guides/tls/" }
+  - id: sample-ckne-014
+    kind: single
+    competencies: [ckne/observability/analyzing-network-health-metrics]
+    stem: "Which CoreDNS plugin exposes Prometheus metrics?"
+    options:
+      - { id: a, text: "prometheus", correct: true }
+      - { id: b, text: "health" }
+      - { id: c, text: "log" }
+      - { id: d, text: "ready" }
+    explanation: "The prometheus plugin serves metrics, by default on port 9153."
+    source: { title: "CoreDNS docs: prometheus", url: "https://coredns.io/plugins/metrics/" }

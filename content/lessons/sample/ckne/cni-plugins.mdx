@@ -1,0 +1,30 @@
+---
+id: sample-ckne-cni-plugins
+title: "Installing and checking a CNI plugin"
+summary: "Sample lesson: where CNI configuration lives on a node and how to tell it works."
+minutes: 7
+competencies:
+  - ckne/core-infrastructure-cni/installing-configuring-cni-plugins
+docs:
+  - title: "Kubernetes docs: Network plugins"
+    url: https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/
+mock: true
+---
+
+## What the kubelet looks for
+
+The container runtime reads CNI configuration from `/etc/cni/net.d/` and plugin binaries from
+`/opt/cni/bin/`. The first configuration file in lexical order wins.
+
+```bash
+ls /etc/cni/net.d/
+ls /opt/cni/bin/
+kubectl get pods -n kube-system -o wide
+```
+
+<Flow label="Pod network setup" steps={["kubelet", "Container runtime", "CNI plugin", "Pod interface and IP"]} />
+
+<Callout kind="tip" title="Nodes NotReady after install">
+A node reports `NotReady` with "network plugin not ready" until a CNI configuration exists. Install the
+plugin's manifests, then watch the node turn `Ready`.
+</Callout>

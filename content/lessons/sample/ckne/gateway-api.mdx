@@ -1,0 +1,38 @@
+---
+id: sample-ckne-gateway-api
+title: "Gateway API: Gateways and HTTPRoutes"
+summary: "Sample lesson: who owns which object, and how a route attaches to a gateway."
+minutes: 8
+competencies:
+  - ckne/service-networking-dns/managing-traffic-gateway-api-gateway
+docs:
+  - title: "Gateway API docs: API overview"
+    url: https://gateway-api.sigs.k8s.io/concepts/api-overview/
+mock: true
+---
+
+## Roles and objects
+
+<Flow label="Gateway API ownership" steps={["GatewayClass (infrastructure provider)", "Gateway (cluster operator)", "HTTPRoute (app developer)", "Service"]} />
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: store
+spec:
+  parentRefs:
+    - name: public-gateway
+  hostnames: ["store.example.com"]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /api }
+      backendRefs:
+        - name: store-api
+          port: 8080
+```
+
+<Callout kind="note" title="Attachment is two-way">
+A route names its Gateway in `parentRefs`, and the Gateway's listener must allow routes from the route's
+namespace. Check the route's `status.parents` when traffic does not arrive.
+</Callout>

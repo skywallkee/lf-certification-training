@@ -1,0 +1,264 @@
+# Sample question bank for CKA. Mock items for building and testing the app, not study material.
+mock: true
+questions:
+  - id: sample-cka-001
+    kind: single
+    competencies: [cka/storage/implement-storage-classes-dynamic-volume]
+    stem: "A PersistentVolumeClaim sets no `storageClassName`, and the cluster has a default StorageClass with a dynamic provisioner. What happens when the claim is created?"
+    options:
+      - { id: a, text: "The claim stays Pending until an administrator creates a matching PersistentVolume." }
+      - { id: b, text: "The default StorageClass is applied to the claim and a volume is provisioned for it.", correct: true }
+      - { id: c, text: "The claim binds to any available PersistentVolume that has no class." }
+      - { id: d, text: "The API server rejects the claim because the class is required." }
+    explanation: "With the DefaultStorageClass admission plugin on, a claim that names no class gets the default class written into it, and that class's provisioner creates a volume. A claim only binds to class-less volumes when it asks for one with an empty string."
+    source: { title: "Kubernetes docs: Persistent volumes, class", url: "https://kubernetes.io/docs/concepts/storage/persistent-volumes/#class" }
+  - id: sample-cka-002
+    kind: single
+    competencies: [cka/storage/implement-storage-classes-dynamic-volume]
+    stem: "What does `volumeBindingMode: WaitForFirstConsumer` do?"
+    options:
+      - { id: a, text: "Provisions the volume only when a Pod using the claim is scheduled", correct: true }
+      - { id: b, text: "Waits for an administrator to approve the claim" }
+      - { id: c, text: "Delays the Pod until the volume is backed up" }
+      - { id: d, text: "Binds the claim to the first PersistentVolume created" }
+    explanation: "Delaying binding lets the provisioner create the volume in the zone where the Pod lands."
+    source: { title: "Kubernetes docs: Volume binding mode", url: "https://kubernetes.io/docs/concepts/storage/storage-classes/#volume-binding-mode" }
+  - id: sample-cka-003
+    kind: single
+    competencies: [cka/storage/implement-storage-classes-dynamic-volume]
+    stem: |
+      Which field marks this StorageClass as the cluster default?
+
+      ```yaml
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: fast
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: ebs.csi.aws.com
+      ```
+    options:
+      - { id: a, text: "The provisioner" }
+      - { id: b, text: "The is-default-class annotation", correct: true }
+      - { id: c, text: "The name fast" }
+      - { id: d, text: "Nothing: defaults are set on the API server" }
+    explanation: "The `storageclass.kubernetes.io/is-default-class` annotation marks the default class."
+    source: { title: "Kubernetes docs: Default StorageClass", url: "https://kubernetes.io/docs/concepts/storage/storage-classes/#default-storageclass" }
+  - id: sample-cka-004
+    kind: single
+    competencies: [cka/storage/configure-volume-types-access-modes]
+    stem: "Which access mode lets a volume be mounted read-write by a single node?"
+    options:
+      - { id: a, text: "ReadWriteOnce", correct: true }
+      - { id: b, text: "ReadOnlyMany" }
+      - { id: c, text: "ReadWriteMany" }
+      - { id: d, text: "ReadWriteAll" }
+    explanation: "ReadWriteOnce allows read-write mounts from one node. ReadWriteOncePod narrows it to one Pod."
+    source: { title: "Kubernetes docs: Access modes", url: "https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes" }
+  - id: sample-cka-005
+    kind: single
+    competencies: [cka/storage/configure-volume-types-access-modes]
+    stem: "A dynamically provisioned volume should survive deletion of its claim. Which reclaim policy does that?"
+    options:
+      - { id: a, text: "Delete" }
+      - { id: b, text: "Retain", correct: true }
+      - { id: c, text: "Recycle" }
+      - { id: d, text: "Keep" }
+    explanation: "Retain leaves the volume and its data in place after the claim is deleted. Delete is the default for dynamic volumes."
+    source: { title: "Kubernetes docs: Reclaiming", url: "https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming" }
+  - id: sample-cka-006
+    kind: single
+    competencies: [cka/workloads-scheduling/application-deployments-perform-rolling-update]
+    stem: "Which command returns a Deployment to its previous revision?"
+    options:
+      - { id: a, text: "kubectl rollout undo deployment/web", correct: true }
+      - { id: b, text: "kubectl rollback deployment/web" }
+      - { id: c, text: "kubectl revert deployment/web" }
+      - { id: d, text: "kubectl rollout restart deployment/web" }
+    explanation: "`rollout undo` goes back one revision, or to `--to-revision`. `rollout restart` re-creates Pods with the same template."
+    source: { title: "Kubernetes docs: Rolling back a Deployment", url: "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-back-a-deployment" }
+  - id: sample-cka-007
+    kind: multiple
+    competencies: [cka/workloads-scheduling/application-deployments-perform-rolling-update]
+    stem: "Which changes start a new rollout of a Deployment? Choose two."
+    options:
+      - { id: a, text: "Changing the container image", correct: true }
+      - { id: b, text: "Scaling from 3 to 5 replicas" }
+      - { id: c, text: "Adding an environment variable to the Pod template", correct: true }
+      - { id: d, text: "Adding a label to the Deployment's own metadata" }
+    explanation: "Only changes to the Pod template (`spec.template`) create a new revision."
+    source: { title: "Kubernetes docs: Updating a Deployment", url: "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#updating-a-deployment" }
+  - id: sample-cka-008
+    kind: single
+    competencies: [cka/workloads-scheduling/configmaps-secrets-configure-applications]
+    stem: "How do you expose every key of a ConfigMap as environment variables in a container?"
+    options:
+      - { id: a, text: "envFrom with configMapRef", correct: true }
+      - { id: b, text: "volumeMounts with subPath" }
+      - { id: c, text: "env with valueFrom.fieldRef" }
+      - { id: d, text: "imagePullSecrets" }
+    explanation: "`envFrom.configMapRef` imports all keys; `env.valueFrom.configMapKeyRef` imports one."
+    source: { title: "Kubernetes docs: Configure a Pod to use a ConfigMap", url: "https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/" }
+  - id: sample-cka-009
+    kind: single
+    competencies: [cka/workloads-scheduling/configure-pod-admission-scheduling-limits]
+    stem: "A node has the taint `dedicated=gpu:NoSchedule`. What must a Pod have to be scheduled there?"
+    options:
+      - { id: a, text: "A matching toleration", correct: true }
+      - { id: b, text: "A nodeName of the node only" }
+      - { id: c, text: "A higher priority class" }
+      - { id: d, text: "A resource limit for GPUs only" }
+    explanation: "NoSchedule taints repel Pods that lack a matching toleration."
+    source: { title: "Kubernetes docs: Taints and tolerations", url: "https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/" }
+  - id: sample-cka-010
+    kind: single
+    competencies: [cka/cluster-architecture-installation-configuration/manage-role-based-access-control]
+    stem: "Which command checks whether user jane may delete Pods in namespace dev?"
+    options:
+      - { id: a, text: "kubectl auth can-i delete pods -n dev --as=jane", correct: true }
+      - { id: b, text: "kubectl get rolebindings jane -n dev" }
+      - { id: c, text: "kubectl describe user jane" }
+      - { id: d, text: "kubectl rbac check jane delete pods" }
+    explanation: "`kubectl auth can-i` with `--as` impersonates the user and answers yes or no."
+    source: { title: "Kubernetes docs: Checking API access", url: "https://kubernetes.io/docs/reference/access-authn-authz/authorization/#checking-api-access" }
+  - id: sample-cka-011
+    kind: single
+    competencies: [cka/cluster-architecture-installation-configuration/manage-role-based-access-control]
+    stem: "A RoleBinding in namespace dev references a ClusterRole. Where do the permissions apply?"
+    options:
+      - { id: a, text: "In every namespace" }
+      - { id: b, text: "Only in namespace dev", correct: true }
+      - { id: c, text: "Only to cluster-scoped resources" }
+      - { id: d, text: "Nowhere: a RoleBinding cannot reference a ClusterRole" }
+    explanation: "A RoleBinding grants the ClusterRole's rules inside the binding's own namespace only."
+    source: { title: "Kubernetes docs: RoleBinding and ClusterRoleBinding", url: "https://kubernetes.io/docs/reference/access-authn-authz/rbac/#rolebinding-and-clusterrolebinding" }
+  - id: sample-cka-012
+    kind: single
+    competencies: [cka/cluster-architecture-installation-configuration/create-manage-kubernetes-clusters-kubeadm]
+    stem: "Which command prints a fresh join command for a new worker node?"
+    options:
+      - { id: a, text: "kubeadm token create --print-join-command", correct: true }
+      - { id: b, text: "kubeadm join --new" }
+      - { id: c, text: "kubectl get join-command" }
+      - { id: d, text: "kubeadm init phase join" }
+    explanation: "`kubeadm token create --print-join-command` creates a bootstrap token and prints the full `kubeadm join` line."
+    source: { title: "kubeadm reference: token", url: "https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-token/" }
+  - id: sample-cka-013
+    kind: single
+    competencies: [cka/cluster-architecture-installation-configuration/manage-lifecycle-kubernetes-clusters]
+    stem: "During a kubeadm upgrade, what should you do to a node before upgrading its kubelet?"
+    options:
+      - { id: a, text: "Drain it", correct: true }
+      - { id: b, text: "Delete it from the cluster" }
+      - { id: c, text: "Restart etcd" }
+      - { id: d, text: "Remove its taints" }
+    explanation: "`kubectl drain` evicts workloads and cordons the node so the upgrade does not disrupt running Pods unexpectedly."
+    source: { title: "Kubernetes docs: Upgrading kubeadm clusters", url: "https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-upgrade/" }
+  - id: sample-cka-014
+    kind: single
+    competencies: [cka/servicing-networking/define-enforce-network-policies]
+    stem: |
+      What does this NetworkPolicy do in namespace shop?
+
+      ```yaml
+      spec:
+        podSelector: {}
+        policyTypes: [Ingress]
+      ```
+    options:
+      - { id: a, text: "Allows all ingress to every Pod" }
+      - { id: b, text: "Denies all ingress to every Pod in the namespace", correct: true }
+      - { id: c, text: "Denies all egress" }
+      - { id: d, text: "Has no effect without rules" }
+    explanation: "An empty podSelector selects every Pod, and an Ingress policy with no rules allows no ingress."
+    source: { title: "Kubernetes docs: Default deny", url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-deny-all-ingress-traffic" }
+  - id: sample-cka-015
+    kind: single
+    competencies: [cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types]
+    stem: "What is the default Service type?"
+    options:
+      - { id: a, text: "ClusterIP", correct: true }
+      - { id: b, text: "NodePort" }
+      - { id: c, text: "LoadBalancer" }
+      - { id: d, text: "ExternalName" }
+    explanation: "Without `type`, a Service gets a cluster-internal virtual IP (ClusterIP)."
+    source: { title: "Kubernetes docs: Service types", url: "https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types" }
+  - id: sample-cka-016
+    kind: single
+    competencies: [cka/servicing-networking/coredns]
+    stem: "What is the DNS name of Service api in namespace shop with the default cluster domain?"
+    options:
+      - { id: a, text: "api.shop.svc.cluster.local", correct: true }
+      - { id: b, text: "shop.api.cluster.local" }
+      - { id: c, text: "api.cluster.shop" }
+      - { id: d, text: "api.svc.shop.local" }
+    explanation: "Services resolve as `<service>.<namespace>.svc.<cluster-domain>`."
+    source: { title: "Kubernetes docs: DNS for Services and Pods", url: "https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/" }
+  - id: sample-cka-017
+    kind: single
+    competencies: [cka/troubleshooting/troubleshoot-clusters-nodes]
+    stem: "A node is NotReady. Which command on that node shows the kubelet's recent logs on a systemd host?"
+    options:
+      - { id: a, text: "journalctl -u kubelet", correct: true }
+      - { id: b, text: "kubectl logs kubelet" }
+      - { id: c, text: "systemctl logs kubelet" }
+      - { id: d, text: "crictl logs kubelet" }
+    explanation: "The kubelet runs as a systemd service, so its logs are in the journal."
+    source: { title: "Kubernetes docs: Troubleshooting clusters", url: "https://kubernetes.io/docs/tasks/debug/debug-cluster/" }
+  - id: sample-cka-018
+    kind: single
+    competencies: [cka/troubleshooting/troubleshoot-cluster-components]
+    stem: "On a kubeadm cluster, where are the static Pod manifests for control plane components?"
+    options:
+      - { id: a, text: "/etc/kubernetes/manifests", correct: true }
+      - { id: b, text: "/var/lib/etcd" }
+      - { id: c, text: "/opt/cni/bin" }
+      - { id: d, text: "/etc/systemd/system" }
+    explanation: "The kubelet runs every manifest in /etc/kubernetes/manifests as a static Pod."
+    source: { title: "Kubernetes docs: Static Pods", url: "https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/" }
+  - id: sample-cka-019
+    kind: single
+    competencies: [cka/troubleshooting/monitor-cluster-application-resource-usage]
+    stem: "Which command shows current CPU and memory use per Pod, given metrics-server is installed?"
+    options:
+      - { id: a, text: "kubectl top pods", correct: true }
+      - { id: b, text: "kubectl get metrics" }
+      - { id: c, text: "kubectl describe pods --usage" }
+      - { id: d, text: "kubectl stats" }
+    explanation: "`kubectl top` reads the resource metrics API that metrics-server serves."
+    source: { title: "kubectl reference: top", url: "https://kubernetes.io/docs/reference/kubectl/generated/kubectl_top/" }
+  - id: sample-cka-020
+    kind: multiple
+    competencies: [cka/troubleshooting/manage-evaluate-container-output-streams]
+    stem: "Which `kubectl logs` flags exist? Choose two."
+    options:
+      - { id: a, text: "--previous", correct: true }
+      - { id: b, text: "--since", correct: true }
+      - { id: c, text: "--crashed" }
+      - { id: d, text: "--node" }
+    explanation: "`--previous` shows the prior container instance, and `--since` limits output to a recent window."
+    source: { title: "kubectl reference: logs", url: "https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/" }
+  - id: sample-cka-021
+    kind: single
+    competencies: [cka/troubleshooting/troubleshoot-services-networking]
+    stem: "A Service exists but requests time out. What is the first thing to check?"
+    options:
+      - { id: a, text: "Whether the Service has endpoints", correct: true }
+      - { id: b, text: "The etcd version" }
+      - { id: c, text: "The node's kernel version" }
+      - { id: d, text: "Whether the image is signed" }
+    explanation: "No endpoints means no ready Pods match the selector, which is the most common cause."
+    source: { title: "Kubernetes docs: Debug Services", url: "https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/" }
+  - id: sample-cka-022
+    kind: single
+    competencies: [cka/storage/manage-persistent-volumes-persistent-volume]
+    stem: "Sample broken item: which volume plugin is always the best choice?"
+    options:
+      - { id: a, text: "hostPath" }
+      - { id: b, text: "emptyDir" }
+      - { id: c, text: "nfs" }
+      - { id: d, text: "It depends" }
+    explanation: "This item is deliberately broken: it has no correct option, so it shows up in the admin flag queue."
+    source: { title: "Kubernetes docs: Volumes", url: "https://kubernetes.io/docs/concepts/storage/volumes/" }
+    knownIssue: "Sample broken item: no option is marked correct, and the question has no single right answer."
