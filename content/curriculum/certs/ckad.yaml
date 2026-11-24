@@ -1,0 +1,85 @@
+# CKAD curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CKAD
+name: "Certified Kubernetes Application Developer"
+examStyle: performance
+durationMinutes: 120
+curriculum:
+  version: "1.37"
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CKAD_Curriculum_v1.37.pdf"
+    blobSha: 64b0a75980923921ec5b0ecc54fceaaea3ef5a3e
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: application-design-build
+    name: "Application Design and Build"
+    weight: 20
+    competencies:
+      - key: define-build-modify-container-images
+        statement: "Define, build and modify container images"
+      - key: choose-right-workload-resource-deployment
+        statement: "Choose and use the right workload resource (Deployment, DaemonSet, CronJob, etc.)"
+      - key: multi-container-pod-design-patterns
+        statement: "Understand multi-container Pod design patterns (e.g. sidecar, init and others)"
+      - key: utilize-persistent-ephemeral-volumes
+        statement: "Utilize persistent and ephemeral volumes"
+  - key: application-deployment
+    name: "Application Deployment"
+    weight: 20
+    competencies:
+      - key: kubernetes-primitives-implement-common
+        statement: "Use Kubernetes primitives to implement common deployment strategies (e.g. blue/green or canary)"
+      - key: deployments-perform-rolling-updates
+        statement: "Understand Deployments and how to perform rolling updates"
+      - key: helm-package-manager-deploy-existing
+        statement: "Use the Helm package manager to deploy existing packages"
+      - key: kustomize
+        statement: "Kustomize"
+  - key: application-observability-maintenance
+    name: "Application Observability and Maintenance"
+    weight: 15
+    competencies:
+      - key: api-depreciations
+        statement: "Understand API depreciations"
+      - key: implement-probes-health-checks
+        statement: "Implement probes and health checks"
+      - key: built-cli-tools-monitor-kubernetes
+        statement: "Use built-in CLI tools to monitor Kubernetes applications"
+      - key: utilize-container-logs
+        statement: "Utilize container logs"
+      - key: debugging-kubernetes
+        statement: "Debugging in Kubernetes"
+  - key: application-environment-configuration-security
+    name: "Application Environment, Configuration and Security"
+    weight: 25
+    competencies:
+      - key: discover-resources-that-extend-kubernetes
+        statement: "Discover and use resources that extend Kubernetes (CRD, Operators)"
+      - key: authentication-authorization-admission-control
+        statement: "Understand authentication, authorization and admission control"
+      - key: requests-limits-quotas
+        statement: "Understand requests, limits, quotas"
+      - key: define-resource-requirements
+        statement: "Define resource requirements"
+      - key: configmaps
+        statement: "Understand ConfigMaps"
+      - key: create-consume-secrets
+        statement: "Create & consume Secrets"
+      - key: serviceaccounts
+        statement: "Understand ServiceAccounts"
+      - key: application-security-securitycontexts
+        statement: "Understand Application Security (SecurityContexts, Capabilities, etc.)"
+  - key: services-networking
+    name: "Services and Networking"
+    weight: 20
+    competencies:
+      - key: demonstrate-basic-understanding-networkpolicies
+        statement: "Demonstrate basic understanding of NetworkPolicies"
+      - key: provide-troubleshoot-access-applications-via
+        statement: "Provide and troubleshoot access to applications via services"
+      - key: ingress-rules-expose-applications
+        statement: "Use Ingress rules to expose applications"

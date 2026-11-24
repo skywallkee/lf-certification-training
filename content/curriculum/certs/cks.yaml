@@ -1,0 +1,93 @@
+# CKS curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CKS
+name: "Certified Kubernetes Security Specialist"
+examStyle: performance
+durationMinutes: 120
+curriculum:
+  version: "1.37"
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CKS_Curriculum v1.37.pdf"
+    blobSha: 6867a1b1a563fd159047bec4ec1551ca19da83bd
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: cluster-setup
+    name: "Cluster Setup"
+    weight: 15
+    competencies:
+      - key: network-security-policies-restrict-cluster
+        statement: "Use Network security policies to restrict cluster level access"
+      - key: cis-benchmark-review-security-configuration
+        statement: "Use CIS benchmark to review the security configuration of Kubernetes components (etcd, kubelet, kubedns, kubeapi)"
+      - key: properly-set-up-ingress-objects
+        statement: "Properly set up Ingress objects with TLS"
+      - key: protect-node-metadata-endpoints
+        statement: "Protect node metadata and endpoints"
+      - key: verify-platform-binaries-before-deploying
+        statement: "Verify platform binaries before deploying"
+  - key: cluster-hardening
+    name: "Cluster Hardening"
+    weight: 15
+    competencies:
+      - key: role-based-access-controls-minimize
+        statement: "Use Role Based Access Controls to minimize exposure"
+      - key: exercise-caution-service-accounts-disable
+        statement: "Exercise caution in using service accounts e.g. disable defaults, minimize permissions on newly created ones"
+      - key: restrict-access-kubernetes-api
+        statement: "Restrict access to Kubernetes API"
+      - key: upgrade-kubernetes-avoid-vulnerabilities
+        statement: "Upgrade Kubernetes to avoid vulnerabilities"
+  - key: system-hardening
+    name: "System Hardening"
+    weight: 10
+    competencies:
+      - key: minimize-host-os-footprint-reduce
+        statement: "Minimize host OS footprint (reduce attack surface)"
+      - key: least-privilege-identity-access-management
+        statement: "Using least-privilege identity and access management"
+      - key: minimize-external-access-network
+        statement: "Minimize external access to the network"
+      - key: appropriately-kernel-hardening-tools-such
+        statement: "Appropriately use kernel hardening tools such as AppArmor, seccomp"
+  - key: minimize-microservice-vulnerabilities
+    name: "Minimize Microservice Vulnerabilities"
+    weight: 20
+    competencies:
+      - key: appropriate-pod-security-standards
+        statement: "Use appropriate pod security standards"
+      - key: manage-kubernetes-secrets
+        statement: "Manage kubernetes secrets"
+      - key: implement-isolation-techniques-multi-tenancy
+        statement: "Understand and implement isolation techniques (multi-tenancy, sandboxed containers, etc.)"
+      - key: implement-pod-pod-encryption-cilium
+        statement: "Implement Pod-to-Pod encryption (Cilium, Istio)"
+  - key: supply-chain-security
+    name: "Supply Chain Security"
+    weight: 20
+    competencies:
+      - key: minimize-base-image-footprint
+        statement: "Minimize base image footprint"
+      - key: supply-chain-sbom-ci-cd
+        statement: "Understand your supply chain (e.g. SBOM, CI/CD, artifact repositories)"
+      - key: secure-supply-chain-permitted-registries
+        statement: "Secure your supply chain (permitted registries, sign and validate artifacts, etc.)"
+      - key: perform-static-analysis-user-workloads
+        statement: "Perform static analysis of user workloads and container images (e.g. Kubesec, KubeLinter)"
+  - key: monitoring-logging-runtime-security
+    name: "Monitoring, Logging and Runtime Security"
+    weight: 20
+    competencies:
+      - key: perform-behavioral-analytics-detect-malicious
+        statement: "Perform behavioral analytics to detect malicious activities"
+      - key: detect-threats-physical-infrastructure-apps
+        statement: "Detect threats within physical infrastructure, apps, networks, data, users and workloads"
+      - key: investigate-identify-phases-attack-bad
+        statement: "Investigate and identify phases of attack and bad actors within the environment"
+      - key: ensure-immutability-containers-at-runtime
+        statement: "Ensure immutability of containers at runtime"
+      - key: kubernetes-audit-logs-monitor-access
+        statement: "Use Kubernetes audit logs to monitor access"

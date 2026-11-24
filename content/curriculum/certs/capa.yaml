@@ -1,0 +1,63 @@
+# CAPA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CAPA
+name: "Certified Argo Project Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CAPA_Curriculum.pdf"
+    blobSha: c8f2a0434d72b1fa0214cf1ba2388329c056d8b8
+  retrievedAt: "2026-11-24"
+  verification: visual
+domains:
+  - key: argo-workflows
+    name: "Argo Workflows"
+    weight: 36
+    competencies:
+      - key: argo-workflow-fundamentals
+        statement: "Understand Argo Workflow Fundamentals"
+      - key: generating-consuming-artifacts
+        statement: "Generating and Consuming Artifacts"
+      - key: argo-workflow-templates
+        statement: "Understand Argo Workflow Templates"
+      - key: argo-workflow-spec
+        statement: "Understand the Argo Workflow Spec"
+      - key: work-dag-directed-acyclic-graphs
+        statement: "Work with DAG (Directed-Acyclic Graphs)"
+      - key: run-data-processing-jobs-argo
+        statement: "Run Data Processing Jobs with Argo Workflows"
+  - key: argo-cd
+    name: "Argo CD"
+    weight: 34
+    competencies:
+      - key: argo-cd-fundamentals
+        statement: "Understand Argo CD Fundamentals"
+      - key: synchronize-applications-argo-cd
+        statement: "Synchronize Applications Using Argo CD"
+      - key: argo-cd-application
+        statement: "Use Argo CD Application"
+      - key: configure-argo-cd-helm-kustomize
+        statement: "Configure Argo CD with Helm and Kustomize"
+      - key: identify-common-reconciliation-patterns
+        statement: "Identify Common Reconciliation Patterns"
+  - key: argo-rollouts
+    name: "Argo Rollouts"
+    weight: 18
+    competencies:
+      - key: argo-rollouts-fundamentals
+        statement: "Understand Argo Rollouts Fundamentals"
+      - key: common-progressive-rollout-strategies
+        statement: "Use Common Progressive Rollout Strategies"
+      - key: describe-analysis-template-analysisrun
+        statement: "Describe Analysis Template and AnalysisRun"
+  - key: argo-events
+    name: "Argo Events"
+    weight: 12
+    competencies:
+      - key: argo-events-fundamentals
+        statement: "Understand Argo Events Fundamentals"
+      - key: argo-event-components-architecture
+        statement: "Understand Argo Event Components and Architecture"

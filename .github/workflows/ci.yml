@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lfct_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/lfct_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Validate curriculum and content tags
+        run: pnpm curriculum:validate
+      - run: pnpm test
+      - name: Migrations match the Drizzle schema
+        run: |
+          pnpm --filter @lfct/curriculum exec drizzle-kit generate --name ci-check
+          if [ -n "$(git status --porcelain platform/packages/curriculum/drizzle)" ]; then
+            echo "::error::Schema changed without a migration. Run: pnpm --filter @lfct/curriculum db:generate"
+            git status --porcelain platform/packages/curriculum/drizzle
+            exit 1
+          fi
+
+  curriculum-sources:
+    name: Curriculum matches its source PDFs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm curriculum:verify-sources
+
+  terraform:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [azure, aws]
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.17"
+      - run: terraform fmt -check -recursive ../..
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate

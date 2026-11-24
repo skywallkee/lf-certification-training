@@ -1,0 +1,91 @@
+# CKA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CKA
+name: "Certified Kubernetes Administrator"
+examStyle: performance
+durationMinutes: 120
+curriculum:
+  version: "1.37"
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CKA_Curriculum_v1.37.pdf"
+    blobSha: 7732bda869493f67ae13705b6e8a0b79831e3541
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: cluster-architecture-installation-configuration
+    name: "Cluster Architecture, Installation and Configuration"
+    weight: 25
+    competencies:
+      - key: manage-role-based-access-control
+        statement: "Manage role based access control (RBAC)"
+      - key: prepare-underlying-infrastructure-installing
+        statement: "Prepare underlying infrastructure for installing a Kubernetes cluster"
+      - key: create-manage-kubernetes-clusters-kubeadm
+        statement: "Create and manage Kubernetes clusters using kubeadm"
+      - key: manage-lifecycle-kubernetes-clusters
+        statement: "Manage the lifecycle of Kubernetes clusters"
+      - key: implement-configure-highly-available-control
+        statement: "Implement and configure a highly-available control plane"
+      - key: helm-kustomize-install-cluster-components
+        statement: "Use Helm and Kustomize to install cluster components"
+      - key: extension-interfaces-cni-csi-cri
+        statement: "Understand extension interfaces (CNI, CSI, CRI, etc.)"
+      - key: crds-install-configure-operators
+        statement: "Understand CRDs, install and configure operators"
+  - key: workloads-scheduling
+    name: "Workloads and Scheduling"
+    weight: 15
+    competencies:
+      - key: application-deployments-perform-rolling-update
+        statement: "Understand application deployments and how to perform rolling update and rollbacks"
+      - key: configmaps-secrets-configure-applications
+        statement: "Use ConfigMaps and Secrets to configure applications"
+      - key: configure-workload-autoscaling
+        statement: "Configure workload autoscaling"
+      - key: primitives-used-create-robust-self
+        statement: "Understand the primitives used to create robust, self-healing, application deployments"
+      - key: configure-pod-admission-scheduling-limits
+        statement: "Configure Pod admission and scheduling (limits, node affinity, etc.)"
+  - key: servicing-networking
+    name: "Servicing and Networking"
+    weight: 20
+    competencies:
+      - key: connectivity-between-pods
+        statement: "Understand connectivity between Pods"
+      - key: define-enforce-network-policies
+        statement: "Define and enforce Network Policies"
+      - key: clusterip-nodeport-loadbalancer-service-types
+        statement: "Use ClusterIP, NodePort, LoadBalancer service types and endpoints"
+      - key: gateway-api-manage-ingress-traffic
+        statement: "Use the Gateway API to manage Ingress traffic"
+      - key: ingress-controllers-ingress-resources
+        statement: "Know how to use Ingress controllers and Ingress resources"
+      - key: coredns
+        statement: "Understand and use CoreDNS"
+  - key: storage
+    name: "Storage"
+    weight: 10
+    competencies:
+      - key: implement-storage-classes-dynamic-volume
+        statement: "Implement storage classes and dynamic volume provisioning"
+      - key: configure-volume-types-access-modes
+        statement: "Configure volume types, access modes and reclaim policies"
+      - key: manage-persistent-volumes-persistent-volume
+        statement: "Manage persistent volumes and persistent volume claims"
+  - key: troubleshooting
+    name: "Troubleshooting"
+    weight: 30
+    competencies:
+      - key: troubleshoot-clusters-nodes
+        statement: "Troubleshoot clusters and nodes"
+      - key: troubleshoot-cluster-components
+        statement: "Troubleshoot cluster components"
+      - key: monitor-cluster-application-resource-usage
+        statement: "Monitor cluster and application resource usage"
+      - key: manage-evaluate-container-output-streams
+        statement: "Manage and evaluate container output streams"
+      - key: troubleshoot-services-networking
+        statement: "Troubleshoot services and networking"

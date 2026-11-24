@@ -1,0 +1,5 @@
+packages:
+  - "platform/packages/*"
+  - "platform/apps/*"
+onlyBuiltDependencies:
+  - esbuild

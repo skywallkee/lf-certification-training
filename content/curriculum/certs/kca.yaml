@@ -1,0 +1,101 @@
+# KCA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: KCA
+name: "Kyverno Certified Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "KCA_Curriculum.pdf"
+    blobSha: 39e18c7eb0d9e2aac421e4331a065494ad32bcf1
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: fundamentals-kyverno
+    name: "Fundamentals of Kyverno"
+    weight: 18
+    competencies:
+      - key: kyverno-policies-rules
+        statement: "Kyverno Policies & Rules"
+      - key: yaml-manifests
+        statement: "YAML Manifests"
+      - key: admission-controllers
+        statement: "Admission Controllers"
+      - key: oci-images
+        statement: "OCI Images"
+  - key: installation-configuration-upgrades
+    name: "Installation, Configuration, and Upgrades"
+    weight: 18
+    competencies:
+      - key: helm-based-installation-configuration
+        statement: "Helm-based Installation and Configuration"
+      - key: kyverno-custom-resource-definitions-crds
+        statement: "Kyverno Custom Resource Definitions (CRDs)"
+      - key: controller-configuration-flags
+        statement: "Controller Configuration with Flags"
+      - key: configuring-kyverno-rbac-roles-permissions
+        statement: "Configuring Kyverno RBAC, roles, and permissions"
+      - key: high-availability-installations
+        statement: "High Availability Installations"
+      - key: upgrading-kyverno
+        statement: "Upgrading Kyverno"
+  - key: kyverno-cli
+    name: "Kyverno CLI"
+    weight: 12
+    competencies:
+      - key: apply
+        statement: "apply"
+      - key: test
+        statement: "test"
+      - key: jp
+        statement: "jp"
+      - key: installing-kyverno-cli
+        statement: "Installing Kyverno CLI"
+  - key: applying-policies
+    name: "Applying Policies"
+    weight: 10
+    competencies:
+      - key: applying-policy-cluster
+        statement: "Applying Policy in Cluster"
+      - key: resource-selection
+        statement: "Resource Selection"
+      - key: common-policy-settings-kyverno-rules
+        statement: "Common Policy Settings for Kyverno Rules"
+  - key: writing-policies
+    name: "Writing Policies"
+    weight: 32
+    competencies:
+      - key: validation-rules
+        statement: "Validation Rules"
+      - key: preconditions
+        statement: "Preconditions"
+      - key: background-scans
+        statement: "Background Scans"
+      - key: mutation-rules
+        statement: "Mutation Rules"
+      - key: generation-rules
+        statement: "Generation Rules"
+      - key: verifyimage-rules
+        statement: "VerifyImage Rules"
+      - key: variables-api-calls-policies
+        statement: "Variables & API Calls in Policies"
+      - key: json-patches
+        statement: "JSON Patches"
+      - key: autogen-rules
+        statement: "Autogen Rules"
+      - key: cleanup-policies
+        statement: "Cleanup Policies"
+      - key: common-expression-language-cel
+        statement: "Common Expression Language (CEL)"
+  - key: policy-management
+    name: "Policy Management"
+    weight: 10
+    competencies:
+      - key: policy-reports
+        statement: "Policy Reports"
+      - key: policyexceptions
+        statement: "PolicyExceptions"
+      - key: kyverno-metrics
+        statement: "Kyverno Metrics"

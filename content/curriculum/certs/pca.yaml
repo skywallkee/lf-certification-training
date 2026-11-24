@@ -1,0 +1,87 @@
+# PCA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: PCA
+name: "Prometheus Certified Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "PCA_Curriculum.pdf"
+    blobSha: cfe9d1f8a47137a3aba8835bb884a177ccea30bb
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: observability-concepts
+    name: "Observability Concepts"
+    weight: 18
+    competencies:
+      - key: metrics
+        statement: "Metrics"
+      - key: logs-events
+        statement: "Understand logs and events"
+      - key: tracing-spans
+        statement: "Tracing and Spans"
+      - key: push-pull
+        statement: "Push vs Pull"
+      - key: service-discovery
+        statement: "Service Discovery"
+      - key: basics-slos-slas-slis
+        statement: "Basics of SLOs, SLAs, and SLIs"
+  - key: prometheus-fundamentals
+    name: "Prometheus Fundamentals"
+    weight: 20
+    competencies:
+      - key: system-architecture
+        statement: "System Architecture"
+      - key: configuration-scraping
+        statement: "Configuration and Scraping"
+      - key: understanding-prometheus-limitations
+        statement: "Understanding Prometheus Limitations"
+      - key: data-model-labels
+        statement: "Data Model and Labels"
+      - key: exposition-format
+        statement: "Exposition Format"
+  - key: promql
+    name: "PromQL"
+    weight: 28
+    competencies:
+      - key: selecting-data
+        statement: "Selecting Data"
+      - key: rates-derivatives
+        statement: "Rates and Derivatives"
+      - key: aggregating-over-time
+        statement: "Aggregating over time"
+      - key: aggregating-over-dimensions
+        statement: "Aggregating over dimensions"
+      - key: binary-operators
+        statement: "Binary operators"
+      - key: histograms
+        statement: "Histograms"
+      - key: timestamp-metrics
+        statement: "Timestamp Metrics"
+  - key: instrumentation-exporters
+    name: "Instrumentation and Exporters"
+    weight: 16
+    competencies:
+      - key: client-libraries
+        statement: "Client Libraries"
+      - key: instrumentation
+        statement: "Instrumentation"
+      - key: exporters
+        statement: "Exporters"
+      - key: structuring-naming-metrics
+        statement: "Structuring and naming metrics"
+  - key: alerting-dashboarding
+    name: "Alerting & Dashboarding"
+    weight: 18
+    competencies:
+      - key: dashboarding-basics
+        statement: "Dashboarding basics"
+      - key: configuring-alerting-rules
+        statement: "Configuring Alerting rules"
+      - key: alertmanager
+        statement: "Understand and Use Alertmanager"
+      - key: alerting-basics
+        statement: "Alerting basics (when, what, and why)"

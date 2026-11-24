@@ -1,0 +1,36 @@
+# Certification bundles. Membership changes over time, so each member can carry
+# requiredFrom (the date it becomes part of the bundle) and retiredAt.
+# yaml-language-server: $schema=schema/programs.schema.json
+programs:
+  - key: kubestronaut
+    name: Kubestronaut
+    source: https://www.cncf.io/training/kubestronaut/
+    members:
+      - cert: CKA
+      - cert: CKAD
+      - cert: CKS
+      - cert: KCNA
+      - cert: KCSA
+  - key: golden-kubestronaut
+    name: Golden Kubestronaut
+    source: https://www.cncf.io/training/kubestronaut/
+    retrievedAt: "2026-11-09"
+    members:
+      - cert: CKA
+      - cert: CKAD
+      - cert: CKS
+      - cert: KCNA
+      - cert: KCSA
+      - cert: LFCS
+      - cert: CNPE
+      - cert: CKNE
+        requiredFrom: "2027-02-15"
+      - cert: PCA
+      - cert: ICA
+      - cert: CCA
+      - cert: CAPA
+      - cert: CGOA
+      - cert: CBA
+      - cert: OTCA
+      - cert: KCA
+      - cert: CNPA

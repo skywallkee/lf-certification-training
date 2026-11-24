@@ -1,0 +1,28 @@
+{
+  "name": "lf-certification-training",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "eslint .",
+    "curriculum:validate": "pnpm --filter @lfct/curriculum validate",
+    "curriculum:verify-sources": "pnpm --filter @lfct/curriculum verify-sources",
+    "curriculum:schema": "pnpm --filter @lfct/curriculum schema",
+    "curriculum:ingest": "pnpm --filter @lfct/curriculum ingest",
+    "mcp:curriculum": "tsx platform/packages/curriculum-mcp/src/index.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "eslint": "10.15.0",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.74.0",
+    "vitest": "5.1.1"
+  }
+}

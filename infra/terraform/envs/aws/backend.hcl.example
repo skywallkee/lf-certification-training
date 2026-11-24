@@ -1,0 +1,6 @@
+# Created once by hand (see infra/README.md, "Bootstrap state").
+bucket       = "lfct-tfstate-XXXX"
+key          = "aws-labs.tfstate"
+region       = "us-east-1"
+use_lockfile = true
+encrypt      = true

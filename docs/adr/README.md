@@ -1,0 +1,17 @@
+# Architecture decision records
+
+Short records of decisions that shape the platform, in the format from Michael Nygard's
+"Documenting Architecture Decisions": context, decision, consequences. The full reasoning lives in the
+[plan](https://claude.ai/artifact/99Eiqhkj36HSbaKaLF61Ye); these records are the part that must stay true
+in the code. To change a decision, add a new record that supersedes the old one.
+
+| # | Decision | Status |
+|---|----------|--------|
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
+| [0002](0002-monorepo-platform-content-infra.md) | One repository with platform, content and infra folders | Accepted |
+| [0003](0003-always-on-footprint.md) | Only the web app and Postgres are always on, on Azure | Accepted |
+| [0004](0004-on-demand-labs-two-clouds.md) | Labs are disposable VMs on AWS and Azure under monthly caps | Accepted |
+| [0005](0005-curriculum-as-data.md) | The curriculum is data, verified against cncf/curriculum | Accepted |
+| [0006](0006-typescript-toolchain.md) | TypeScript toolchain and pinned versions | Accepted |
+| [0007](0007-local-curriculum-mcp.md) | The curriculum MCP server runs locally over stdio | Accepted |
+| [0008](0008-content-from-public-sources-only.md) | Content comes from public sources only | Accepted |
