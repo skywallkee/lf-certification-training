@@ -1,0 +1,79 @@
+# CKNE curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CKNE
+name: "Certified Kubernetes Network Engineer"
+examStyle: performance
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CKNE_Curriculum.pdf"
+    blobSha: 2bc9e7d0a216970de107cf84aa4257dd6f7b7975
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: core-infrastructure-cni
+    name: "Core Infrastructure and CNI"
+    weight: 15
+    competencies:
+      - key: installing-configuring-cni-plugins
+        statement: "Installing and Configuring CNI Plugins"
+      - key: managing-ipam-pod-cidr-allocation
+        statement: "Managing IPAM and Pod CIDR Allocation"
+      - key: linux-tools-iptables-ip-tcpdump
+        statement: "Using Linux Tools (iptables, ip, tcpdump) for Packet-level Issues"
+      - key: troubleshooting-pod-connectivity-dns-pod
+        statement: "Troubleshooting Pod Connectivity (DNS, pod-to-pod)"
+      - key: configuring-multi-interface-pods
+        statement: "Configuring Multi-interface Pods"
+  - key: service-networking-dns
+    name: "Service Networking and DNS"
+    weight: 25
+    competencies:
+      - key: configuring-l4-services
+        statement: "Configuring L4 Services"
+      - key: understanding-kube-proxy-cni-alternatives
+        statement: "Understanding kube-proxy and CNI Alternatives"
+      - key: customizing-coredns-services
+        statement: "Customizing coreDNS for Services"
+      - key: troubleshooting-service-network-traffic
+        statement: "Troubleshooting Service Network Traffic"
+      - key: configuring-pod-endpoint-availability
+        statement: "Configuring Pod Endpoint Availability"
+      - key: managing-traffic-gateway-api-gateway
+        statement: "Managing Traffic with the Gateway API (Gateway, HTTPRoutes)"
+  - key: advanced-traffic-management
+    name: "Advanced Traffic Management"
+    weight: 20
+    competencies:
+      - key: optimizing-llm-traffic
+        statement: "Optimizing LLM Traffic"
+      - key: implementing-routing-expose-networks
+        statement: "Implementing Routing to Expose Networks"
+      - key: configuring-egress-gateways-cluster-exit
+        statement: "Configuring Egress Gateways for Cluster Exit Traffic"
+      - key: implementing-cross-cluster-service-discovery
+        statement: "Implementing Cross Cluster Service Discovery and Load Balancing"
+  - key: observability
+    name: "Observability"
+    weight: 15
+    competencies:
+      - key: analyzing-network-health-metrics
+        statement: "Analyzing Network Health Using Metrics"
+      - key: troubleshooting-end-end-network-performance
+        statement: "Troubleshooting End-to-End Network Performance with Tracing"
+      - key: auditing-traffic-logs
+        statement: "Auditing Traffic with Logs"
+  - key: network-security-policy
+    name: "Network Security and Policy"
+    weight: 25
+    competencies:
+      - key: securing-traffic-network-policies
+        statement: "Securing Traffic with Network Policies"
+      - key: implementing-node-pod-level-encryption
+        statement: "Implementing Node and Pod Level Encryption"
+      - key: managing-tls-certificates-gateway-api
+        statement: "Managing TLS Certificates for Gateway API"
+      - key: implementing-pod-level-authentication
+        statement: "Implementing Pod-level Authentication and Authorization"

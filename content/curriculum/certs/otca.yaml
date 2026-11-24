@@ -1,0 +1,71 @@
+# OTCA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: OTCA
+name: "OpenTelemetry Certified Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "OTCA_Curriculum.pdf"
+    blobSha: 04cde1cb71fceb16d4d39d70347a26280630f0c8
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: fundamentals-observability
+    name: "Fundamentals of Observability"
+    weight: 18
+    competencies:
+      - key: telemetry-data
+        statement: "Telemetry Data"
+      - key: semantic-conventions
+        statement: "Semantic Conventions"
+      - key: instrumentation
+        statement: "Instrumentation"
+      - key: analysis-outcomes
+        statement: "Analysis and Outcomes"
+  - key: opentelemetry-api-sdk
+    name: "The OpenTelemetry API and SDK"
+    weight: 46
+    competencies:
+      - key: data-model
+        statement: "Data Model"
+      - key: composability-extension
+        statement: "Composability and Extension"
+      - key: configuration
+        statement: "Configuration"
+      - key: signals-tracing-metric-log
+        statement: "Signals (Tracing, Metric, Log)"
+      - key: sdk-pipelines
+        statement: "SDK Pipelines"
+      - key: context-propagation
+        statement: "Context Propagation"
+      - key: agents
+        statement: "Agents"
+  - key: opentelemetry-collector
+    name: "The OpenTelemetry Collector"
+    weight: 26
+    competencies:
+      - key: configuration
+        statement: "Configuration"
+      - key: deployment
+        statement: "Deployment"
+      - key: scaling
+        statement: "Scaling"
+      - key: pipelines
+        statement: "Pipelines"
+      - key: transforming-data
+        statement: "Transforming Data"
+  - key: maintaining-debugging-observability-pipelines
+    name: "Maintaining and Debugging Observability Pipelines"
+    weight: 10
+    competencies:
+      - key: context-propagation
+        statement: "Context Propagation"
+      - key: debugging-pipelines
+        statement: "Debugging Pipelines"
+      - key: error-handling
+        statement: "Error Handling"
+      - key: schema-management
+        statement: "Schema Management"

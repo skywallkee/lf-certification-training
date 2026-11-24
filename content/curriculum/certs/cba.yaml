@@ -1,0 +1,69 @@
+# CBA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CBA
+name: "Certified Backstage Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CBA_Curriculum.pdf"
+    blobSha: 27b9c6772fd5846fee18cc12ff12fe72a85bba67
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: backstage-development-workflow
+    name: "Backstage Development Workflow"
+    weight: 24
+    competencies:
+      - key: build-run-backstage-projects-locally
+        statement: "Build and run Backstage projects locally"
+      - key: local-development-workflows
+        statement: "Understand local development workflows"
+      - key: compile-backstage-project-typescript
+        statement: "Compile a Backstage project with TypeScript"
+      - key: download-install-dependencies-backstage-project
+        statement: "Download and install dependencies for a Backstage project with NPM/Yarn"
+      - key: docker-build-container-image-backstage
+        statement: "Use Docker to build a container image of a Backstage project"
+  - key: backstage-infrastructure
+    name: "Backstage Infrastructure"
+    weight: 22
+    competencies:
+      - key: backstage-framework
+        statement: "Understand the Backstage framework"
+      - key: configure-backstage
+        statement: "Configure Backstage"
+      - key: deploy-backstage-production
+        statement: "Deploy Backstage to production"
+      - key: backstage-client-server-architecture
+        statement: "Understand Backstage client-server architecture"
+  - key: backstage-catalog
+    name: "Backstage Catalog"
+    weight: 22
+    competencies:
+      - key: backstage-catalog
+        statement: "Understand how/why to use Backstage Catalog"
+      - key: populate-backstage-catalog
+        statement: "Populate Backstage Catalog"
+      - key: annotations
+        statement: "Using annotations"
+      - key: working-manually-registered-entity-locations
+        statement: "Working with manually registered entity locations"
+      - key: troubleshooting-entity-ingestion
+        statement: "Troubleshooting entity ingestion"
+      - key: working-automated-ingestion
+        statement: "Working with automated ingestion"
+  - key: customizing-backstage
+    name: "Customizing Backstage"
+    weight: 32
+    competencies:
+      - key: frontend-backend-plugins
+        statement: "Understand frontend versus backend plugins"
+      - key: customizing-backstage-plugins
+        statement: "Customizing Backstage plugins"
+      - key: make-changes-react-code-backstage
+        statement: "Make changes to React code in Backstage App"
+      - key: material-ui-components
+        statement: "Using Material UI components"

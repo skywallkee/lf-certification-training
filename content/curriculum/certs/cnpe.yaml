@@ -1,0 +1,72 @@
+# CNPE curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CNPE
+name: "Certified Cloud Native Platform Engineer"
+examStyle: performance
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CNPE_Curriculum.pdf"
+    blobSha: 3e5f41b6d95ce3c7ec3120649b8fa0ce24e8f0ad
+  retrievedAt: "2026-11-24"
+  verification: text
+examTools: ["Argo", "Crossplane", "Flagger", "Flux", "Gatekeeper", "Grafana", "Istio", "Jaeger", "Kyverno", "Linkerd", "OPA", "OpenCost", "OpenTelemetry", "Prometheus", "Tekton"]
+domains:
+  - key: platform-architecture-infrastructure
+    name: "Platform Architecture and Infrastructure"
+    weight: 15
+    competencies:
+      - key: applying-platform-architecture-best-practices
+        statement: "Applying Platform Architecture Best Practices for Networking, Storage, and Compute"
+      - key: cost-management-solutions-right-sizing
+        statement: "Using Cost Management Solutions for Right-Sizing and Scaling"
+      - key: optimizing-multi-tenancy-resource-usage
+        statement: "Optimizing Multi-Tenancy Resource Usage"
+  - key: gitops-continuous-delivery
+    name: "GitOps and Continuous Delivery"
+    weight: 25
+    competencies:
+      - key: implementing-gitops-workflows-application
+        statement: "Implementing GitOps Workflows for Application and Infrastructure Deployment"
+      - key: building-configuring-ci-cd-pipelines
+        statement: "Building and Configuring CI/CD Pipelines Integrated with Kubernetes"
+      - key: deploying-applications-progressive-delivery
+        statement: "Deploying Applications Using Progressive Delivery Strategies (e.g., Blue/Green or Canary)"
+  - key: platform-apis-self-service
+    name: "Platform APIs and Self-Service Capabilities"
+    weight: 25
+    competencies:
+      - key: designing-creating-custom-resource-definitions
+        statement: "Designing and Creating Custom Resource Definitions (CRDs) for Platform Services"
+      - key: implementing-workflows-self-service-provisioning
+        statement: "Implementing Workflows for Self-Service Provisioning Using Platform APIs"
+      - key: kubernetes-operators-platform-automation
+        statement: "Using Kubernetes Operators for Platform Automation and Integration"
+      - key: automation-frameworks-self-service-provisioning
+        statement: "Using Automation Frameworks for Self-Service Provisioning"
+  - key: observability-operations
+    name: "Observability and Operations"
+    weight: 20
+    competencies:
+      - key: implementing-monitoring-alerting-logging-tracing
+        statement: "Implementing Monitoring, Alerting, Logging, and Tracing Solutions"
+      - key: measuring-improving-platform-efficiency
+        statement: "Measuring and Improving Platform Efficiency Using Deployment Metrics and Performance Indicators"
+      - key: diagnosing-remediating-platform-issue-incident
+        statement: "Diagnosing and Remediating Platform Issue and Incident Scenarios"
+  - key: security-policy-enforcement
+    name: "Security and Policy Enforcement"
+    weight: 15
+    competencies:
+      - key: configuring-secure-service-service-communication
+        statement: "Configuring Secure Service-to-Service Communication"
+      - key: applying-rbac-security-controls-across
+        statement: "Applying RBAC and Security Controls Across Platform Resources"
+      - key: generating-audit-trails-enforcing-policy
+        statement: "Generating Audit Trails and Enforcing Policy Compliance (SBOM, Compliance Reports, etc.)"
+      - key: policy-engines-admission-controllers-governance
+        statement: "Using Policy Engines and Admission Controllers for Governance"
+      - key: integrating-security-scanning-compliance-checks
+        statement: "Integrating Security Scanning and Compliance Checks into Deployment Pipelines"

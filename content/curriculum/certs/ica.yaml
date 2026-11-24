@@ -1,0 +1,65 @@
+# ICA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: ICA
+name: "Istio Certified Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "ICA_Curriculum.pdf"
+    blobSha: 674416f04822454855c5c39252f130195092446e
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: installation-upgrades-configuration
+    name: "Installation, Upgrades, and Configuration"
+    weight: 20
+    competencies:
+      - key: installing-istio-istioctl-helm
+        statement: "Installing Istio with istioctl or Helm"
+      - key: installing-istio-sidecar-ambient-mode
+        statement: "Installing Istio in Sidecar or Ambient Mode"
+      - key: customizing-istio-installation
+        statement: "Customizing your Istio Installation"
+      - key: upgrading-istio-canary-place
+        statement: "Upgrading Istio (Canary, In-Place)"
+  - key: traffic-management
+    name: "Traffic Management"
+    weight: 35
+    competencies:
+      - key: configuring-ingress-egress-traffic
+        statement: "Configuring Ingress and Egress Traffic"
+      - key: configuring-routing-service-mesh
+        statement: "Configuring Routing within a Service Mesh"
+      - key: defining-traffic-policies-destination-rules
+        statement: "Defining Traffic Policies with Destination Rules"
+      - key: configuring-traffic-shifting
+        statement: "Configuring Traffic Shifting"
+      - key: connecting-mesh-workloads-external-workloads
+        statement: "Connecting In-Mesh Workloads to External Workloads and Services"
+      - key: resilience-features-circuit-breaking-failover
+        statement: "Using Resilience Features (circuit breaking, failover, outlier detection, timeouts, retries)"
+      - key: fault-injection
+        statement: "Using Fault Injection"
+  - key: securing-workloads
+    name: "Securing Workloads"
+    weight: 25
+    competencies:
+      - key: configuring-authorization
+        statement: "Configuring Authorization"
+      - key: configuring-authentication-mtls-jwt
+        statement: "Configuring Authentication (mTLS, JWT)"
+      - key: securing-edge-traffic-tls
+        statement: "Securing Edge Traffic with TLS"
+  - key: troubleshooting
+    name: "Troubleshooting"
+    weight: 20
+    competencies:
+      - key: troubleshooting-configuration
+        statement: "Troubleshooting Configuration"
+      - key: troubleshooting-mesh-control-plane
+        statement: "Troubleshooting the Mesh Control Plane"
+      - key: troubleshooting-mesh-data-plane
+        statement: "Troubleshooting the Mesh Data Plane"

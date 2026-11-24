@@ -1,0 +1,101 @@
+# CCA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CCA
+name: "Cilium Certified Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CCA_Curriculum.pdf"
+    blobSha: c05146dcd926eba0f1b822727604eeaed41b47fb
+  retrievedAt: "2026-11-24"
+  verification: visual
+domains:
+  - key: architecture
+    name: "Architecture"
+    weight: 20
+    competencies:
+      - key: role-cilium-kubernetes-environments
+        statement: "Understand the Role of Cilium in Kubernetes Environments"
+      - key: cilium-architecture
+        statement: "Cilium Architecture"
+      - key: ip-address-management-ipam-cilium
+        statement: "IP Address Management (IPAM) with Cilium"
+      - key: cilium-component-roles
+        statement: "Cilium Component Roles"
+      - key: datapath-models
+        statement: "Datapath Models"
+  - key: network-policy
+    name: "Network Policy"
+    weight: 18
+    competencies:
+      - key: interpret-cilium-network-policies-intent
+        statement: "Interpret Cilium Network Policies and Intent"
+      - key: cilium-s-identity-based-network
+        statement: "Understand Cilium's Identity-based Network Security Model"
+      - key: policy-enforcement-modes
+        statement: "Policy Enforcement Modes"
+      - key: policy-rule-structure
+        statement: "Policy Rule Structure"
+      - key: kubernetes-network-policies-cilium-network
+        statement: "Kubernetes Network Policies versus Cilium Network Policies"
+  - key: service-mesh
+    name: "Service Mesh"
+    weight: 16
+    competencies:
+      - key: ingress-gateway-api-ingress-routing
+        statement: "Know How to use Ingress or Gateway API for Ingress Routing"
+      - key: service-mesh-cases
+        statement: "Service Mesh Use Cases"
+      - key: undertand-benefits-gateway-api-over
+        statement: "Undertand the Benefits of Gateway API over Ingress"
+      - key: encrypting-traffic-transit-cilium
+        statement: "Encrypting Traffic in Transit with Cilium"
+      - key: sidecar-based-sidecarless-architectures
+        statement: "Sidecar-based versus Sidecarless Architectures"
+  - key: network-observability
+    name: "Network Observability"
+    weight: 10
+    competencies:
+      - key: observability-capabilities-hubble
+        statement: "Understand the Observability Capabilities of Hubble"
+      - key: enabling-layer-7-protocol-visibility
+        statement: "Enabling Layer 7 Protocol Visibility"
+      - key: hubble-command-line-hubble-ui
+        statement: "Know How to Use Hubble from the Command Line or the Hubble UI"
+  - key: installation-configuration
+    name: "Installation and Configuration"
+    weight: 10
+    competencies:
+      - key: cilium-cli-query-modify-configuration
+        statement: "Know How to Use Cilium CLI to Query and Modify the Configuration"
+      - key: cilium-cli-install-cilium-run
+        statement: "Using Cilium CLI to Install Cilium, Run Connectivity Tests, and Monitor its Status"
+  - key: cluster-mesh
+    name: "Cluster Mesh"
+    weight: 10
+    competencies:
+      - key: benefits-cluster-mesh-multi-cluster
+        statement: "Understand the Benefits of Cluster Mesh for Multi-cluster Connectivity"
+      - key: achieve-service-discovery-load-balancing
+        statement: "Achieve Service Discovery and Load Balancing Across Clusters with Cluster Mesh"
+  - key: ebpf
+    name: "eBPF"
+    weight: 10
+    competencies:
+      - key: role-ebpf-cilium
+        statement: "Understand the Role of eBPF in Cilium"
+      - key: ebpf-key-benefits
+        statement: "eBPF Key Benefits"
+      - key: ebpf-based-platforms-iptables-based
+        statement: "eBPF-based Platforms versus IPtables-based Platforms"
+  - key: bgp-external-networking
+    name: "BGP and External Networking"
+    weight: 6
+    competencies:
+      - key: egress-connectivity-requirements
+        statement: "Egress Connectivity Requirements"
+      - key: options-connect-cilium-managed-clusters
+        statement: "Understand Options to Connect Cilium-managed Clusters with External Networks"

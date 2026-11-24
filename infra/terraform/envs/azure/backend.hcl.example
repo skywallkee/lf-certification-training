@@ -1,0 +1,6 @@
+# Created once by hand (see infra/README.md, "Bootstrap state").
+resource_group_name  = "rg-lfct-tfstate"
+storage_account_name = "stlfcttfstateXXXX"
+container_name       = "tfstate"
+key                  = "azure-platform.tfstate"
+use_azuread_auth     = true

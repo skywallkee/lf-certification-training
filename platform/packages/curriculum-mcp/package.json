@@ -1,0 +1,23 @@
+{
+  "name": "@lfct/curriculum-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local, read-only MCP server (stdio) over the curriculum, for writing lessons, questions and labs with Claude.",
+  "bin": {
+    "lfct-curriculum-mcp": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lfct/curriculum": "workspace:*",
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0"
+  }
+}

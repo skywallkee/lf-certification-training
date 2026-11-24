@@ -1,0 +1,58 @@
+# KCNA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: KCNA
+name: "Kubernetes and Cloud Native Associate"
+examStyle: multiple-choice
+durationMinutes: 90
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "KCNA_Curriculum.pdf"
+    blobSha: 28508daa40aa932b0551a9370d213019f1173364
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: kubernetes-fundamentals
+    name: "Kubernetes Fundamentals"
+    weight: 44
+    competencies:
+      - key: kubernetes-core-concepts
+        statement: "Kubernetes Core Concepts"
+      - key: administration
+        statement: "Administration"
+      - key: scheduling
+        statement: "Scheduling"
+      - key: containerization
+        statement: "Containerization"
+  - key: container-orchestration
+    name: "Container Orchestration"
+    weight: 28
+    competencies:
+      - key: networking
+        statement: "Networking"
+      - key: security
+        statement: "Security"
+      - key: troubleshooting
+        statement: "Troubleshooting"
+      - key: storage
+        statement: "Storage"
+  - key: cloud-native-application-delivery
+    name: "Cloud Native Application Delivery"
+    weight: 16
+    competencies:
+      - key: application-delivery
+        statement: "Application Delivery"
+      - key: debugging
+        statement: "Debugging"
+  - key: cloud-native-architecture
+    name: "Cloud Native Architecture"
+    weight: 12
+    competencies:
+      - key: observability
+        statement: "Observability"
+      - key: cloud-native-ecosystem-principles
+        statement: "Cloud Native Ecosystem and Principles"
+      - key: cloud-native-community-collaboration
+        statement: "Cloud Native Community and Collaboration"

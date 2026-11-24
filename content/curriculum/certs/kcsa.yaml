@@ -1,0 +1,124 @@
+# KCSA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: KCSA
+name: "Kubernetes and Cloud Native Security Associate"
+examStyle: multiple-choice
+durationMinutes: 90
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "KCSA Curriculum.pdf"
+    blobSha: a7b1b177f64f7f4adc6ce5b1f7e43f5842761207
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: overview-cloud-native-security
+    name: "Overview of Cloud Native Security"
+    weight: 14
+    competencies:
+      - key: 4cs-cloud-native-security
+        statement: "The 4Cs of Cloud Native Security"
+      - key: cloud-provider-infrastructure-security
+        statement: "Cloud Provider and Infrastructure Security"
+      - key: controls-frameworks
+        statement: "Controls and Frameworks"
+      - key: isolation-techniques
+        statement: "Isolation Techniques"
+      - key: artifact-repository-image-security
+        statement: "Artifact Repository and Image Security"
+      - key: workload-application-code-security
+        statement: "Workload and Application Code Security"
+  - key: kubernetes-cluster-component-security
+    name: "Kubernetes Cluster Component Security"
+    weight: 22
+    competencies:
+      - key: api-server
+        statement: "API Server"
+      - key: controller-manager
+        statement: "Controller Manager"
+      - key: scheduler
+        statement: "Scheduler"
+      - key: kubelet
+        statement: "Kubelet"
+      - key: container-runtime
+        statement: "Container Runtime"
+      - key: kubeproxy
+        statement: "KubeProxy"
+      - key: pod
+        statement: "Pod"
+      - key: etcd
+        statement: "Etcd"
+      - key: container-networking
+        statement: "Container Networking"
+      - key: client-security
+        statement: "Client Security"
+      - key: storage
+        statement: "Storage"
+  - key: kubernetes-security-fundamentals
+    name: "Kubernetes Security Fundamentals"
+    weight: 22
+    competencies:
+      - key: pod-security-standards
+        statement: "Pod Security Standards"
+      - key: pod-security-admissions
+        statement: "Pod Security Admissions"
+      - key: authentication
+        statement: "Authentication"
+      - key: secrets
+        statement: "Secrets"
+      - key: isolation-segmentation
+        statement: "Isolation and Segmentation"
+      - key: audit-logging
+        statement: "Audit Logging"
+      - key: network-policy
+        statement: "Network Policy"
+  - key: kubernetes-threat-model
+    name: "Kubernetes Threat Model"
+    weight: 16
+    competencies:
+      - key: kubernetes-trust-boundaries-data-flow
+        statement: "Kubernetes Trust Boundaries and Data Flow"
+      - key: persistence
+        statement: "Persistence"
+      - key: denial-service
+        statement: "Denial of Service"
+      - key: malicious-code-execution-compromised
+        statement: "Malicious Code Execution and Compromised Applications in Containers"
+      - key: attacker-network
+        statement: "Attacker on the Network"
+      - key: access-sensitive-data
+        statement: "Access to Sensitive Data"
+      - key: privilege-escalation
+        statement: "Privilege Escalation"
+  - key: platform-security
+    name: "Platform Security"
+    weight: 16
+    competencies:
+      - key: supply-chain-security
+        statement: "Supply Chain Security"
+      - key: image-repository
+        statement: "Image Repository"
+      - key: observability
+        statement: "Observability"
+      - key: service-mesh
+        statement: "Service Mesh"
+      - key: pki
+        statement: "PKI"
+      - key: connectivity
+        statement: "Connectivity"
+      - key: admission-control
+        statement: "Admission Control"
+  - key: compliance-security-frameworks
+    name: "Compliance and Security Frameworks"
+    weight: 10
+    competencies:
+      - key: compliance-frameworks
+        statement: "Compliance Frameworks"
+      - key: threat-modeling-frameworks
+        statement: "Threat Modeling Frameworks"
+      - key: supply-chain-compliance
+        statement: "Supply Chain Compliance"
+      - key: automation-tooling
+        statement: "Automation and Tooling"

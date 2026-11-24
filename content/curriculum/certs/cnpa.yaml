@@ -1,0 +1,93 @@
+# CNPA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CNPA
+name: "Certified Cloud Native Platform Engineering Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CNPA_Curriculum.pdf"
+    blobSha: d6e59abf30e36e9b611dc7dc3fee105bf9efbee6
+  retrievedAt: "2026-11-24"
+  verification: text
+domains:
+  - key: platform-engineering-core-fundamentals
+    name: "Platform Engineering Core Fundamentals"
+    weight: 36
+    competencies:
+      - key: declarative-resource-management
+        statement: "Declarative Resource Management"
+      - key: devops-practices-platform-engineering
+        statement: "DevOps Practices in Platform Engineering"
+      - key: application-environments-infrastructure-concepts
+        statement: "Application Environments and Infrastructure Concepts"
+      - key: platform-architecture-capabilities
+        statement: "Platform Architecture and Capabilities"
+      - key: platform-engineering-goals-objectives-approaches
+        statement: "Platform Engineering Goals, Objectives, and Approaches"
+      - key: continuous-integration-fundamentals
+        statement: "Continuous Integration Fundamentals"
+      - key: continuous-delivery-gitops
+        statement: "Continuous Delivery and GitOps"
+  - key: platform-observability-security-conformance
+    name: "Platform Observability, Security, and Conformance"
+    weight: 20
+    competencies:
+      - key: observability-fundamentals-traces-metrics-logs
+        statement: "Observability Fundamentals: Traces, Metrics, Logs, and Events"
+      - key: secure-service-communication
+        statement: "Secure Service Communication"
+      - key: policy-engines-platform-governance
+        statement: "Policy Engines for Platform Governance"
+      - key: kubernetes-security-essentials
+        statement: "Kubernetes Security Essentials"
+      - key: security-ci-cd-pipelines
+        statement: "Security in CI/CD Pipelines"
+  - key: continuous-delivery-platform-engineering
+    name: "Continuous Delivery & Platform Engineering"
+    weight: 16
+    competencies:
+      - key: continuous-integration-pipelines-overview
+        statement: "Continuous Integration Pipelines Overview"
+      - key: incident-response-platform-engineering
+        statement: "Incident Response in Platform Engineering"
+      - key: ci-cd-relationship-fundamentals
+        statement: "CI/CD Relationship Fundamentals"
+      - key: gitops-basics-workflows
+        statement: "GitOps Basics and Workflows"
+      - key: gitops-application-environments
+        statement: "GitOps for Application Environments"
+  - key: platform-apis-provisioning-infrastructure
+    name: "Platform APIs and Provisioning Infrastructure"
+    weight: 12
+    competencies:
+      - key: kubernetes-reconciliation-loop
+        statement: "Kubernetes Reconciliation Loop"
+      - key: apis-self-service-platforms-crds
+        statement: "APIs for Self-Service Platforms (CRDs)"
+      - key: infrastructure-provisioning-kubernetes
+        statement: "Infrastructure Provisioning with Kubernetes"
+      - key: kubernetes-operator-pattern-integration
+        statement: "Kubernetes Operator Pattern for Integration"
+  - key: idps-developer-experience
+    name: "IDPs and Developer Experience"
+    weight: 8
+    competencies:
+      - key: simplified-access-platform-capabilities
+        statement: "Simplified Access to Platform Capabilities"
+      - key: api-driven-service-catalogs
+        statement: "API-Driven Service Catalogs"
+      - key: developer-portals-platform-adoption
+        statement: "Developer Portals for Platform Adoption"
+      - key: ai-ml-platform-automation
+        statement: "AI/ML in Platform Automation"
+  - key: measuring-platform
+    name: "Measuring your Platform"
+    weight: 8
+    competencies:
+      - key: platform-efficiency-team-productivity
+        statement: "Platform Efficiency and Team Productivity"
+      - key: dora-metrics-platform-initiatives
+        statement: "DORA Metrics for Platform Initiatives"

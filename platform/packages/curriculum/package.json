@@ -1,0 +1,31 @@
+{
+  "name": "@lfct/curriculum",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Curriculum schema, loader, queries and Postgres ingest for the 17 Golden Kubestronaut certifications.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db": "./src/db/schema.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "validate": "tsx src/cli/validate.ts",
+    "verify-sources": "tsx src/cli/verify-sources.ts",
+    "schema": "tsx src/cli/schema.ts",
+    "ingest": "tsx src/cli/ingest.ts",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1",
+    "unpdf": "2.2.2",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11"
+  }
+}

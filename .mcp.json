@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lfct-curriculum": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["--import", "tsx", "platform/packages/curriculum-mcp/src/index.ts"]
+    }
+  }
+}

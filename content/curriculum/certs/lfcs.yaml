@@ -1,0 +1,34 @@
+# LFCS curriculum. PENDING: domains and weights were written from memory because the LF exam page was not reachable.
+# Check them against the source URL below, then add competencies and set verification to visual.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: LFCS
+name: "Linux Foundation Certified System Administrator"
+examStyle: performance
+durationMinutes: 120
+curriculum:
+  source:
+    kind: web
+    url: "https://training.linuxfoundation.org/certification/linux-foundation-certified-sysadmin-lfcs/"
+  retrievedAt: "2026-11-24"
+  verification: pending
+domains:
+  - key: operations-deployment
+    name: "Operations Deployment"
+    weight: 25
+    competencies: []
+  - key: networking
+    name: "Networking"
+    weight: 25
+    competencies: []
+  - key: storage
+    name: "Storage"
+    weight: 20
+    competencies: []
+  - key: essential-commands
+    name: "Essential Commands"
+    weight: 20
+    competencies: []
+  - key: users-groups
+    name: "Users and Groups"
+    weight: 10
+    competencies: []

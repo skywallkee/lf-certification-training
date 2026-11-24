@@ -1,0 +1,85 @@
+# CGOA curriculum, transcribed from the public CNCF/LF curriculum. Edit only to match the source.
+# yaml-language-server: $schema=../schema/certification.schema.json
+code: CGOA
+name: "Certified GitOps Associate"
+examStyle: multiple-choice
+curriculum:
+  source:
+    kind: cncf-curriculum
+    repo: cncf/curriculum
+    commit: f5ab45e0ed85cb38a23252a71eb05891e513da66
+    path: "CGOA_Curriculum.pdf"
+    blobSha: ea0417fe062f6ea9e394563a7215488259b73223
+  retrievedAt: "2026-11-24"
+  verification: visual
+domains:
+  - key: gitops-terminology
+    name: "GitOps Terminology"
+    weight: 20
+    competencies:
+      - key: continuous
+        statement: "Continuous"
+      - key: declarative-description
+        statement: "Declarative Description"
+      - key: desired-state
+        statement: "Desired State"
+      - key: state-drift
+        statement: "State Drift"
+      - key: state-reconciliation
+        statement: "State Reconciliation"
+      - key: gitops-managed-software-system
+        statement: "GitOps Managed Software System"
+      - key: state-store
+        statement: "State Store"
+      - key: feedback-loop
+        statement: "Feedback Loop"
+      - key: rollback
+        statement: "Rollback"
+  - key: gitops-principles
+    name: "GitOps Principles"
+    weight: 30
+    competencies:
+      - key: declarative
+        statement: "Declarative"
+      - key: versioned-immutable
+        statement: "Versioned and Immutable"
+      - key: pulled-automatically
+        statement: "Pulled Automatically"
+      - key: continuously-reconciled
+        statement: "Continuously Reconciled"
+  - key: related-practices
+    name: "Related Practices"
+    weight: 16
+    competencies:
+      - key: configuration-code-cac
+        statement: "Configuration as Code (CaC)"
+      - key: infrastructure-code-iac
+        statement: "Infrastructure as Code (IaC)"
+      - key: devops-devsecops
+        statement: "DevOps and DevSecOps"
+      - key: ci-cd
+        statement: "CI and CD"
+  - key: gitops-patterns
+    name: "GitOps Patterns"
+    weight: 20
+    competencies:
+      - key: deployment-release-patterns
+        statement: "Deployment and Release Patterns"
+      - key: progressive-delivery-patterns
+        statement: "Progressive Delivery Patterns"
+      - key: pull-event-driven
+        statement: "Pull vs. Event-driven"
+      - key: architecture-patterns-cluster-external
+        statement: "Architecture patterns (in-cluster and external reconciler, state store management, etc.)"
+  - key: tooling
+    name: "Tooling"
+    weight: 14
+    competencies:
+      - key: manifest-format-packaging
+        statement: "Manifest Format and Packaging"
+      - key: state-store-systems-git-alternatives
+        statement: "State Store Systems (Git and alternatives)"
+      - key: reconciliation-engines-argocd-flux-alternatives
+        statement: "Reconciliation Engines (ArgoCD, Flux, and alternatives)"
+      - key: interoperability-notifications-observability
+        statement: "Interoperability with Notifications, Observability, and Continuous Integration Tools"
