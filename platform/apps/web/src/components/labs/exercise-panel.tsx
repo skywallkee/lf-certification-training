@@ -24,8 +24,17 @@ export function ExercisePanel(props: {
   multiCluster: boolean;
   canAct: boolean;
   onShowHint: (taskId: string) => void;
+  /** Called whenever the flags change (the mock player lists flagged tasks before Submit). */
+  onFlagsChange?: (taskIds: string[]) => void;
+  /** Extra controls under the current exercise, such as practice mode's Check button. */
+  renderActions?: (task: PlayerTask) => ReactNode;
+  /** Exam mode: no pass/fail states anywhere (there is no feedback until the end). */
+  hideStates?: boolean;
+  /** Word for one task in the navigator and headings: "Exercise" (labs) or "Task" (mock exams). */
+  noun?: string;
 }) {
-  const { tasks } = props;
+  const { tasks, onFlagsChange } = props;
+  const noun = props.noun ?? "Exercise";
   const storageKey = `lfct-lab:${props.sessionId}`;
   const [current, setCurrent] = useState(0);
   const [flags, setFlags] = useState<string[]>([]);
@@ -50,6 +59,8 @@ export function ExercisePanel(props: {
     }
   }, [storageKey, current, flags]);
 
+  useEffect(() => onFlagsChange?.(flags), [flags, onFlagsChange]);
+
   const task = tasks[current]!;
   const flagged = flags.includes(task.id);
   const results = props.results.filter((r) => r.taskId === task.id);
@@ -66,12 +77,12 @@ export function ExercisePanel(props: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <nav aria-label="Exercises">
+      <nav aria-label={`${noun}s`}>
         <ol className="flex flex-wrap gap-1.5">
           {tasks.map((t, i) => {
             const st = props.states[t.id] ?? "unchecked";
             const isFlagged = flags.includes(t.id);
-            const label = `Exercise ${i + 1}: ${t.title}. ${stateLabel(st)}${isFlagged ? ", flagged" : ""}`;
+            const label = `${noun} ${i + 1}: ${t.title}. ${stateLabel(st)}${isFlagged ? ", flagged" : ""}`;
             return (
               <li key={t.id}>
                 <button
@@ -99,7 +110,11 @@ export function ExercisePanel(props: {
           })}
         </ol>
         <p className="mt-2 text-[13px] text-muted-foreground">
-          {unsolved === 0 ? "Every exercise passed its checks." : `${unsolved} of ${tasks.length} not passed yet`}
+          {props.hideStates
+            ? `${tasks.length} ${noun.toLowerCase()}s`
+            : unsolved === 0
+              ? `Every ${noun.toLowerCase()} passed its checks.`
+              : `${unsolved} of ${tasks.length} not passed yet`}
           {flags.length > 0 ? ` · ${flags.length} flagged` : ""}
         </p>
       </nav>
@@ -108,14 +123,14 @@ export function ExercisePanel(props: {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Exercise {current + 1} of {tasks.length} · {task.weight}%
+              {noun} {current + 1} of {tasks.length} · {task.weight}%
             </p>
             <h2 id="exercise-title" className="text-lg font-semibold">
               {task.title}
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <TaskChip state={props.states[task.id] ?? "unchecked"} />
+            {props.hideStates ? null : <TaskChip state={props.states[task.id] ?? "unchecked"} />}
             <Button type="button" size="sm" variant="outline" aria-pressed={flagged} onClick={toggleFlag}>
               <Flag aria-hidden="true" className={cn(flagged && "fill-warning text-warning")} />
               Flag for later
@@ -138,7 +153,7 @@ export function ExercisePanel(props: {
         <div className="text-[15px]">{props.bodies[task.id]}</div>
 
         {results.length > 0 ? (
-          <ul className="flex flex-col gap-1.5" aria-label={`Checks for exercise ${current + 1}`}>
+          <ul className="flex flex-col gap-1.5" aria-label={`Checks for ${noun.toLowerCase()} ${current + 1}`}>
             {results.map((r) => (
               <li key={r.checkId} className="flex items-start gap-2 text-sm">
                 {r.passed ? (
@@ -154,6 +169,8 @@ export function ExercisePanel(props: {
             ))}
           </ul>
         ) : null}
+
+        {props.renderActions?.(task)}
 
         {task.hintsTotal > 0 ? (
           <div>

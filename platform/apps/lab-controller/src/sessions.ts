@@ -1,4 +1,4 @@
-import { EXTEND_MINUTES, isActive, scoreOf, type BootStepKey, type CheckResult, bootStepIndex } from "@lfct/labs";
+import { EXTEND_MINUTES, START_WINDOW_MINUTES, isActive, scoreOf, type BootStepKey, type CheckResult, bootStepIndex } from "@lfct/labs";
 import { and, eq, inArray, lt } from "drizzle-orm";
 import { runChecks } from "./grader.ts";
 import type { Db, LabRow, SessionRow } from "./db.ts";
@@ -69,7 +69,9 @@ export class Sessions {
     if (moved.length === 0) return;
     // Resources outlive the session by its length, one extension, the boot timeout and a margin, then the
     // sweeper deletes them whatever the database says.
-    const deleteAfter = new Date(Date.now() + (lab.minutes + EXTEND_MINUTES + 30) * 60_000 + this.opts.bootTimeoutSeconds * 1000);
+    // A mock exam's extra is the window it waits for Start instead of an extension.
+    const extra = session.mode === "lab" ? EXTEND_MINUTES : START_WINDOW_MINUTES;
+    const deleteAfter = new Date(Date.now() + (session.minutes + extra + 30) * 60_000 + this.opts.bootTimeoutSeconds * 1000);
     const started = Date.now();
     try {
       const resources = await this.provider.provision({
@@ -85,13 +87,16 @@ export class Sessions {
         },
       });
       const now = new Date();
+      // A lab's clock starts now. A mock exam waits on the prepare screen until the learner presses Start (the
+      // web app then sets startedAt and the real deadline); until then expiresAt is the end of the start window.
+      const mock = session.mode !== "lab";
       const ready = await this.db
         .update(labSession)
         .set({
           status: "ready",
           resources,
           readyAt: now,
-          expiresAt: new Date(now.getTime() + session.minutes * 60_000),
+          expiresAt: new Date(now.getTime() + (mock ? START_WINDOW_MINUTES : session.minutes) * 60_000),
           statusMessage: `Ready in ${Math.round((Date.now() - started) / 1000)} s`,
         })
         .where(and(eq(labSession.id, sessionId), eq(labSession.status, "booting")))
@@ -112,20 +117,29 @@ export class Sessions {
     }
   }
 
-  private async grade(session: SessionRow, lab: LabRow, kind: "check" | "final"): Promise<GradeOutcome> {
-    const results = await runChecks(this.provider, session.id, session.resources as Resources, lab);
+  private async grade(session: SessionRow, lab: LabRow, kind: "check" | "final", onlyTask?: string): Promise<GradeOutcome> {
+    const results = await runChecks(this.provider, session.id, session.resources as Resources, lab, onlyTask);
     const score = scoreOf(lab.tasks, results);
     const [run] = await this.db.insert(labCheckRun).values({ sessionId: session.id, kind, results, score }).returning({ id: labCheckRun.id });
     return { results, score, runId: run!.id };
   }
 
-  /** "Check my work": grades the cluster as it is now. */
-  check(sessionId: string): Promise<GradeOutcome> {
+  /**
+   * "Check my work": grades the cluster as it is now. Mock exams: refused in exam mode (no feedback until the
+   * end, enforced here and not only in the player); practice mode checks one task at a time.
+   */
+  check(sessionId: string, taskId?: string): Promise<GradeOutcome> {
     return this.withLock(sessionId, async () => {
       const found = await this.get(sessionId);
       if (!found) throw new HttpError(404, "no such session");
-      if (found.session.status !== "ready") throw new HttpError(409, "the lab is not running");
-      return this.grade(found.session, found.lab, "check");
+      const { session, lab } = found;
+      if (session.status !== "ready") throw new HttpError(409, "the lab is not running");
+      if (session.mode === "exam") throw new HttpError(403, "exam mode gives no feedback until the end");
+      if (session.mode === "practice") {
+        if (!session.startedAt) throw new HttpError(409, "the mock exam has not started");
+        if (!taskId || !lab.tasks.some((t) => t.id === taskId)) throw new HttpError(400, "practice mode checks one task: name it");
+      }
+      return this.grade(session, lab, "check", taskId);
     });
   }
 
@@ -142,8 +156,13 @@ export class Sessions {
       }
       const { session, lab } = found;
       if (!isActive(session.status)) return { score: session.score };
+      const mock = session.mode !== "lab";
+      // Mock exams freeze the terminal before grading, so no command runs while the checks do.
+      if (mock) this.onEnded(sessionId);
       let score: number | null = null;
-      if (session.status === "ready" && reason !== "killed") {
+      // A mock attempt that never started is not graded (and does not count against the quota).
+      const gradable = session.status === "ready" && reason !== "killed" && (!mock || session.startedAt !== null);
+      if (gradable) {
         try {
           score = (await this.grade(session, lab, "final")).score;
         } catch (err) {
@@ -173,10 +192,18 @@ export class Sessions {
   /** One sweep: expire timed-out sessions, fail stuck boots, remove resources nobody owns. */
   async sweep(now = new Date()): Promise<{ expired: number; failed: number; orphans: number }> {
     const expired = await this.db
-      .select({ id: labSession.id })
+      .select({ id: labSession.id, mode: labSession.mode, startedAt: labSession.startedAt })
       .from(labSession)
       .where(and(eq(labSession.status, "ready"), lt(labSession.expiresAt, now)));
-    for (const { id } of expired) await this.end(id, "expired", "Time ran out. The lab was graded and deleted.");
+    for (const { id, mode, startedAt } of expired) {
+      const message =
+        mode === "lab"
+          ? "Time ran out. The lab was graded and deleted."
+          : startedAt
+            ? "Time is up. The exam was graded and the clusters deleted."
+            : "The exam was not started in time, so the clusters were deleted. It does not count against your attempts.";
+      await this.end(id, "expired", message);
+    }
 
     const bootCutoff = new Date(now.getTime() - this.opts.bootTimeoutSeconds * 1000);
     const stuck = await this.db

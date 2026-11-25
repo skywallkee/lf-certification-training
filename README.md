@@ -94,7 +94,7 @@ the tools image first: `docker compose build lab-tools`. Check that every lab bo
 solved and passes with its reference solution:
 
 ```sh
-pnpm --filter @lfct/lab-controller selftest            # all labs, or name lab ids
+pnpm --filter @lfct/lab-controller selftest            # all labs and mock exams, or name ids
 ```
 
 Sample learners all use the password `sample-password-123`:
@@ -129,5 +129,5 @@ hand: `pnpm mcp:curriculum`.
 | 1 | Jan 2027 | Study MVP: web app, sign-in, path map, curriculum browser, lessons, question bank (built, with sample content) |
 | 2 | Feb 2027 | Tier 1 labs, lab player, grading, hints, allowance, sweeper (built, running locally on Docker with sample labs; cloud hosting later) |
 | 3 | Mar-Apr 2027 | VM labs (kubeadm clusters, Linux VMs) |
-| 4 | May-Jun 2027 | Project labs and mock exams |
+| 4 | May-Jun 2027 | Project labs and mock exams (practical mock exam built early, running locally on Docker with two sample CKA mocks) |
 | 5 | later | Waitlist, spend dashboard, running fully on free credits |

@@ -200,3 +200,37 @@ describe("docs viewer links", () => {
     expect(parseDocsHosts(" Helm.sh , bad host ")).toEqual(["helm.sh"]);
   });
 });
+
+describe("mock exams", async () => {
+  const { domainScores, mockStartBlock, taskScores } = await import("../src/mock.ts");
+  const now = new Date("2026-11-25T12:00:00Z");
+  const base = { used: 0, allowed: 2, activeSessionId: null, activeSessions: 0, maxActiveSessions: 3, controllerUp: true, now };
+
+  it("allows a start inside the monthly attempts and refuses past them", () => {
+    expect(mockStartBlock(base)).toBeNull();
+    expect(mockStartBlock({ ...base, used: 2 })).toMatchObject({ reason: "quota", used: 2, allowed: 2 });
+    expect(mockStartBlock({ ...base, activeSessionId: "s1", used: 9 })).toEqual({ reason: "active-session", sessionId: "s1" });
+    expect(mockStartBlock({ ...base, controllerUp: false })).toEqual({ reason: "controller-down" });
+    expect(mockStartBlock({ ...base, activeSessions: 3 })).toMatchObject({ reason: "capacity" });
+  });
+
+  it("scores tasks with partial credit and groups them by domain, weakest first", () => {
+    const mockTasks = [
+      { id: "a", weight: 40, competency: "cka/storage/x", checks: [{ id: "a1" }, { id: "a2" }] },
+      { id: "b", weight: 60, competency: "cka/troubleshooting/y", checks: [{ id: "b1" }, { id: "b2" }, { id: "b3" }] },
+    ];
+    const results = [
+      { taskId: "a", checkId: "a1", passed: true, message: "" },
+      { taskId: "a", checkId: "a2", passed: false, message: "" },
+      { taskId: "b", checkId: "b1", passed: true, message: "" },
+    ];
+    expect(taskScores(mockTasks, results)).toEqual([
+      { taskId: "a", weight: 40, earned: 20, passedChecks: 1, totalChecks: 2 },
+      { taskId: "b", weight: 60, earned: 20, passedChecks: 1, totalChecks: 3 },
+    ]);
+    expect(domainScores(mockTasks, results).map((d) => [d.domain, d.percent])).toEqual([
+      ["troubleshooting", 33],
+      ["storage", 50],
+    ]);
+  });
+});

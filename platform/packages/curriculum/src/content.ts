@@ -110,6 +110,10 @@ export const LabTaskSchema = z.strictObject({
   hints: z.array(z.string().trim().min(1)).max(3).default([]),
   /** The cluster this task is about (one of the lab's `clusters`). Required when the lab has more than one. */
   cluster: z.string().optional(),
+  /** Mock exams: the competency the task tests, for the score per domain on the results page. */
+  competency: CompetencyRefSchema.optional(),
+  /** Mock exams: the doc page that covers the task, linked from a failed task on the results page. */
+  doc: DocLinkSchema.optional(),
   checks: z.array(LabCheckSchema).min(1),
 });
 
@@ -145,6 +149,8 @@ export const LabSchema = z
     /** Reference solution, run in the workstation by the self-test, shown to the learner after the lab. */
     solution: z.string().trim().min(1),
     tasks: z.array(LabTaskSchema).min(1),
+    /** Mock exams only: the pass mark in percent (66 for CKA and CKAD, 67 for CKS). */
+    passPercent: z.int().min(1).max(100).optional(),
     mock: z.boolean().default(false),
   })
   .superRefine((lab, ctx) => {
@@ -190,6 +196,8 @@ export interface Question extends QuestionInput {
 }
 
 export interface Lab extends LabInput {
+  /** "lab" for files under content/labs, "mock" for practical mock exams under content/mocks. */
+  kind: "lab" | "mock";
   cert: string;
   file: string;
   hash: string;
@@ -307,8 +315,14 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
     }
   }
 
+  // Labs and practical mock exams share one format and one table: a mock exam is a long lab with a pass mark,
+  // tasks tagged with a competency each, and no hints (see content/README.md).
   const labIds = new Set<string>();
-  for (const full of await walk(path.join(curriculum.contentDir, "labs"), /\.ya?ml$/)) {
+  const labFiles = [
+    ...(await walk(path.join(curriculum.contentDir, "labs"), /\.ya?ml$/)).map((full) => ({ full, kind: "lab" as const })),
+    ...(await walk(path.join(curriculum.contentDir, "mocks"), /\.ya?ml$/)).map((full) => ({ full, kind: "mock" as const })),
+  ];
+  for (const { full, kind } of labFiles) {
     const file = rel(full);
     let raw: unknown;
     try {
@@ -328,10 +342,28 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
     checkRefs(file, "competencies", lab.competencies);
     if (lab.mock && !file.includes("/sample/")) problems.push(`${file}: mock labs belong under a sample/ folder`);
     if (!lab.mock && file.includes("/sample/")) problems.push(`${file}: files under sample/ must set mock: true`);
+    if (kind === "mock") problems.push(...mockProblems(lab).map((p) => `${file}: ${p}`));
+    else if (lab.passPercent !== undefined) problems.push(`${file}: passPercent: only mock exams (content/mocks) have a pass mark`);
+    lab.tasks.forEach((t, i) => t.competency && checkRefs(file, `tasks.${i}.competency`, [t.competency]));
     if (!includeSample && lab.mock) continue;
-    labs.push({ ...lab, cert: certOf(lab.competencies[0]!), file, hash: hashOf(lab) });
+    labs.push({ ...lab, kind, cert: certOf(lab.competencies[0]!), file, hash: hashOf(lab) });
   }
 
   if (problems.length > 0) throw new ContentError(problems);
   return { lessons, questions, labs };
+}
+
+/** Extra rules for practical mock exams, on top of the lab format. Exported for tests. */
+export function mockProblems(lab: LabInput): string[] {
+  const problems: string[] = [];
+  if (lab.passPercent === undefined) problems.push("passPercent: required for a mock exam");
+  if (lab.minutes < 30) problems.push("minutes: a mock exam lasts at least 30 minutes");
+  if (lab.tasks.length < 4) problems.push("tasks: a mock exam has at least 4 tasks");
+  const cert = (lab.competencies[0] ?? "").split("/")[0];
+  lab.tasks.forEach((t, i) => {
+    if (t.hints.length > 0) problems.push(`tasks.${i}.hints: mock exams have no hints, as in the real exam`);
+    if (!t.competency) problems.push(`tasks.${i}.competency: required in a mock exam (it decides the score per domain)`);
+    else if (t.competency.split("/")[0] !== cert) problems.push(`tasks.${i}.competency: must belong to the mock's cert (${cert})`);
+  });
+  return problems;
 }

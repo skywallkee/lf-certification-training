@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { isActive } from "@lfct/labs";
@@ -20,6 +20,7 @@ export default async function LabResultPage({ params }: { params: Promise<{ id: 
   const user = await requireUser(`/labs/history/${id}`);
   const session = await getSession(id, user.id);
   if (!session) notFound();
+  if (session.mode !== "lab") redirect(`/mocks/results/${id}`);
   const [lab, final, hintUses] = await Promise.all([getLab(session.labId), getLastCheck(id, "final"), getHintUses(id)]);
   const active = isActive(session.status);
   const results = final?.results ?? [];

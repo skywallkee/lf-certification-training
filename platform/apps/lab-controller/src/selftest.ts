@@ -1,5 +1,5 @@
 /**
- * Lab self-test: for every lab under content/labs (or the ids given as arguments), boot a real session with the
+ * Lab self-test: for every lab under content/labs and mock exam under content/mocks (or the ids given as arguments), boot a real session with the
  * local Docker provider, grade it before anything is done (some checks must fail, so they are not vacuous),
  * apply the reference solution as the learner, grade again (every check must pass), and delete the session.
  *
@@ -46,6 +46,8 @@ for (const l of labs) {
     solution: l.solution,
     tasks: l.tasks.map((t) => ({ ...t, cluster: t.cluster ?? l.clusters[0]! })),
     competencyRefs: l.competencies,
+    kind: l.kind,
+    passPercent: l.passPercent ?? null,
     mock: l.mock,
     file: l.file,
     contentHash: l.hash,

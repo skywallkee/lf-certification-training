@@ -9,7 +9,7 @@ import type { TerminalRelay } from "./relay.ts";
  *
  *   GET  /health                    liveness and provider name (no auth)
  *   POST /sessions/:id/provision    start booting a `requested` session (202)
- *   POST /sessions/:id/check        grade now, returns { results, score }
+ *   POST /sessions/:id/check        grade now, returns { results, score }; ?task=<id> grades one task (mock practice)
  *   POST /sessions/:id/finish       final grading, delete resources, returns { score }
  *   POST /sessions/:id/kill         delete resources without grading (admin)
  *
@@ -46,7 +46,7 @@ export function createServer(deps: {
         case "provision":
           return (await deps.sessions.startProvisioning(id)) ? send(202, { ok: true }) : send(409, { error: "session is not waiting to start" });
         case "check":
-          return send(200, await deps.sessions.check(id));
+          return send(200, await deps.sessions.check(id, url.searchParams.get("task") ?? undefined));
         case "finish":
           return send(200, await deps.sessions.end(id, "finished", "Finished by the learner."));
         case "kill":

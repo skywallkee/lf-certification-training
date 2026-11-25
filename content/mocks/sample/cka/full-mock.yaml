@@ -1,0 +1,480 @@
+# Sample practical mock exam (mock content for building and testing the app, not study material).
+# A mock exam uses the lab format plus a pass mark, a competency per task (for the score per domain) and no
+# hints. See content/README.md.
+id: sample-cka-mock-full
+mock: true
+title: "Sample CKA mock exam (full, 2 hours)"
+summary: "Sixteen mock tasks across three clusters in two hours, graded only at the end, with partial credit per check. Exercises the exam player, not the real exam's questions."
+tier: 1
+minutes: 120
+passPercent: 66
+clusters: [c1, c2, c3]
+competencies:
+  - cka/cluster-architecture-installation-configuration/manage-role-based-access-control
+  - cka/workloads-scheduling/application-deployments-perform-rolling-update
+  - cka/servicing-networking/define-enforce-network-policies
+  - cka/storage/implement-storage-classes-dynamic-volume
+  - cka/troubleshooting/troubleshoot-clusters-nodes
+docs:
+  - title: "Kubernetes docs: kubectl Quick Reference"
+    url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+  - title: "Kubernetes docs: Configure Access to Multiple Clusters"
+    url: https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/
+images:
+  - nginx:1.28-alpine
+  - nginx:1.29-alpine
+setup: |
+  # c1: an app namespace with a Deployment to update, and a cordoned node.
+  kubectl --context c1 create namespace shop
+  kubectl --context c1 -n shop create deployment web --image=nginx:1.28-alpine --replicas=2
+  kubectl --context c1 -n shop create deployment api --image=nginx:1.29-alpine
+  kubectl --context c1 -n shop create serviceaccount auditor
+  kubectl --context c1 cordon $(kubectl --context c1 get nodes -o name)
+  # c2: payments and catalogue apps, and a Service whose selector matches nothing.
+  kubectl --context c2 create namespace payments
+  kubectl --context c2 create namespace store
+  kubectl --context c2 -n store create deployment catalog --image=nginx:1.29-alpine --port=8080
+  kubectl --context c2 -n store create deployment orders --image=nginx:1.29-alpine
+  kubectl --context c2 -n store create service clusterip orders --tcp=80:80
+  kubectl --context c2 -n store set selector service orders app=order
+  # c3: a Deployment with a broken image, and namespaces for storage and batch work.
+  kubectl --context c3 create namespace ops
+  kubectl --context c3 create namespace db
+  kubectl --context c3 -n ops create deployment reports --image=nginx:1.29-alpnie
+solution: |
+  kubectl config use-context c1
+  kubectl -n shop create role log-reader --verb=get,list --resource=pods,pods/log
+  kubectl -n shop create rolebinding auditor-log-reader --role=log-reader --serviceaccount=shop:auditor
+  kubectl -n shop create secret generic db-creds --from-literal=password=s3cret
+  kubectl -n shop set env deployment/api --from=secret/db-creds
+  kubectl -n shop set image deployment/web nginx=nginx:1.29-alpine
+  kubectl -n shop patch deployment web -p '{"spec":{"strategy":{"rollingUpdate":{"maxUnavailable":0}}}}'
+  kubectl -n shop autoscale deployment web --min=2 --max=5 --cpu=70%
+  kubectl uncordon $(kubectl get nodes -o name)
+  kubectl config use-context c2
+  kubectl -n payments apply -f - <<'YAML'
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata: { name: default-deny-ingress }
+  spec:
+    podSelector: {}
+    policyTypes: [Ingress]
+  ---
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata: { name: allow-frontend }
+  spec:
+    podSelector: { matchLabels: { app: api } }
+    policyTypes: [Ingress]
+    ingress:
+      - from: [{ podSelector: { matchLabels: { app: frontend } } }]
+        ports: [{ protocol: TCP, port: 8080 }]
+  YAML
+  kubectl -n store expose deployment catalog --name=catalog --type=NodePort --port=80 --target-port=8080 \
+    --overrides='{"spec":{"ports":[{"port":80,"targetPort":8080,"nodePort":30080,"protocol":"TCP"}]}}'
+  kubectl -n store set selector service orders app=orders
+  kubectl -n store create ingress shop --rule="shop.example.com/*=catalog:80"
+  kubectl config use-context c3
+  kubectl apply -f - <<'YAML'
+  apiVersion: storage.k8s.io/v1
+  kind: StorageClass
+  metadata: { name: fast }
+  provisioner: rancher.io/local-path
+  reclaimPolicy: Retain
+  volumeBindingMode: WaitForFirstConsumer
+  ---
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata: { name: data, namespace: db }
+  spec:
+    accessModes: [ReadWriteOnce]
+    storageClassName: local-path
+    resources: { requests: { storage: 1Gi } }
+  ---
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata: { name: pv-logs }
+  spec:
+    capacity: { storage: 2Gi }
+    accessModes: [ReadWriteMany]
+    persistentVolumeReclaimPolicy: Retain
+    hostPath: { path: /srv/logs }
+  YAML
+  kubectl -n ops set image deployment/reports nginx=nginx:1.29-alpine
+  kubectl label node --all tier=gold
+  kubectl -n ops create deployment batch --image=nginx:1.29-alpine
+  kubectl -n ops patch deployment batch -p '{"spec":{"template":{"spec":{"nodeSelector":{"tier":"gold"}}}}}'
+  kubectl -n ops create quota ops-quota --hard=pods=10
+tasks:
+  - id: rbac
+    title: Let the auditor read logs
+    cluster: c1
+    weight: 7
+    competency: cka/cluster-architecture-installation-configuration/manage-role-based-access-control
+    doc: { title: "Using RBAC Authorization", url: "https://kubernetes.io/docs/reference/access-authn-authz/rbac/" }
+    body: |
+      In the namespace `shop`, create a Role `log-reader` that allows `get` and `list` on `pods` and `pods/log`.
+      Bind it to the service account `auditor` with a RoleBinding named `auditor-log-reader`.
+    checks:
+      - id: rbac-role
+        description: Role log-reader allows get and list on pods and pods/log
+        failMessage: Role log-reader in shop is missing, or does not allow get and list on pods and pods/log.
+        script: |
+          r=$(kubectl -n shop get role log-reader -o jsonpath='{.rules[*].resources}')
+          v=$(kubectl -n shop get role log-reader -o jsonpath='{.rules[*].verbs}')
+          echo "$r" | grep -q '"pods"' && echo "$r" | grep -q '"pods/log"' && echo "$v" | grep -q '"get"' && echo "$v" | grep -q '"list"'
+      - id: rbac-binding
+        description: The auditor service account can list pod logs in shop
+        failMessage: The service account shop/auditor still cannot list pods/log in shop.
+        script: kubectl auth can-i list pods/log -n shop --as=system:serviceaccount:shop:auditor
+  - id: secret-env
+    title: Pass a password from a Secret
+    cluster: c1
+    weight: 6
+    competency: cka/workloads-scheduling/configmaps-secrets-configure-applications
+    doc: { title: "Distribute Credentials Securely Using Secrets", url: "https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/" }
+    body: |
+      Create a Secret `db-creds` in `shop` with the key `password` set to `s3cret`. Make the Deployment `api`
+      read it as an environment variable named `PASSWORD`.
+    checks:
+      - id: secret-exists
+        description: Secret db-creds holds password=s3cret
+        failMessage: Secret db-creds in shop is missing, or its password key is not s3cret.
+        script: test "$(kubectl -n shop get secret db-creds -o jsonpath='{.data.password}' | base64 -d)" = s3cret
+      - id: secret-env
+        description: Deployment api reads PASSWORD from db-creds
+        failMessage: The api container has no PASSWORD variable taken from the Secret db-creds.
+        script: |
+          kubectl -n shop get deployment api -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.valueFrom.secretKeyRef.name}{"\n"}{end}' | grep -qx 'PASSWORD=db-creds'
+  - id: rollout
+    title: Roll out a new image safely
+    cluster: c1
+    weight: 7
+    competency: cka/workloads-scheduling/application-deployments-perform-rolling-update
+    doc: { title: "Deployments: rolling update", url: "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-update-deployment" }
+    body: |
+      Update the Deployment `web` in `shop` to the image `nginx:1.29-alpine`. Change its rolling update
+      strategy so that no pod is unavailable during an update (`maxUnavailable: 0`).
+    checks:
+      - id: rollout-image
+        description: Deployment web runs nginx:1.29-alpine
+        failMessage: Deployment web in shop does not use nginx:1.29-alpine yet.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: { name: web, namespace: shop }
+          spec:
+            template:
+              spec:
+                (containers[0].image): nginx:1.29-alpine
+      - id: rollout-strategy
+        description: Deployment web allows no unavailable pods during updates
+        failMessage: The rolling update strategy of web still allows unavailable pods.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: { name: web, namespace: shop }
+          spec:
+            strategy:
+              rollingUpdate:
+                (to_string(maxUnavailable)): "0"
+  - id: autoscale
+    title: Autoscale the web tier
+    cluster: c1
+    weight: 6
+    competency: cka/workloads-scheduling/configure-workload-autoscaling
+    doc: { title: "Horizontal Pod Autoscaling", url: "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" }
+    body: |
+      Create a HorizontalPodAutoscaler for the Deployment `web` in `shop` that keeps between `2` and `5`
+      replicas, targeting `70%` average CPU utilisation. Name it `web`.
+    checks:
+      - id: hpa-range
+        description: HPA web scales web between 2 and 5 replicas
+        failMessage: HPA web in shop is missing, targets another workload, or has a different range.
+        assert:
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          metadata: { name: web, namespace: shop }
+          spec:
+            scaleTargetRef: { kind: Deployment, name: web }
+            minReplicas: 2
+            maxReplicas: 5
+      - id: hpa-cpu
+        description: HPA web targets 70% CPU
+        failMessage: HPA web does not target 70% average CPU utilisation.
+        assert:
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          metadata: { name: web, namespace: shop }
+          spec:
+            (metrics[?resource.name == 'cpu'] | [0].resource.target.averageUtilization): 70
+  - id: uncordon
+    title: Bring the node back
+    cluster: c1
+    weight: 6
+    competency: cka/troubleshooting/troubleshoot-clusters-nodes
+    doc: { title: "Safely Drain a Node", url: "https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/" }
+    body: |
+      New pods on `c1` stay Pending because the cluster's node does not accept them. Make the node schedulable
+      again.
+    checks:
+      - id: node-schedulable
+        description: Every node on c1 accepts new pods
+        failMessage: A node on c1 is still marked unschedulable.
+        script: test -z "$(kubectl get nodes -o jsonpath='{.items[*].spec.unschedulable}')"
+  - id: deny-all
+    title: Deny all ingress to payments
+    cluster: c2
+    weight: 7
+    competency: cka/servicing-networking/define-enforce-network-policies
+    doc: { title: "Network Policies: default deny", url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-deny-all-ingress-traffic" }
+    body: |
+      Create a NetworkPolicy `default-deny-ingress` in `payments` that selects every pod and allows no
+      ingress traffic.
+    checks:
+      - id: deny-policy
+        description: default-deny-ingress selects all pods and allows no ingress
+        failMessage: default-deny-ingress is missing, does not select every pod, or still has ingress rules.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata: { name: default-deny-ingress, namespace: payments }
+          spec:
+            podSelector:
+              (matchLabels == null && matchExpressions == null): true
+            policyTypes: [Ingress]
+            (ingress == null || length(ingress) == `0`): true
+  - id: allow-frontend
+    title: Let the frontend reach the API
+    cluster: c2
+    weight: 7
+    competency: cka/servicing-networking/define-enforce-network-policies
+    doc: { title: "Network Policies", url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/" }
+    body: |
+      Create a NetworkPolicy `allow-frontend` in `payments` that lets pods labelled `app=frontend` reach pods
+      labelled `app=api` on **TCP port 8080**.
+    checks:
+      - id: allow-target
+        description: allow-frontend protects the app=api pods
+        failMessage: allow-frontend is missing or does not select the app=api pods.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata: { name: allow-frontend, namespace: payments }
+          spec:
+            podSelector: { matchLabels: { app: api } }
+      - id: allow-source
+        description: allow-frontend admits app=frontend on TCP 8080
+        failMessage: allow-frontend admits a different source or port.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata: { name: allow-frontend, namespace: payments }
+          spec:
+            (ingress[0].from[0].podSelector.matchLabels.app): frontend
+            (ingress[0].ports[0].port): 8080
+  - id: nodeport
+    title: Expose the catalogue
+    cluster: c2
+    weight: 6
+    competency: cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types
+    doc: { title: "Service: type NodePort", url: "https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport" }
+    body: |
+      Expose the Deployment `catalog` in `store` with a Service `catalog` of type `NodePort`: port `80`,
+      target port `8080`, node port `30080`.
+    checks:
+      - id: nodeport-service
+        description: Service catalog is a NodePort on 30080, port 80 to 8080
+        failMessage: Service catalog in store is missing, not a NodePort, or uses different ports.
+        assert:
+          apiVersion: v1
+          kind: Service
+          metadata: { name: catalog, namespace: store }
+          spec:
+            type: NodePort
+            (ports[0].port): 80
+            (to_string(ports[0].targetPort)): "8080"
+            (ports[0].nodePort): 30080
+      - id: nodeport-selector
+        description: Service catalog selects the catalog pods
+        failMessage: Service catalog does not select the pods of the catalog Deployment (app=catalog).
+        assert:
+          apiVersion: v1
+          kind: Service
+          metadata: { name: catalog, namespace: store }
+          spec:
+            selector: { app: catalog }
+  - id: fix-service
+    title: Fix the orders Service
+    cluster: c2
+    weight: 7
+    competency: cka/troubleshooting/troubleshoot-services-networking
+    doc: { title: "Debug Services", url: "https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/" }
+    body: |
+      The Service `orders` in `store` has no endpoints. Fix the Service, not the Deployment, so that it sends
+      traffic to the pods of the Deployment `orders`.
+    checks:
+      - id: service-selector
+        description: Service orders selects app=orders
+        failMessage: Service orders still does not select the pods of the orders Deployment.
+        assert:
+          apiVersion: v1
+          kind: Service
+          metadata: { name: orders, namespace: store }
+          spec:
+            selector: { app: orders }
+  - id: ingress
+    title: Route a host name to the catalogue
+    cluster: c2
+    weight: 6
+    competency: cka/servicing-networking/ingress-controllers-ingress-resources
+    doc: { title: "Ingress", url: "https://kubernetes.io/docs/concepts/services-networking/ingress/" }
+    body: |
+      Create an Ingress `shop` in `store` that sends every path of the host `shop.example.com` to the Service
+      `catalog` on port `80`.
+    checks:
+      - id: ingress-rule
+        description: Ingress shop routes shop.example.com to catalog:80
+        failMessage: Ingress shop in store is missing, or routes another host, Service or port.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { name: shop, namespace: store }
+          spec:
+            (rules[0].host): shop.example.com
+            (rules[0].http.paths[0].backend.service.name): catalog
+            (rules[0].http.paths[0].backend.service.port.number): 80
+  - id: pvc
+    title: Claim storage for the database
+    cluster: c3
+    weight: 6
+    competency: cka/storage/manage-persistent-volumes-persistent-volume
+    doc: { title: "PersistentVolumeClaims", url: "https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims" }
+    body: |
+      In the namespace `db`, create a PersistentVolumeClaim `data` that requests `1Gi` with access mode
+      `ReadWriteOnce` from the StorageClass `local-path`.
+    checks:
+      - id: pvc-spec
+        description: PVC data asks local-path for 1Gi ReadWriteOnce
+        failMessage: PVC data in db is missing, or asks for another size, access mode or class.
+        assert:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata: { name: data, namespace: db }
+          spec:
+            accessModes: [ReadWriteOnce]
+            storageClassName: local-path
+            resources: { requests: { storage: 1Gi } }
+  - id: storageclass
+    title: Add a StorageClass
+    cluster: c3
+    weight: 6
+    competency: cka/storage/implement-storage-classes-dynamic-volume
+    doc: { title: "Storage Classes", url: "https://kubernetes.io/docs/concepts/storage/storage-classes/" }
+    body: |
+      Create a StorageClass `fast` with the provisioner `rancher.io/local-path`, reclaim policy `Retain` and
+      volume binding mode `WaitForFirstConsumer`.
+    checks:
+      - id: sc-provisioner
+        description: StorageClass fast uses rancher.io/local-path
+        failMessage: StorageClass fast is missing or uses another provisioner.
+        assert:
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata: { name: fast }
+          provisioner: rancher.io/local-path
+      - id: sc-policies
+        description: StorageClass fast retains volumes and waits for the first consumer
+        failMessage: StorageClass fast has another reclaim policy or binding mode.
+        assert:
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata: { name: fast }
+          reclaimPolicy: Retain
+          volumeBindingMode: WaitForFirstConsumer
+  - id: pv
+    title: Create a shared volume
+    cluster: c3
+    weight: 5
+    competency: cka/storage/configure-volume-types-access-modes
+    doc: { title: "Persistent Volumes", url: "https://kubernetes.io/docs/concepts/storage/persistent-volumes/" }
+    body: |
+      Create a PersistentVolume `pv-logs` of `2Gi` with access mode `ReadWriteMany`, reclaim policy `Retain`,
+      backed by the host path `/srv/logs`.
+    checks:
+      - id: pv-spec
+        description: PV pv-logs is 2Gi ReadWriteMany on /srv/logs, retained
+        failMessage: PV pv-logs is missing, or its size, access mode, reclaim policy or path differ.
+        assert:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: { name: pv-logs }
+          spec:
+            capacity: { storage: 2Gi }
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            hostPath: { path: /srv/logs }
+  - id: broken-image
+    title: Fix the reports Deployment
+    cluster: c3
+    weight: 7
+    competency: cka/troubleshooting/troubleshoot-cluster-components
+    doc: { title: "Debug Pods", url: "https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/" }
+    body: |
+      The pods of the Deployment `reports` in `ops` never start. Find out why from the pod events and fix the
+      Deployment so it runs `nginx:1.29-alpine`.
+    checks:
+      - id: reports-image
+        description: Deployment reports uses nginx:1.29-alpine
+        failMessage: Deployment reports in ops still uses a wrong image.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: { name: reports, namespace: ops }
+          spec:
+            template:
+              spec:
+                (containers[0].image): nginx:1.29-alpine
+  - id: node-selector
+    title: Pin batch work to gold nodes
+    cluster: c3
+    weight: 6
+    competency: cka/workloads-scheduling/configure-pod-admission-scheduling-limits
+    doc: { title: "Assigning Pods to Nodes", url: "https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/" }
+    body: |
+      Label the cluster's node with `tier=gold`. Then create a Deployment `batch` in `ops` with the image
+      `nginx:1.29-alpine` whose pods run only on nodes labelled `tier=gold`.
+    checks:
+      - id: node-label
+        description: The node has the label tier=gold
+        failMessage: No node on c3 has the label tier=gold.
+        assert:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            labels: { tier: gold }
+      - id: batch-selector
+        description: Deployment batch schedules only on tier=gold nodes
+        failMessage: Deployment batch in ops is missing, or its pods can run on nodes without tier=gold.
+        script: |
+          sel=$(kubectl -n ops get deployment batch -o jsonpath='{.spec.template.spec.nodeSelector.tier}')
+          aff=$(kubectl -n ops get deployment batch -o jsonpath='{.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[*].values[*]}')
+          [ "$sel" = gold ] || [ "$aff" = gold ]
+  - id: quota
+    title: Cap the pods in ops
+    cluster: c3
+    weight: 5
+    competency: cka/workloads-scheduling/configure-pod-admission-scheduling-limits
+    doc: { title: "Resource Quotas", url: "https://kubernetes.io/docs/concepts/policy/resource-quotas/" }
+    body: |
+      Create a ResourceQuota `ops-quota` in `ops` that allows at most `10` pods.
+    checks:
+      - id: quota-pods
+        description: ResourceQuota ops-quota allows 10 pods
+        failMessage: ResourceQuota ops-quota in ops is missing or allows a different number of pods.
+        assert:
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata: { name: ops-quota, namespace: ops }
+          spec:
+            hard: { pods: "10" }

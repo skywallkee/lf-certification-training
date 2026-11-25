@@ -74,13 +74,13 @@ describe.skipIf(!url)("content ingest", () => {
   it("loads the sample lessons and questions and records the run", async () => {
     const before = (await counts()).runs;
     const result = await migrateAndIngest(url!, curriculum, await loadContent(curriculum), { includeSample: true });
-    expect(result.content).toMatchObject({ lessons: 12, questions: 60, labs: 4 });
+    expect(result.content).toMatchObject({ lessons: 12, questions: 60, labs: 6 });
     expect(await counts()).toEqual({ lessons: 12, questions: 60, runs: before + 1 });
   });
 
   it("removes the sample set in one step", async () => {
     const db = drizzle(pool, { schema });
-    expect(await removeSampleContent(db)).toEqual({ lessons: 12, questions: 60, labs: 4 });
+    expect(await removeSampleContent(db)).toEqual({ lessons: 12, questions: 60, labs: 6 });
     expect(await counts()).toMatchObject({ lessons: 0, questions: 0 });
   });
 
@@ -88,6 +88,6 @@ describe.skipIf(!url)("content ingest", () => {
     const db = drizzle(pool, { schema });
     await ingestContent(db, await loadContent(curriculum));
     const result = await ingestContent(db, await loadContent(curriculum, { includeSample: false }));
-    expect(result).toEqual({ lessons: 0, questions: 0, labs: 0, removedLessons: 12, removedQuestions: 60, removedLabs: 4 });
+    expect(result).toEqual({ lessons: 0, questions: 0, labs: 0, removedLessons: 12, removedQuestions: 60, removedLabs: 6 });
   });
 });

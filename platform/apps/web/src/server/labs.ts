@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, desc, eq, gte, inArray, or, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import { ACTIVE_STATUSES, minutesUsed, monthStart, nextMonthStart, startBlock, type StartBlock } from "@lfct/labs";
 import { lab as labTable } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
@@ -9,9 +9,9 @@ import { env } from "@/env";
 export type LabRow = typeof labTable.$inferSelect;
 export type LabSessionRow = typeof labSession.$inferSelect;
 
-/** Every lab, by cert then title. Tasks include checks: keep them on the server. */
+/** Every lab (not the mock exams), by cert then title. Tasks include checks: keep them on the server. */
 export async function listLabs(): Promise<LabRow[]> {
-  const rows = await getDb().select().from(labTable);
+  const rows = await getDb().select().from(labTable).where(eq(labTable.kind, "lab"));
   return rows.sort((a, b) => a.certCode.localeCompare(b.certCode) || a.title.localeCompare(b.title));
 }
 
@@ -24,7 +24,8 @@ export async function getLab(id: string): Promise<LabRow | null> {
 export async function labsForCompetency(ref: string): Promise<Pick<LabRow, "id" | "title" | "minutes" | "tier" | "mock">[]> {
   const rows = await getDb()
     .select({ id: labTable.id, title: labTable.title, minutes: labTable.minutes, tier: labTable.tier, mock: labTable.mock, refs: labTable.competencyRefs })
-    .from(labTable);
+    .from(labTable)
+    .where(eq(labTable.kind, "lab"));
   return rows.filter((r) => r.refs.includes(ref));
 }
 
@@ -43,7 +44,11 @@ export async function getUsage(userId: string, now = new Date()): Promise<LabUsa
     .select()
     .from(labSession)
     .where(and(eq(labSession.userId, userId), or(gte(labSession.createdAt, monthStart(now)), isNull(labSession.endedAt))));
-  const used = minutesUsed(rows, now);
+  // Mock exams have their own allowance in attempts (server/mocks.ts) and do not use lab minutes.
+  const used = minutesUsed(
+    rows.filter((r) => r.mode === "lab"),
+    now,
+  );
   const monthly = env.labs.monthlyMinutes;
   const active = rows.find((r) => (ACTIVE_STATUSES as readonly string[]).includes(r.status)) ?? null;
   return { minutesUsed: used, monthlyMinutes: monthly, minutesLeft: Math.max(0, monthly - used), resetsOn: nextMonthStart(now), active };
@@ -100,8 +105,13 @@ export async function getHintUses(sessionId: string) {
   return getDb().select().from(labHintUse).where(eq(labHintUse.sessionId, sessionId));
 }
 
-export async function getHistory(userId: string) {
-  return getDb().select().from(labSession).where(eq(labSession.userId, userId)).orderBy(desc(labSession.createdAt)).limit(100);
+export async function getHistory(userId: string, mode: "lab" | "mock" = "lab") {
+  return getDb()
+    .select()
+    .from(labSession)
+    .where(and(eq(labSession.userId, userId), mode === "lab" ? eq(labSession.mode, "lab") : ne(labSession.mode, "lab")))
+    .orderBy(desc(labSession.createdAt))
+    .limit(100);
 }
 
 /** Calls the lab controller's internal API. Throws ControllerError with the controller's message. */

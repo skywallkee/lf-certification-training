@@ -74,4 +74,13 @@ export const env = {
       return Boolean(process.env.LAB_CONTROLLER_SECRET && process.env.LAB_TOKEN_SECRET);
     },
   },
+  /** Practical mock exams: attempts per learner, per cert, per calendar month, per mode. */
+  mocks: {
+    get examsPerMonth() {
+      return Number(process.env.MOCK_EXAMS_PER_MONTH ?? 2);
+    },
+    get practicePerMonth() {
+      return Number(process.env.MOCK_PRACTICE_PER_MONTH ?? 2);
+    },
+  },
 };

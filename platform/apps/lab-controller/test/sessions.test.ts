@@ -65,10 +65,10 @@ describe.skipIf(!base)("session lifecycle with the fake provider", () => {
     throw new Error(`session never reached ${status}`);
   }
 
-  async function newSession(labId = "sample-cka-rbac-pod-reader") {
+  async function newSession(labId = "sample-cka-rbac-pod-reader", mode: "lab" | "exam" | "practice" = "lab", minutes = 20) {
     const [row] = await db
       .insert(schema.labSession)
-      .values({ userId: "u1", labId, certCode: "CKA", provider: "fake", minutes: 20 })
+      .values({ userId: "u1", labId, certCode: "CKA", provider: "fake", minutes, mode })
       .returning();
     return row!;
   }
@@ -124,5 +124,51 @@ describe.skipIf(!base)("session lifecycle with the fake provider", () => {
     expect(await sessions.recoverAfterRestart()).toBe(1);
     const [row] = await db.select().from(schema.labSession).where(eq(schema.labSession.id, s.id));
     expect(row?.status).toBe("failed");
+  });
+
+  it("mock exam mode: waits for Start, refuses checks, and grades only at the end", async () => {
+    const s = await newSession("sample-cka-mock-half", "exam", 60);
+    await sessions.startProvisioning(s.id);
+    const ready = await waitForStatus(s.id, "ready");
+    // Ready but not started: the expiry is the start window, not the exam length.
+    expect(ready.expiresAt!.getTime() - ready.readyAt!.getTime()).toBe(15 * 60_000);
+    await db
+      .update(schema.labSession)
+      .set({ startedAt: new Date(), expiresAt: new Date(Date.now() + 60 * 60_000) })
+      .where(eq(schema.labSession.id, s.id));
+    await expect(sessions.check(s.id)).rejects.toMatchObject({ status: 403 });
+    let closed = 0;
+    sessions.onEnded = () => closed++;
+    expect(await sessions.end(s.id, "finished")).toEqual({ score: 0 });
+    expect(closed).toBeGreaterThan(0);
+    const runs = await db.select().from(schema.labCheckRun).where(eq(schema.labCheckRun.sessionId, s.id));
+    expect(runs.map((r) => r.kind)).toEqual(["final"]);
+    expect(runs[0]!.results.length).toBe(11);
+    sessions.onEnded = () => undefined;
+  });
+
+  it("mock practice mode checks one task at a time", async () => {
+    const s = await newSession("sample-cka-mock-half", "practice", 60);
+    await sessions.startProvisioning(s.id);
+    await waitForStatus(s.id, "ready");
+    await expect(sessions.check(s.id, "rbac")).rejects.toMatchObject({ status: 409 });
+    await db.update(schema.labSession).set({ startedAt: new Date() }).where(eq(schema.labSession.id, s.id));
+    await expect(sessions.check(s.id)).rejects.toMatchObject({ status: 400 });
+    const out = await sessions.check(s.id, "rbac");
+    expect(out.results.map((r) => r.taskId)).toEqual(["rbac", "rbac"]);
+    await sessions.end(s.id, "finished");
+  });
+
+  it("removes a mock attempt that was never started without grading it", async () => {
+    const s = await newSession("sample-cka-mock-half", "exam", 60);
+    await sessions.startProvisioning(s.id);
+    await waitForStatus(s.id, "ready");
+    await db.update(schema.labSession).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(schema.labSession.id, s.id));
+    await sessions.sweep();
+    const [row] = await db.select().from(schema.labSession).where(eq(schema.labSession.id, s.id));
+    expect(row).toMatchObject({ status: "expired", score: null, startedAt: null });
+    expect(row!.statusMessage).toMatch(/not started/);
+    const runs = await db.select().from(schema.labCheckRun).where(eq(schema.labCheckRun.sessionId, s.id));
+    expect(runs).toEqual([]);
   });
 });

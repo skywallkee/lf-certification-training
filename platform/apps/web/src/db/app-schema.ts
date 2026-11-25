@@ -219,10 +219,23 @@ export const labSession = pgTable(
     score: integer("score"),
     /** Estimated cloud cost in US cents; 0 for local Docker. */
     costCents: integer("cost_cents").notNull().default(0),
+    /**
+     * "lab" for a lab; "exam" or "practice" for a practical mock exam attempt. Exam mode gives no feedback until
+     * the end; practice mode allows a check per task.
+     */
+    mode: text("mode").$type<"lab" | "exam" | "practice">().notNull().default("lab"),
+    /**
+     * Mock exams: when the learner pressed Start. The clusters are ready before that (the prepare screen); the
+     * exam clock (expiresAt) starts here. Null for labs, whose clock starts when the terminal is ready.
+     */
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    /** Mock exams: how often the learner left the exam window (page hidden). Shown in the results only. */
+    windowLeaves: integer("window_leaves").notNull().default(0),
   },
   (t) => [
     index("lab_session_user_idx").on(t.userId, t.createdAt),
     index("lab_session_status_idx").on(t.status),
+    index("lab_session_mode_idx").on(t.userId, t.mode, t.certCode, t.startedAt),
     uniqueIndex("lab_session_one_active_idx")
       .on(t.userId)
       .where(sql`${t.status} in ('requested', 'booting', 'ready')`),

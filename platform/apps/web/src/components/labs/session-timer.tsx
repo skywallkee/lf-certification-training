@@ -8,7 +8,18 @@ import { cn } from "@/lib/utils";
  * Time left in the lab, from the server's expiry (corrected for clock skew). Warns at 10 minutes and announces
  * 10 and 2 minutes left through a polite live region.
  */
-export function SessionTimer({ expiresAt, skewMs }: { expiresAt: string | null; skewMs: number }) {
+export function SessionTimer({
+  expiresAt,
+  skewMs,
+  what = "lab",
+  waitingLabel = "Timer starts when your terminal is ready",
+}: {
+  expiresAt: string | null;
+  skewMs: number;
+  /** "lab" or "exam", for the announcements. */
+  what?: string;
+  waitingLabel?: string;
+}) {
   const [now, setNow] = useState(() => Date.now());
   const [announcement, setAnnouncement] = useState("");
   const announced = useRef(new Set<number>());
@@ -26,16 +37,17 @@ export function SessionTimer({ expiresAt, skewMs }: { expiresAt: string | null; 
     for (const mark of [10, 2]) {
       if (minutes < mark && !announced.current.has(mark)) {
         announced.current.add(mark);
-        if (minutes >= mark - 1) setAnnouncement(`${mark} minutes left in this lab.`);
+        if (minutes >= mark - 1) setAnnouncement(`${mark} minutes left in this ${what}.`);
       }
     }
-  }, [minutes]);
+  }, [minutes, what]);
 
   if (left === null) {
-    return <span className="text-sm text-muted-foreground">Timer starts when your terminal is ready</span>;
+    return <span className="text-sm text-muted-foreground">{waitingLabel}</span>;
   }
   const state = left === 0 ? "expired" : left < 2 * 60_000 ? "critical" : left < 10 * 60_000 ? "warning" : "normal";
-  const mm = String(Math.floor(left / 60_000)).padStart(2, "0");
+  const hours = Math.floor(left / 3_600_000);
+  const mm = String(Math.floor((left % 3_600_000) / 60_000)).padStart(2, "0");
   const ss = String(Math.floor((left % 60_000) / 1000)).padStart(2, "0");
   return (
     <>
@@ -49,7 +61,7 @@ export function SessionTimer({ expiresAt, skewMs }: { expiresAt: string | null; 
       >
         <Clock aria-hidden="true" className="size-4" />
         <span className="sr-only">Time left: </span>
-        {state === "expired" ? "Time is up" : `${mm}:${ss}`}
+        {state === "expired" ? "Time is up" : hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`}
       </span>
       <span className="sr-only" aria-live="polite">
         {announcement}

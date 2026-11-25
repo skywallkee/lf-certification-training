@@ -25,10 +25,11 @@ export function checkCommand(check: Check, cluster?: string): { script: string; 
   return { script: `${env}set -eo pipefail\n${check.script ?? "false"}` };
 }
 
-/** Runs every check of a lab, in order, and returns one result per check. */
-export async function runChecks(provider: LabProvider, sessionId: string, resources: Resources, lab: LabRow): Promise<CheckResult[]> {
+/** Runs every check of a lab (or of one task), in order, and returns one result per check. */
+export async function runChecks(provider: LabProvider, sessionId: string, resources: Resources, lab: LabRow, onlyTask?: string): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   for (const task of lab.tasks) {
+    if (onlyTask !== undefined && task.id !== onlyTask) continue;
     for (const check of task.checks) {
       const { script, stdin } = checkCommand(check, task.cluster ?? lab.clusters[0]);
       const where = check.assert ? "grader" : check.runIn;

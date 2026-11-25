@@ -58,6 +58,11 @@ export class TerminalRelay {
       ws.close(CLOSE_CODES.notReady, "lab not running");
       return;
     }
+    // A mock exam's terminal opens only once the learner has pressed Start.
+    if (found.session.mode !== "lab" && !found.session.startedAt) {
+      ws.close(CLOSE_CODES.notReady, "exam not started");
+      return;
+    }
     const cols = clamp(Number(url.searchParams.get("cols") ?? 100), 20, 500);
     const rows = clamp(Number(url.searchParams.get("rows") ?? 30), 5, 200);
     let terminal;
