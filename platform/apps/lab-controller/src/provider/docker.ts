@@ -206,29 +206,40 @@ export class DockerProvider implements LabProvider {
   }
 
   /**
-   * Streams `docker save` of the images into k3s's containerd. Only the host's platform is asked for, which
-   * matters on Docker's containerd image store where `save` would otherwise reference every platform. Some
-   * Docker versions refuse that platform filter for images they hold (for example the classic store), so a
-   * refusal is retried without it.
+   * Streams `docker save` of each image into k3s's containerd, so boots are fast and work offline. Preloading
+   * is an optimisation: an image Docker cannot export in a form containerd accepts is skipped with a warning,
+   * and k3s pulls it from its registry instead.
+   *
+   * Docker's containerd image store references every platform unless asked for one, so the host's platform
+   * is asked for first; some Docker versions refuse that filter, so a failure is retried without it.
    */
   private async importImages(clusterId: string, images: string[]): Promise<void> {
     const arch = process.arch === "arm64" ? "arm64" : "amd64";
-    const save = (options: Record<string, unknown>) =>
-      new Promise<NodeJS.ReadableStream>((resolve, reject) => {
-        this.docker.modem.dial(
-          { path: "/images/get?", options, method: "GET", isStream: true, statusCodes: { 200: true, 404: "image not found", 500: "server error" } },
-          (err: Error | null, stream: unknown) => (err ? reject(err) : resolve(stream as NodeJS.ReadableStream)),
-        );
-      });
-    let tar: NodeJS.ReadableStream;
-    try {
-      tar = await save({ names: images, platform: JSON.stringify({ os: "linux", architecture: arch }) });
-    } catch (err) {
-      if (!/platform/i.test((err as Error).message)) throw err;
-      tar = await save({ names: images });
+    const platform = JSON.stringify({ os: "linux", architecture: arch });
+    for (const image of images) {
+      const failures: string[] = [];
+      for (const options of [{ names: [image], platform }, { names: [image] }]) {
+        try {
+          await this.importOne(clusterId, options);
+          failures.length = 0;
+          break;
+        } catch (err) {
+          failures.push((err as Error).message);
+        }
+      }
+      if (failures.length > 0) console.warn(`[labs] could not preload ${image}; k3s will pull it instead (${failures.join("; ")})`);
     }
+  }
+
+  private async importOne(clusterId: string, options: Record<string, unknown>): Promise<void> {
+    const tar = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+      this.docker.modem.dial(
+        { path: "/images/get?", options, method: "GET", isStream: true, statusCodes: { 200: true, 404: "image not found", 500: "server error" } },
+        (err: Error | null, stream: unknown) => (err ? reject(err) : resolve(stream as NodeJS.ReadableStream)),
+      );
+    });
     const result = await this.execRaw(clusterId, ["ctr", "-n", "k8s.io", "images", "import", "-"], { stdinStream: tar, timeoutMs: 600_000 });
-    if (result.exitCode !== 0) throw new Error(`loading images into the cluster failed: ${result.output.slice(-500)}`);
+    if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-300));
   }
 
   async exec(_sessionId: string, resources: Resources, where: "grader" | "workstation", script: string, opts: ExecOptions = {}): Promise<ExecResult> {
