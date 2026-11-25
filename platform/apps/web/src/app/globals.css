@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens from the features and UX spec. Light and dark sets, OKLCH. Contrast ratios against the
+ * paired background are in the spec; status is never shown by colour alone.
+ */
+:root {
+  --background: oklch(100% 0 0);
+  --foreground: oklch(20.8% 0.04 265.8);
+  --surface: oklch(98.4% 0.003 247.9);
+  --card: oklch(100% 0 0);
+  --muted: oklch(96.8% 0.007 247.9);
+  --muted-foreground: oklch(44.6% 0.037 257.3);
+  --primary: oklch(48.8% 0.217 264.4);
+  --primary-hover: oklch(42.4% 0.181 265.6);
+  --primary-foreground: oklch(100% 0 0);
+  --primary-soft: oklch(97% 0.014 254.6);
+  --success: oklch(52.7% 0.137 150.1);
+  --success-soft: oklch(98.2% 0.018 155.8);
+  --warning: oklch(55.5% 0.146 49);
+  --warning-soft: oklch(98.7% 0.021 95.3);
+  --destructive: oklch(50.5% 0.19 27.5);
+  --destructive-soft: oklch(97.1% 0.013 17.4);
+  --border: oklch(92.9% 0.013 255.5);
+  --input: oklch(55.4% 0.041 257.4);
+  --ring: oklch(48.8% 0.217 264.4);
+  --terminal: oklch(17.6% 0.014 258.4);
+  --terminal-foreground: oklch(87.1% 0.005 286.3);
+  --radius: 0.5rem;
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(18% 0.032 266.6);
+  --foreground: oklch(92.9% 0.013 255.5);
+  --surface: oklch(18% 0.032 266.6);
+  --card: oklch(22% 0.042 264.8);
+  --muted: oklch(27.9% 0.037 260);
+  --muted-foreground: oklch(71.1% 0.035 256.8);
+  --primary: oklch(71.4% 0.143 254.6);
+  --primary-hover: oklch(78% 0.12 254.6);
+  --primary-foreground: oklch(18% 0.032 266.6);
+  --primary-soft: oklch(27.9% 0.06 262);
+  --success: oklch(80% 0.182 151.7);
+  --success-soft: oklch(26% 0.05 155);
+  --warning: oklch(83.7% 0.164 84.4);
+  --warning-soft: oklch(27% 0.05 70);
+  --destructive: oklch(71.1% 0.166 22.2);
+  --destructive-soft: oklch(26% 0.06 22);
+  --border: oklch(100% 0 0 / 10%);
+  --input: oklch(100% 0 0 / 25%);
+  --ring: oklch(71.4% 0.143 254.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-terminal: var(--terminal);
+  --color-terminal-foreground: var(--terminal-foreground);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-surface);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  h1, h2, h3, h4 {
+    line-height: 1.25;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+  a {
+    color: var(--color-primary);
+    /* Preflight resets links to no underline; links inside text need one (WCAG 1.4.1). */
+    text-decoration-line: underline;
+    text-underline-offset: 3px;
+  }
+  a:hover {
+    color: var(--color-primary-hover);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Lesson body typography: 72 characters per line at most. */
+.prose-lesson {
+  max-width: 72ch;
+  font-size: 1rem;
+}
+.prose-lesson h2 { font-size: 1.25rem; font-weight: 600; margin: 2rem 0 0.75rem; }
+.prose-lesson h3 { font-size: 1.125rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+.prose-lesson p { margin: 0 0 1rem; }
+.prose-lesson ul, .prose-lesson ol { margin: 0 0 1rem; padding-left: 1.5rem; }
+.prose-lesson ul { list-style: disc; }
+.prose-lesson ol { list-style: decimal; }
+.prose-lesson li { margin: 0.25rem 0; }
+.prose-lesson table { width: 100%; border-collapse: collapse; margin: 0 0 1rem; font-size: 0.875rem; }
+.prose-lesson th, .prose-lesson td { border-top: 1px solid var(--color-border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+.prose-lesson th { font-weight: 600; color: var(--color-muted-foreground); }
+.prose-lesson :not(pre) > code,
+.md-inline :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-muted);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.prose-lesson pre,
+.md-inline pre {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: var(--color-terminal);
+  color: var(--color-terminal-foreground);
+  padding: 1rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin: 0 0 1rem;
+}
+.md-inline p { margin: 0 0 0.75rem; }
+.md-inline p:last-child { margin-bottom: 0; }

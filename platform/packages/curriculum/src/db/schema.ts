@@ -4,6 +4,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -13,9 +14,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Curriculum tables, loaded from content/curriculum by the ingest job. The web app reads them;
- * nothing but the ingest job writes them. Lessons, questions, labs and attempts arrive in later phases
- * and reference competency.ref.
+ * Curriculum and content tables, loaded from content/ by the ingest job. The web app reads them;
+ * nothing but the ingest job writes them. Lessons and questions reference competency.ref by value
+ * (not by foreign key) so a curriculum revision never cascades into content.
  */
 
 export const examStyle = pgEnum("exam_style", ["performance", "multiple-choice"]);
@@ -105,3 +106,75 @@ export const competency = pgTable(
   },
   (t) => [uniqueIndex("competency_domain_ref_idx").on(t.domainId, t.ref), index("competency_ref_idx").on(t.ref)],
 );
+
+export interface DocLinkJson {
+  title: string;
+  url: string;
+}
+
+export interface QuestionOptionJson {
+  id: string;
+  text: string;
+  correct: boolean;
+}
+
+/** MDX lessons, one row per file in content/lessons. Keyed by the lesson's stable id. */
+export const lesson = pgTable(
+  "lesson",
+  {
+    id: text("id").primaryKey(),
+    certCode: text("cert_code")
+      .notNull()
+      .references(() => certification.code),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    minutes: integer("minutes").notNull(),
+    body: text("body").notNull(),
+    docs: jsonb("docs").$type<DocLinkJson[]>().notNull(),
+    competencyRefs: text("competency_refs").array().notNull(),
+    mock: boolean("mock").notNull().default(false),
+    file: text("file").notNull(),
+    contentHash: text("content_hash").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lesson_cert_idx").on(t.certCode), index("lesson_refs_idx").using("gin", t.competencyRefs)],
+);
+
+export const questionKind = pgEnum("question_kind", ["single", "multiple"]);
+
+/** Multiple-choice questions, one row per item in content/questions. Keyed by the question's stable id. */
+export const question = pgTable(
+  "question",
+  {
+    id: text("id").primaryKey(),
+    certCode: text("cert_code")
+      .notNull()
+      .references(() => certification.code),
+    kind: questionKind("kind").notNull(),
+    stem: text("stem").notNull(),
+    options: jsonb("options").$type<QuestionOptionJson[]>().notNull(),
+    explanation: text("explanation").notNull(),
+    sourceTitle: text("source_title").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    competencyRefs: text("competency_refs").array().notNull(),
+    mock: boolean("mock").notNull().default(false),
+    knownIssue: text("known_issue"),
+    file: text("file").notNull(),
+    contentHash: text("content_hash").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("question_cert_idx").on(t.certCode), index("question_refs_idx").using("gin", t.competencyRefs)],
+);
+
+/** One row per ingest run, for the admin page. */
+export const ingestRun = pgTable("ingest_run", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  curriculumVersionsAdded: integer("curriculum_versions_added").notNull().default(0),
+  lessons: integer("lessons").notNull().default(0),
+  questions: integer("questions").notNull().default(0),
+  includeSample: boolean("include_sample").notNull(),
+  ok: boolean("ok").notNull().default(false),
+  message: text("message"),
+});

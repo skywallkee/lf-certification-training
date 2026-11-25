@@ -1,0 +1,59 @@
+---
+id: sample-kcna-core-objects
+title: "Pods, Deployments and Services in one picture"
+summary: "Sample lesson: how the three objects you meet first fit together, and which one to reach for."
+minutes: 8
+competencies:
+  - kcna/kubernetes-fundamentals/kubernetes-core-concepts
+docs:
+  - title: "Kubernetes docs: Pods"
+    url: https://kubernetes.io/docs/concepts/workloads/pods/
+  - title: "Kubernetes docs: Deployments"
+    url: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+  - title: "Kubernetes docs: Service"
+    url: https://kubernetes.io/docs/concepts/services-networking/service/
+mock: true
+---
+
+## The smallest unit is a Pod
+
+A Pod is one or more containers that share a network namespace and storage volumes. You rarely create
+Pods by hand: a controller creates them for you and replaces them when they fail.
+
+## Deployments keep Pods running
+
+A Deployment describes the Pods you want and how many. It manages a ReplicaSet, and the ReplicaSet keeps
+the Pod count at the target.
+
+<Flow
+  label="How a Deployment reaches its Pods"
+  steps={["Deployment", "ReplicaSet", "Pods"]}
+/>
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27
+```
+
+## Services give Pods a stable address
+
+Pods come and go, and each new Pod gets a new IP address. A Service selects Pods by label and gives
+them one stable virtual IP and DNS name.
+
+<Callout kind="tip" title="Labels tie it together">
+The Deployment's Pod template labels, the ReplicaSet selector and the Service selector must agree. Most
+"my Service has no endpoints" problems are a label typo.
+</Callout>

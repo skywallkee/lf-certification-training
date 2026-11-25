@@ -1,3 +1,4 @@
+import { ContentError, loadContent } from "../content.ts";
 import { buildCoverageIndex } from "../coverage.ts";
 import { CurriculumError, loadCurriculum, programMembers } from "../load.ts";
 
@@ -6,16 +7,18 @@ try {
   const curriculum = await loadCurriculum(process.argv[2]);
   const coverage = await buildCoverageIndex(curriculum);
   for (const { file, tag } of coverage.unknownTags) console.error(`${file}: unknown competency "${tag}"`);
+  const content = await loadContent(curriculum);
   const golden = programMembers(curriculum, "golden-kubestronaut");
   console.log(
     `OK: ${curriculum.certs.size} certifications, ${curriculum.competencies.size} competencies, ` +
-      `${golden.length} in Golden Kubestronaut.`,
+      `${golden.length} in Golden Kubestronaut. ${content.lessons.length} lessons, ${content.questions.length} questions ` +
+      `(${content.lessons.filter((l) => l.mock).length + content.questions.filter((q) => q.mock).length} sample items).`,
   );
   const pending = [...curriculum.certs.values()].filter((c) => c.curriculum.verification === "pending");
   for (const c of pending) console.warn(`warning: ${c.code} curriculum is pending verification against its source`);
   if (coverage.unknownTags.length > 0) process.exit(1);
 } catch (err) {
-  if (err instanceof CurriculumError) {
+  if (err instanceof CurriculumError || err instanceof ContentError) {
     console.error(err.message);
     process.exit(1);
   }

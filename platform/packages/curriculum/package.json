@@ -6,7 +6,8 @@
   "description": "Curriculum schema, loader, queries and Postgres ingest for the 17 Golden Kubestronaut certifications.",
   "exports": {
     ".": "./src/index.ts",
-    "./db": "./src/db/schema.ts"
+    "./db": "./src/db/schema.ts",
+    "./ingest": "./src/db/ingest.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

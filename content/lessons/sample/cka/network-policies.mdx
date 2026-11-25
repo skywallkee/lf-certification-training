@@ -1,0 +1,52 @@
+---
+id: sample-cka-network-policies
+title: "Network policies: default deny, then allow"
+summary: "Sample lesson shared by CKA and CKNE: isolate Pods and open only the paths you need."
+minutes: 8
+competencies:
+  - cka/servicing-networking/define-enforce-network-policies
+  - ckne/network-security-policy/securing-traffic-network-policies
+docs:
+  - title: "Kubernetes docs: Network policies"
+    url: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+mock: true
+---
+
+## Default deny for a namespace
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: shop
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+```
+
+An empty `podSelector` selects every Pod in the namespace. With no ingress rules, nothing may connect.
+
+## Allow one path
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-from-web
+  namespace: shop
+spec:
+  podSelector:
+    matchLabels: { app: api }
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: web }
+      ports:
+        - port: 8080
+```
+
+<Callout kind="warning" title="Policies need a CNI that enforces them">
+The API server accepts NetworkPolicy objects on any cluster. Only a CNI plugin that implements them,
+such as Calico or Cilium, actually blocks traffic.
+</Callout>
