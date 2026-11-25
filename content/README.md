@@ -117,7 +117,9 @@ tasks:
         script: grep -qx local-path /opt/answers/class.txt   # passes on exit code 0
 ```
 
-Each check has exactly one of `assert` or `script`. Asserts can use Chainsaw's JMESPath forms, such as
+Setup runs on a cluster that has only just started: a new namespace has no `default` service account for a
+moment, so wait for it before creating bare pods (see the CKNE sample lab). Each check has exactly one of
+`assert` or `script`. Asserts can use Chainsaw's JMESPath forms, such as
 `(length(spec.containers)): 1`. Before opening a pull request, prove the lab with a real cluster:
 `pnpm --filter @lfct/lab-controller selftest <lab-id>` (some checks must fail before the solution, and all
 must pass after it).
