@@ -110,6 +110,27 @@ jobs:
       - name: Boot every lab in k3s-in-Docker, check it fails first, apply the solution, check it passes
         run: pnpm --filter @lfct/lab-controller selftest
 
+  docker-images:
+    name: Docker images build and the stack starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build every image and start the stack (waits for the healthchecks)
+        run: docker compose up --build --detach --wait --wait-timeout 300
+      - name: Web and lab controller answer
+        run: |
+          curl -fsS -o /dev/null http://localhost:3000/sign-in
+          curl -fsS http://localhost:3001/health
+      - name: Image sizes
+        if: always()
+        run: docker image ls --filter reference='lfct-*'
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - if: always()
+        run: docker compose down --volumes
+
   curriculum-sources:
     name: Curriculum matches its source PDFs
     runs-on: ubuntu-latest

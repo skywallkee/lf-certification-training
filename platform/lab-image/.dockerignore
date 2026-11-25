@@ -1,0 +1,4 @@
+# Build context for the lab workstation image: the Dockerfile only copies these two files.
+*
+!entrypoint.sh
+!tmux.conf

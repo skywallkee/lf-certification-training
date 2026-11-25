@@ -13,7 +13,8 @@ x-secrets: &secrets
 
 services:
   postgres:
-    image: postgres:17
+    # Pinned: a new Postgres or OS release under a floating tag can change collations under existing data.
+    image: postgres:17.12-trixie
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -41,9 +42,10 @@ services:
   setup:
     build:
       context: .
-      target: workspace
+      target: setup
       secrets: [extra_ca]
-    image: lfct-workspace:local
+    image: lfct-setup:local
+    init: true
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
       # if-missing (default) keeps your progress; always resets the sample learners; never skips them.
@@ -59,6 +61,7 @@ services:
       target: lab-controller
       secrets: [extra_ca]
     image: lfct-lab-controller:local
+    init: true
     environment:
       <<: *secrets
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
@@ -81,11 +84,7 @@ services:
         condition: service_completed_successfully
       lab-tools:
         condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+    # Healthcheck: defined in the Dockerfile (GET /health).
     restart: unless-stopped
 
   web:
@@ -94,6 +93,7 @@ services:
       target: web
       secrets: [extra_ca]
     image: lfct-web:local
+    init: true
     environment:
       <<: *secrets
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
