@@ -122,13 +122,18 @@ export function QuestionCard({
           return;
         }
         setResult(res);
-        requestAnimationFrame(() => nextRef.current?.focus());
       } catch {
         writePending([...readPending().filter((p) => p.questionId !== questionId || p.quizId !== quizId), { quizId, questionId, selected }]);
         setOffline(true);
       }
     });
   }, [next, questionId, quizId, selected]);
+
+  // Move focus to "Next question" once the feedback has rendered. Focusing from the submit callback raced the
+  // commit: the button did not exist yet when the frame ran, so focus stayed on the page.
+  useEffect(() => {
+    if (result) nextRef.current?.focus();
+  }, [result]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
