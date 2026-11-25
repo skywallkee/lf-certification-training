@@ -133,8 +133,10 @@ export async function ingestCurriculum(db: Db, curriculum: Curriculum): Promise<
 export interface ContentIngestResult {
   lessons: number;
   questions: number;
+  labs: number;
   removedLessons: number;
   removedQuestions: number;
+  removedLabs: number;
 }
 
 /**
@@ -182,6 +184,29 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
         .values({ id: q.id, ...values })
         .onConflictDoUpdate({ target: schema.question.id, set: { ...values, updatedAt: new Date() } });
     }
+    for (const l of content.labs) {
+      const values = {
+        certCode: l.cert,
+        title: l.title,
+        summary: l.summary,
+        tier: l.tier,
+        minutes: l.minutes,
+        docs: l.docs,
+        clusters: l.clusters,
+        images: l.images,
+        setup: l.setup ?? null,
+        solution: l.solution,
+        tasks: l.tasks.map((t) => ({ ...t, cluster: t.cluster ?? l.clusters[0]! })),
+        competencyRefs: l.competencies,
+        mock: l.mock,
+        file: l.file,
+        contentHash: l.hash,
+      };
+      await tx
+        .insert(schema.lab)
+        .values({ id: l.id, ...values })
+        .onConflictDoUpdate({ target: schema.lab.id, set: { ...values, updatedAt: new Date() } });
+    }
     const lessonIds = content.lessons.map((l) => l.id);
     const questionIds = content.questions.map((q) => q.id);
     const removedLessons = await tx
@@ -192,20 +217,28 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
       .delete(schema.question)
       .where(questionIds.length > 0 ? notInArray(schema.question.id, questionIds) : undefined)
       .returning({ id: schema.question.id });
+    const labIds = content.labs.map((l) => l.id);
+    const removedLabs = await tx
+      .delete(schema.lab)
+      .where(labIds.length > 0 ? notInArray(schema.lab.id, labIds) : undefined)
+      .returning({ id: schema.lab.id });
     return {
       lessons: content.lessons.length,
       questions: content.questions.length,
+      labs: content.labs.length,
       removedLessons: removedLessons.length,
       removedQuestions: removedQuestions.length,
+      removedLabs: removedLabs.length,
     };
   });
 }
 
-/** Deletes every lesson and question marked mock: the one-step removal of the sample set. */
-export async function removeSampleContent(db: Db): Promise<{ lessons: number; questions: number }> {
+/** Deletes every lesson, question and lab marked mock: the one-step removal of the sample set. */
+export async function removeSampleContent(db: Db): Promise<{ lessons: number; questions: number; labs: number }> {
   const lessons = await db.delete(schema.lesson).where(eq(schema.lesson.mock, true)).returning({ id: schema.lesson.id });
   const questions = await db.delete(schema.question).where(eq(schema.question.mock, true)).returning({ id: schema.question.id });
-  return { lessons: lessons.length, questions: questions.length };
+  const labs = await db.delete(schema.lab).where(eq(schema.lab.mock, true)).returning({ id: schema.lab.id });
+  return { lessons: lessons.length, questions: questions.length, labs: labs.length };
 }
 
 /** Applies the curriculum package's migrations. */
@@ -239,6 +272,7 @@ export async function migrateAndIngest(
           curriculumVersionsAdded: result.inserted.length,
           lessons: contentResult?.lessons ?? 0,
           questions: contentResult?.questions ?? 0,
+          labs: contentResult?.labs ?? 0,
         })
         .where(eq(schema.ingestRun.id, run!.id));
       return contentResult ? { ...result, content: contentResult } : result;

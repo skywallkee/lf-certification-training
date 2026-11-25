@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, date, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.ts";
 
 /**
@@ -162,3 +162,101 @@ export const outboxEmail = pgTable("outbox_email", {
   text: text("text").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Hands-on lab sessions (Phase 2). The web app creates the row and asks the lab controller to provision it;
+ * the controller owns every later status change. Lab content is referenced by id without a foreign key, like
+ * lessons and questions. One active session per learner is enforced by a partial unique index.
+ */
+export const labSessionStatus = pgEnum("lab_session_status", [
+  "requested",
+  "booting",
+  "ready",
+  "finished",
+  "expired",
+  "failed",
+  "killed",
+]);
+
+export interface LabResourcesJson {
+  provider: string;
+  [key: string]: unknown;
+}
+
+export interface LabCheckResultJson {
+  taskId: string;
+  checkId: string;
+  passed: boolean;
+  /** Learner-facing message: the check's description when it passes, its fail message when it fails. */
+  message: string;
+  /** Raw grader output for admins; never shown to the learner. */
+  detail?: string;
+}
+
+export const labSession = pgTable(
+  "lab_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userRef(),
+    labId: text("lab_id").notNull(),
+    certCode: text("cert_code").notNull(),
+    status: labSessionStatus("status").notNull().default("requested"),
+    /** Provider that runs the session: "local-docker" (Phase 2, local), later "aws" or "azure". */
+    provider: text("provider").notNull(),
+    /** Index of the current boot step, and the last message from the controller. */
+    bootStep: integer("boot_step").notNull().default(0),
+    statusMessage: text("status_message"),
+    resources: jsonb("resources").$type<LabResourcesJson>(),
+    /** Minutes the learner gets once the terminal is ready (the lab's length). */
+    minutes: integer("minutes").notNull(),
+    extended: boolean("extended").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    readyAt: timestamp("ready_at", { withTimezone: true }),
+    /** Set when the session becomes ready; the sweeper ends the session after it. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Final score in percent, from the last grading when the session ended. */
+    score: integer("score"),
+    /** Estimated cloud cost in US cents; 0 for local Docker. */
+    costCents: integer("cost_cents").notNull().default(0),
+  },
+  (t) => [
+    index("lab_session_user_idx").on(t.userId, t.createdAt),
+    index("lab_session_status_idx").on(t.status),
+    uniqueIndex("lab_session_one_active_idx")
+      .on(t.userId)
+      .where(sql`${t.status} in ('requested', 'booting', 'ready')`),
+  ],
+);
+
+export const labCheckKind = pgEnum("lab_check_kind", ["check", "final"]);
+
+/** One grading run: "Check my work" during the lab, or the final grading when it ends. */
+export const labCheckRun = pgTable(
+  "lab_check_run",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => labSession.id, { onDelete: "cascade" }),
+    kind: labCheckKind("kind").notNull(),
+    results: jsonb("results").$type<LabCheckResultJson[]>().notNull(),
+    score: integer("score").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lab_check_run_session_idx").on(t.sessionId, t.createdAt)],
+);
+
+/** Hints a learner opened, in order per task. */
+export const labHintUse = pgTable(
+  "lab_hint_use",
+  {
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => labSession.id, { onDelete: "cascade" }),
+    taskId: text("task_id").notNull(),
+    hintIndex: integer("hint_index").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.taskId, t.hintIndex] })],
+);

@@ -15,6 +15,7 @@ import { competencyPath, lessonsFor } from "@/server/catalog";
 import { loadCert } from "@/server/cert-page";
 import { getItemState } from "@/server/items";
 import { getCompletedLessons } from "@/server/progress";
+import { labsForCompetency } from "@/server/labs";
 import { getUser } from "@/server/session";
 
 type Params = { code: string; domain: string; competency: string };
@@ -39,6 +40,7 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
     ? await getDb().select().from(lessonTable).where(inArray(lessonTable.id, lessonMeta.map((l) => l.id)))
     : [];
   const questions = catalog.questionsByCompetency.get(ref) ?? 0;
+  const labs = await labsForCompetency(ref);
   const completed = user ? await getCompletedLessons(user.id) : new Set<string>();
   const state = user ? await getItemState(user.id, "lesson", lessons.map((l) => l.id)) : null;
   const back = competencyPath(ref);
@@ -173,6 +175,23 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
           )}
         </div>
       </Card>
+
+      {labs.length > 0 ? (
+        <Card aria-labelledby="labs" className="mt-6 max-w-[72ch]">
+          <CardTitle id="labs">Hands-on labs</CardTitle>
+          <ul className="mt-2 flex flex-col gap-2">
+            {labs.map((l) => (
+              <li key={l.id} className="flex flex-wrap items-center gap-2 text-[15px]">
+                <Link href={user ? `/labs/${l.id}` : `/sign-in?next=${encodeURIComponent(`/labs/${l.id}`)}`}>{l.title}</Link>
+                <span className="text-sm text-muted-foreground">
+                  · Tier {l.tier} · {l.minutes} min
+                </span>
+                {l.mock ? <SampleBadge /> : null}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
     </article>
   );
 }

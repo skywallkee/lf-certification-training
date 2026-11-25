@@ -20,7 +20,6 @@ export const en = {
     admin: "Admin",
     labs: "Labs",
     mocks: "Mocks",
-    comingLabs: "Labs arrive in February 2027",
     comingMocks: "Mock exams arrive in mid 2027",
     signIn: "Sign in",
     signOut: "Sign out",
@@ -56,6 +55,29 @@ export const en = {
   },
   coverage: {
     coming: "Lesson coming",
+  },
+  labs: {
+    title: "Labs",
+    lead: "Hands-on tasks on a fresh Kubernetes cluster, graded check by check. Each lab runs on its own cluster that is deleted when you finish.",
+    booting: "Starting your cluster. Read the task while you wait.",
+    quotaUsed: (month: string, reset: string, minutes: number) =>
+      `You've used your ${minutes} lab minutes for ${month}. They reset on ${reset}. Questions and lessons are still open.`,
+    capacity: "Every lab slot is in use right now. Try again in a few minutes; lessons and questions are still open.",
+    controllerDown:
+      "The lab controller is not running, so labs cannot start. Locally, start the whole stack with docker compose up.",
+    activeSession: "You already have a lab running. Finish it before starting another.",
+    finishTitle: "Finish this lab?",
+    finishBody: "The lab's clusters will be deleted and the checks graded one last time.",
+    finishConfirm: "Finish and delete cluster",
+    keepWorking: "Keep working",
+    check: "Check my work",
+    checking: "Checking…",
+    noChecksYet: "No checks run yet. Press Check my work whenever you want feedback; it does not end the lab.",
+    checkSummary: (passed: number, total: number) => `${passed} of ${total} check${total === 1 ? "" : "s"} passed.`,
+    extend: (minutes: number) => `Extend ${minutes} min`,
+    extended: "Extended",
+    failed: "This lab could not start.",
+    ended: "This lab has ended.",
   },
 } as const;
 

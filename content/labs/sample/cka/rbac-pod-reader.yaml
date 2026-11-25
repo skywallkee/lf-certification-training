@@ -1,0 +1,87 @@
+# Sample lab (mock content for building and testing the app, not study material).
+id: sample-cka-rbac-pod-reader
+mock: true
+title: "Sample lab: a read-only role for a service account"
+summary: "Give a service account read access to pods in one namespace with a Role and RoleBinding, and prove it with kubectl auth can-i."
+tier: 1
+minutes: 20
+competencies:
+  - cka/cluster-architecture-installation-configuration/manage-role-based-access-control
+docs:
+  - title: "Kubernetes docs: Using RBAC Authorization"
+    url: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+setup: |
+  kubectl create namespace team-a
+  kubectl -n team-a create serviceaccount viewer
+solution: |
+  kubectl -n team-a create role pod-reader --verb=get,list,watch --resource=pods
+  kubectl -n team-a create rolebinding viewer-pod-reader --role=pod-reader --serviceaccount=team-a:viewer
+  kubectl auth can-i delete pods -n team-a --as=system:serviceaccount:team-a:viewer > /opt/answers/can-delete.txt || true
+tasks:
+  - id: role
+    title: Create the Role
+    weight: 40
+    body: |
+      In the namespace `team-a`, create a Role named `pod-reader` that allows `get`, `list` and `watch` on
+      `pods`, and nothing else.
+    hints:
+      - "`kubectl create role` takes `--verb` and `--resource`."
+    checks:
+      - id: role-rules
+        description: Role pod-reader in team-a allows get, list and watch on pods
+        failMessage: Role pod-reader is missing in team-a, or its rule is not exactly get, list and watch on pods.
+        assert:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: pod-reader
+            namespace: team-a
+          rules:
+            - apiGroups: [""]
+              resources: [pods]
+              verbs: [get, list, watch]
+  - id: binding
+    title: Bind it to the service account
+    weight: 40
+    body: |
+      Bind `pod-reader` to the service account `viewer` in `team-a` with a RoleBinding named
+      `viewer-pod-reader`.
+    hints:
+      - "`kubectl create rolebinding` takes `--role` and `--serviceaccount=<namespace>:<name>`."
+      - "Test it with `kubectl auth can-i list pods -n team-a --as=system:serviceaccount:team-a:viewer`."
+    checks:
+      - id: binding-exists
+        description: RoleBinding viewer-pod-reader binds pod-reader to team-a:viewer
+        assert:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: viewer-pod-reader
+            namespace: team-a
+          roleRef:
+            kind: Role
+            name: pod-reader
+          subjects:
+            - kind: ServiceAccount
+              name: viewer
+              namespace: team-a
+      - id: can-list-not-delete
+        description: team-a:viewer can list pods in team-a but cannot delete them
+        failMessage: The service account cannot list pods yet, or it can delete them too.
+        script: |
+          kubectl auth can-i list pods -n team-a --as=system:serviceaccount:team-a:viewer
+          ! kubectl auth can-i delete pods -n team-a --as=system:serviceaccount:team-a:viewer
+  - id: answer
+    title: Record what the account cannot do
+    weight: 20
+    body: |
+      Use `kubectl auth can-i` to find out whether `viewer` may delete pods in `team-a`, and save its
+      one-word answer to `/opt/answers/can-delete.txt` on your workstation.
+    hints:
+      - "`kubectl auth can-i` prints `yes` or `no`; redirect it with `>`."
+    checks:
+      - id: answer-file
+        description: /opt/answers/can-delete.txt says no
+        failMessage: /opt/answers/can-delete.txt is missing or does not contain just the answer.
+        runIn: workstation
+        script: grep -qx no /opt/answers/can-delete.txt

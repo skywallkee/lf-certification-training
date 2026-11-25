@@ -166,6 +166,58 @@ export const question = pgTable(
   (t) => [index("question_cert_idx").on(t.certCode), index("question_refs_idx").using("gin", t.competencyRefs)],
 );
 
+export interface LabCheckJson {
+  id: string;
+  description: string;
+  failMessage?: string;
+  assert?: Record<string, unknown>;
+  namespace?: string;
+  script?: string;
+  runIn: "grader" | "workstation";
+}
+
+export interface LabTaskJson {
+  id: string;
+  title: string;
+  weight: number;
+  body: string;
+  hints: string[];
+  /** The cluster (kubectl context) the task is about. */
+  cluster: string;
+  checks: LabCheckJson[];
+}
+
+/**
+ * Hands-on labs, one row per file in content/labs. Tasks carry their checks; the web app never sends checks
+ * or the solution to the browser before the session ends. Keyed by the lab's stable id.
+ */
+export const lab = pgTable(
+  "lab",
+  {
+    id: text("id").primaryKey(),
+    certCode: text("cert_code")
+      .notNull()
+      .references(() => certification.code),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    tier: integer("tier").notNull(),
+    minutes: integer("minutes").notNull(),
+    docs: jsonb("docs").$type<DocLinkJson[]>().notNull(),
+    /** Cluster names, booted in this order; each is a kubectl context. */
+    clusters: text("clusters").array().notNull().default(["k8s"]),
+    images: text("images").array().notNull(),
+    setup: text("setup"),
+    solution: text("solution").notNull(),
+    tasks: jsonb("tasks").$type<LabTaskJson[]>().notNull(),
+    competencyRefs: text("competency_refs").array().notNull(),
+    mock: boolean("mock").notNull().default(false),
+    file: text("file").notNull(),
+    contentHash: text("content_hash").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lab_cert_idx").on(t.certCode), index("lab_refs_idx").using("gin", t.competencyRefs)],
+);
+
 /** One row per ingest run, for the admin page. */
 export const ingestRun = pgTable("ingest_run", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -174,6 +226,7 @@ export const ingestRun = pgTable("ingest_run", {
   curriculumVersionsAdded: integer("curriculum_versions_added").notNull().default(0),
   lessons: integer("lessons").notNull().default(0),
   questions: integer("questions").notNull().default(0),
+  labs: integer("labs").notNull().default(0),
   includeSample: boolean("include_sample").notNull(),
   ok: boolean("ok").notNull().default(false),
   message: text("message"),

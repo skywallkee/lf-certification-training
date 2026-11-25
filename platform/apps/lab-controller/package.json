@@ -1,0 +1,29 @@
+{
+  "name": "@lfct/lab-controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lab controller: provisions lab sessions (local Docker now, cloud VMs later), relays the browser terminal, grades checks and sweeps expired sessions.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "selftest": "tsx src/selftest.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lfct/curriculum": "workspace:*",
+    "@lfct/labs": "workspace:*",
+    "@lfct/web": "workspace:*",
+    "dockerode": "5.0.1",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1",
+    "ws": "8.23.0",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/dockerode": "4.0.2",
+    "@types/pg": "8.23.1",
+    "@types/ws": "8.18.2"
+  }
+}

@@ -11,8 +11,8 @@ try {
   const golden = programMembers(curriculum, "golden-kubestronaut");
   console.log(
     `OK: ${curriculum.certs.size} certifications, ${curriculum.competencies.size} competencies, ` +
-      `${golden.length} in Golden Kubestronaut. ${content.lessons.length} lessons, ${content.questions.length} questions ` +
-      `(${content.lessons.filter((l) => l.mock).length + content.questions.filter((q) => q.mock).length} sample items).`,
+      `${golden.length} in Golden Kubestronaut. ${content.lessons.length} lessons, ${content.questions.length} questions, ${content.labs.length} labs ` +
+      `(${[...content.lessons, ...content.questions, ...content.labs].filter((i) => i.mock).length} sample items).`,
   );
   const pending = [...curriculum.certs.values()].filter((c) => c.curriculum.verification === "pending");
   for (const c of pending) console.warn(`warning: ${c.code} curriculum is pending verification against its source`);

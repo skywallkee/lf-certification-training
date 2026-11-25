@@ -16,3 +16,4 @@ in the code. To change a decision, add a new record that supersedes the old one.
 | [0007](0007-local-curriculum-mcp.md) | The curriculum MCP server runs locally over stdio | Accepted |
 | [0008](0008-content-from-public-sources-only.md) | Content comes from public sources only | Accepted |
 | [0009](0009-phase-1-study-app.md) | Phase 1 study app: shape and shortcuts | Accepted |
+| [0010](0010-phase-2-labs-on-local-docker.md) | Phase 2 labs run on local Docker first | Accepted |

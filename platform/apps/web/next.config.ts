@@ -4,9 +4,11 @@ const config: NextConfig = {
   // A minimal server bundle for the container image (copy public/ and .next/static next to it).
   output: "standalone",
   // The workspace packages ship TypeScript source.
-  transpilePackages: ["@lfct/curriculum"],
+  transpilePackages: ["@lfct/curriculum", "@lfct/labs"],
   serverExternalPackages: ["pg"],
   poweredByHeader: false,
+  // Do not write an AGENTS.md into the app on every dev start.
+  agentRules: false,
   typedRoutes: false,
   async headers() {
     return [

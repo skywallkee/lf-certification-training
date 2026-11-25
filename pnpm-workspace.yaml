@@ -3,3 +3,6 @@ packages:
   - "platform/apps/*"
 onlyBuiltDependencies:
   - esbuild
+ignoredBuiltDependencies:
+  - cpu-features
+  - protobufjs

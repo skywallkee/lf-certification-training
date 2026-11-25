@@ -15,6 +15,20 @@
       "when": 1795543148078,
       "tag": "0001_content",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795603226033,
+      "tag": "0002_labs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795610544505,
+      "tag": "0003_lab_clusters",
+      "breakpoints": true
     }
   ]
 }

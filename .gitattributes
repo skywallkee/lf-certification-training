@@ -1,0 +1,9 @@
+# Check out every text file with LF line endings, also on Windows. Shell scripts, Dockerfiles and YAML run
+# inside Linux containers, where CRLF breaks them (for example "set: Illegal option -").
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.woff2 binary

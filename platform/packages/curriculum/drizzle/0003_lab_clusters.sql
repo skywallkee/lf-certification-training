@@ -1,0 +1,1 @@
+ALTER TABLE "lab" ADD COLUMN "clusters" text[] DEFAULT '{"k8s"}' NOT NULL;

@@ -1,0 +1,89 @@
+# Sample lab (mock content for building and testing the app, not study material).
+id: sample-cka-three-clusters
+mock: true
+title: "Sample lab: three clusters, one task each"
+summary: "Switch kubectl context for every task, as in the exam: a ConfigMap on c1, a scaled Deployment on c2 and a labelled node on c3."
+tier: 1
+minutes: 25
+clusters: [c1, c2, c3]
+competencies:
+  - cka/workloads-scheduling/configmaps-secrets-configure-applications
+  - cka/workloads-scheduling/application-deployments-perform-rolling-update
+  - cka/workloads-scheduling/configure-pod-admission-scheduling-limits
+docs:
+  - title: "Kubernetes docs: Configure Access to Multiple Clusters"
+    url: https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/
+  - title: "Kubernetes docs: kubectl Quick Reference"
+    url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+images:
+  - nginx:1.29-alpine
+setup: |
+  kubectl --context c2 create namespace web
+  kubectl --context c2 -n web create deployment api --image=nginx:1.29-alpine --replicas=1
+solution: |
+  kubectl config use-context c1
+  kubectl create namespace orders
+  kubectl -n orders create configmap settings --from-literal=mode=prod
+  kubectl config use-context c2
+  kubectl -n web scale deployment api --replicas=3
+  kubectl config use-context c3
+  kubectl label node --all disk=ssd
+tasks:
+  - id: configmap
+    title: Store the settings
+    cluster: c1
+    weight: 30
+    body: |
+      Create the namespace `orders` and, in it, a ConfigMap named `settings` with the key `mode` set to `prod`.
+    hints:
+      - "`kubectl create configmap` takes `--from-literal=key=value`."
+    checks:
+      - id: settings-configmap
+        description: ConfigMap settings in orders has mode=prod
+        failMessage: ConfigMap settings is missing in orders on c1, or mode is not prod. Check that you used the c1 context.
+        assert:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: settings
+            namespace: orders
+          data:
+            mode: prod
+  - id: scale
+    title: Scale the API
+    cluster: c2
+    weight: 40
+    body: |
+      The Deployment `api` in the namespace `web` runs one replica. Scale it to `3`.
+    hints:
+      - "`kubectl scale` takes `--replicas`."
+    checks:
+      - id: api-replicas
+        description: Deployment api in web asks for 3 replicas
+        failMessage: Deployment api in web on c2 does not ask for 3 replicas yet.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: api
+            namespace: web
+          spec:
+            replicas: 3
+  - id: label
+    title: Label the node
+    cluster: c3
+    weight: 30
+    body: |
+      Label the cluster's only node with `disk=ssd`.
+    hints:
+      - "`kubectl get nodes` shows the node's name; `kubectl label node` adds the label."
+    checks:
+      - id: node-label
+        description: The node has the label disk=ssd
+        failMessage: No node on c3 has the label disk=ssd.
+        assert:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            labels:
+              disk: ssd
