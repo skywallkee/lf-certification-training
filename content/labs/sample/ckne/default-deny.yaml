@@ -1,0 +1,106 @@
+# Sample lab (mock content for building and testing the app, not study material).
+id: sample-ckne-default-deny
+mock: true
+title: "Sample lab: default deny and one allowed path"
+summary: "Lock down a namespace with a default-deny ingress policy, then allow only the API to reach the database."
+tier: 1
+minutes: 25
+competencies:
+  - ckne/network-security-policy/securing-traffic-network-policies
+  - cka/servicing-networking/define-enforce-network-policies
+docs:
+  - title: "Kubernetes docs: Network Policies"
+    url: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+images:
+  - busybox:1.37
+setup: |
+  kubectl create namespace payments
+  kubectl -n payments run api --image=busybox:1.37 --labels=app=api -- sleep 86400
+  kubectl -n payments run db --image=busybox:1.37 --labels=app=db -- sleep 86400
+solution: |
+  cat <<'YAML' | kubectl apply -f -
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: default-deny-ingress
+    namespace: payments
+  spec:
+    podSelector: {}
+    policyTypes: [Ingress]
+  ---
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: api-to-db
+    namespace: payments
+  spec:
+    podSelector:
+      matchLabels:
+        app: db
+    policyTypes: [Ingress]
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app: api
+        ports:
+          - protocol: TCP
+            port: 5432
+  YAML
+tasks:
+  - id: default-deny
+    title: Deny all ingress by default
+    weight: 50
+    body: |
+      Create a NetworkPolicy named `default-deny-ingress` in `payments` that selects **every pod** in the
+      namespace and allows **no** ingress traffic. Leave egress alone.
+    hints:
+      - "An empty `podSelector: {}` selects every pod in the namespace."
+      - "List `Ingress` in `policyTypes` and give no `ingress` rules."
+    checks:
+      - id: deny-policy
+        description: NetworkPolicy default-deny-ingress selects all pods and allows no ingress
+        failMessage: default-deny-ingress is missing, does not select every pod, or still has ingress rules.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: default-deny-ingress
+            namespace: payments
+          spec:
+            podSelector:
+              (matchLabels == null && matchExpressions == null): true
+            policyTypes:
+              - Ingress
+            (ingress == null || length(ingress) == `0`): true
+  - id: api-to-db
+    title: Let the API reach the database
+    weight: 50
+    body: |
+      Create a NetworkPolicy named `api-to-db` in `payments` that lets pods labelled `app=api` reach pods
+      labelled `app=db` on **TCP port 5432**, and nothing else.
+    hints:
+      - "The policy selects the pods it protects: here that is the database."
+      - "Put the `podSelector` for the API under `ingress[].from`, and the port under `ingress[].ports`."
+    checks:
+      - id: allow-policy
+        description: NetworkPolicy api-to-db admits app=api to app=db on TCP 5432
+        failMessage: api-to-db is missing, protects the wrong pods, or admits a different source or port.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: api-to-db
+            namespace: payments
+          spec:
+            podSelector:
+              matchLabels:
+                app: db
+            ingress:
+              - from:
+                  - podSelector:
+                      matchLabels:
+                        app: api
+                ports:
+                  - port: 5432
+                    (protocol == null || protocol == 'TCP'): true

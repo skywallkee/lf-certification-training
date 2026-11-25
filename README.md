@@ -12,14 +12,35 @@ See the [plan](https://claude.ai/artifact/99Eiqhkj36HSbaKaLF61Ye) and the
 
 | Folder | What it holds |
 |--------|---------------|
-| [`content/`](content/README.md) | Curriculum YAML for the 17 certs, lessons, question banks, and later lab definitions |
+| [`content/`](content/README.md) | Curriculum YAML for the 17 certs, lessons, question banks and lab definitions |
 | [`platform/packages/curriculum`](platform/packages/curriculum) | Curriculum schema, loader, queries, source verification and Postgres ingest |
 | [`platform/packages/curriculum-mcp`](platform/packages/curriculum-mcp) | Local read-only MCP server over the curriculum |
+| [`platform/packages/labs`](platform/packages/labs) | Lab session rules shared by the app and the controller: statuses, scoring, allowance, terminal tokens |
 | [`platform/apps/web`](platform/apps/web) | LF Cert Trainer, the Next.js study app |
+| [`platform/apps/lab-controller`](platform/apps/lab-controller) | Starts, grades and deletes lab clusters (k3s in Docker locally) and relays the terminal |
+| [`platform/lab-image`](platform/lab-image) | The lab tools image: workstation terminal (ttyd, tmux, kubectl, helm) and the grader (Chainsaw) |
 | [`infra/`](infra/README.md) | Terraform for the always-on Azure platform and the budgets on both clouds |
 | [`docs/adr/`](docs/adr/README.md) | Architecture decision records |
 
-## Getting started
+## Run it locally with Docker
+
+Everything runs on your machine: Postgres, the web app, the lab controller, and one k3s cluster per lab
+session, all in Docker. You need Docker with Compose v2 and about 4 GB of free memory.
+
+```sh
+docker compose up --build
+```
+
+Then open http://localhost:3000 and sign in as one of the sample learners below. The first start builds
+three images and pulls k3s, so give it a few minutes; later starts take seconds. A lab boots in about
+10 to 30 seconds. Data is kept in the `pgdata` volume across restarts (`docker compose down -v` wipes it).
+Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
+
+Lab containers run privileged (k3s needs it), are labelled `lfct.managed=true`, and are deleted when the
+lab ends. The controller's sweeper removes anything left over, also after a crash. To remove every lab
+container by hand: `docker rm -f $(docker ps -aq --filter label=lfct.managed=true)`.
+
+## Develop
 
 Needs Node.js 22 and pnpm 10 (`corepack enable`).
 
@@ -53,6 +74,22 @@ pnpm --filter @lfct/web db:seed      # sample learners
 pnpm --filter @lfct/web dev          # http://localhost:3000
 ```
 
+To work on labs without Docker containers per session, run the lab controller with the fake provider (no
+real cluster; type `solve` in its terminal to pass every check):
+
+```sh
+export LAB_CONTROLLER_SECRET=dev-controller-secret LAB_TOKEN_SECRET=dev-token-secret-at-least-32-characters
+LAB_PROVIDER=fake pnpm --filter @lfct/lab-controller dev    # :3001, uses DATABASE_URL
+```
+
+With `LAB_PROVIDER=docker` (the default) the controller starts real k3s clusters on your Docker and needs
+the tools image first: `docker compose build lab-tools`. Check that every lab boots, fails before it is
+solved and passes with its reference solution:
+
+```sh
+pnpm --filter @lfct/lab-controller selftest            # all labs, or name lab ids
+```
+
 Sample learners all use the password `sample-password-123`:
 
 | Email | Stage |
@@ -83,7 +120,7 @@ hand: `pnpm mcp:curriculum`.
 |-------|--------|-------|
 | 0 | Dec 2026 | Repository, ADRs, curriculum data and ingest, curriculum MCP, Terraform skeleton (done) |
 | 1 | Jan 2027 | Study MVP: web app, sign-in, path map, curriculum browser, lessons, question bank (built, with sample content) |
-| 2 | Feb 2027 | Tier 1 labs (vCluster on a shared k3s node), sweeper |
+| 2 | Feb 2027 | Tier 1 labs, lab player, grading, hints, allowance, sweeper (built, running locally on Docker with sample labs; cloud hosting later) |
 | 3 | Mar-Apr 2027 | VM labs (kubeadm clusters, Linux VMs) |
 | 4 | May-Jun 2027 | Project labs and mock exams |
 | 5 | later | Waitlist, spend dashboard, running fully on free credits |

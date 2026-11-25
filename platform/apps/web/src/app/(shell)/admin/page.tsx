@@ -45,7 +45,15 @@ export default async function AdminPage() {
   const certs = [...catalog.certs.values()].sort((a, b) => a.code.localeCompare(b.code));
   return (
     <>
-      <PageHeader title="Admin" lead="Content ingest, coverage, reported problems and users." />
+      <PageHeader
+        title="Admin"
+        lead="Content ingest, coverage, reported problems and users."
+        actions={
+          <Link href="/admin/labs" className="text-sm font-medium">
+            Labs: sessions and spend
+          </Link>
+        }
+      />
       <div className="flex flex-col gap-6">
         <Card aria-labelledby="ingest">
           <CardTitle id="ingest">Content ingest</CardTitle>
@@ -61,6 +69,7 @@ export default async function AdminPage() {
                     <th scope="col" className="py-2 font-semibold">New curriculum versions</th>
                     <th scope="col" className="py-2 font-semibold">Lessons</th>
                     <th scope="col" className="py-2 font-semibold">Questions</th>
+                    <th scope="col" className="py-2 font-semibold">Labs</th>
                     <th scope="col" className="py-2 font-semibold">Sample set</th>
                   </tr>
                 </thead>
@@ -72,6 +81,7 @@ export default async function AdminPage() {
                       <td className="py-2">{r.curriculumVersionsAdded}</td>
                       <td className="py-2">{r.lessons}</td>
                       <td className="py-2">{r.questions}</td>
+                      <td className="py-2">{r.labs}</td>
                       <td className="py-2">{r.includeSample ? "Included" : "Left out"}</td>
                     </tr>
                   ))}

@@ -1,0 +1,133 @@
+# LF Cert Trainer, the whole stack on one machine:
+#
+#   docker compose up --build        then open http://localhost:3000 (sample logins in the README)
+#
+# Services: Postgres, a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
+# lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
+# Settings come from .env when present (see .env.example); the defaults below are for local use only.
+name: lfct
+
+x-secrets: &secrets
+  LAB_CONTROLLER_SECRET: ${LAB_CONTROLLER_SECRET:-local-controller-secret-change-me-0123456789}
+  LAB_TOKEN_SECRET: ${LAB_TOKEN_SECRET:-local-terminal-token-secret-change-me-0123456789}
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: lfct
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # For psql and `pnpm dev` from the host. Change the left side if 5432 is taken.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lfct"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Builds the lab workstation image (ttyd, kubectl, helm, Chainsaw) that the controller starts per lab.
+  lab-tools:
+    build:
+      context: platform/lab-image
+      secrets: [extra_ca]
+    image: lfct-lab-tools:local
+    command: ["true"]
+    restart: "no"
+
+  setup:
+    build:
+      context: .
+      target: workspace
+      secrets: [extra_ca]
+    image: lfct-workspace:local
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
+      # if-missing (default) keeps your progress; always resets the sample learners; never skips them.
+      SEED: ${SEED:-if-missing}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  lab-controller:
+    build:
+      context: .
+      target: lab-controller
+      secrets: [extra_ca]
+    image: lfct-lab-controller:local
+    environment:
+      <<: *secrets
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
+      LAB_PROVIDER: ${LAB_PROVIDER:-docker}
+      LAB_REACH: network
+      LAB_NETWORK: lfct-labs
+      LAB_TOOLS_IMAGE: lfct-lab-tools:local
+      LAB_K3S_IMAGE: ${LAB_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1}
+      LAB_ALLOWED_ORIGINS: ${APP_URL:-http://localhost:3000}
+    volumes:
+      # Starts and removes lab containers on this machine's Docker.
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    networks: [default, labs]
+    ports:
+      # The browser's terminal WebSocket connects here.
+      - "127.0.0.1:${LAB_CONTROLLER_PORT:-3001}:3001"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      lab-tools:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+      secrets: [extra_ca]
+    image: lfct-web:local
+    environment:
+      <<: *secrets
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-auth-secret-change-me-0123456789abcdef}
+      BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.com}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # A production build running on a laptop: show verification links instead of sending email.
+      APP_ENV: local
+      SHOW_DEV_EMAILS: "true"
+      LAB_CONTROLLER_URL: http://lab-controller:3001
+      LAB_TERMINAL_URL: ws://localhost:${LAB_CONTROLLER_PORT:-3001}
+      LAB_PROVIDER_NAME: ${LAB_PROVIDER_NAME:-local-docker}
+      LAB_MONTHLY_MINUTES: ${LAB_MONTHLY_MINUTES:-600}
+      LAB_MAX_ACTIVE_SESSIONS: ${LAB_MAX_ACTIVE_SESSIONS:-3}
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      lab-controller:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  # Lab workstations join this network so the controller can reach their terminals; clusters stay private.
+  labs:
+    name: lfct-labs
+
+volumes:
+  pgdata:
+
+secrets:
+  # Optional: a CA bundle for builds behind a TLS-inspecting proxy. Point EXTRA_CA_FILE at it; the default is
+  # an empty file that does nothing.
+  extra_ca:
+    file: ${EXTRA_CA_FILE:-./platform/lab-image/no-extra-ca.crt}

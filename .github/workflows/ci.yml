@@ -83,7 +83,7 @@ jobs:
         run: pnpm --filter @lfct/web exec playwright install --with-deps chromium
       - name: Build the web app
         run: pnpm --filter @lfct/web build
-      - name: Run Playwright (resets the e2e database, then starts the app)
+      - name: Run Playwright (resets the e2e database, then starts the app and a lab controller with the fake provider)
         run: pnpm --filter @lfct/web e2e --trace off
       - name: Upload the Playwright report on failure
         if: failure()
@@ -92,6 +92,23 @@ jobs:
           name: playwright-report
           path: platform/apps/web/test-results/
           retention-days: 7
+
+  labs-selftest:
+    name: Labs boot, grade and pass their reference solutions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the lab tools image
+        run: docker compose build lab-tools
+      - name: Boot every lab in k3s-in-Docker, check it fails first, apply the solution, check it passes
+        run: pnpm --filter @lfct/lab-controller selftest
 
   curriculum-sources:
     name: Curriculum matches its source PDFs

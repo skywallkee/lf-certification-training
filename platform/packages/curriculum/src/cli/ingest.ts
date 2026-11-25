@@ -3,7 +3,7 @@ import { migrateAndIngest } from "../db/ingest.ts";
 import { CurriculumError, loadCurriculum } from "../load.ts";
 
 /**
- * Applies migrations and loads content/ (curriculum, lessons, questions) into Postgres. Needs DATABASE_URL.
+ * Applies migrations and loads content/ (curriculum, lessons, questions, labs) into Postgres. Needs DATABASE_URL.
  * CONTENT_INCLUDE_SAMPLE=false leaves out the sample set and deletes it from the database.
  */
 const url = process.env.DATABASE_URL;
@@ -18,9 +18,10 @@ try {
   const result = await migrateAndIngest(url, curriculum, content, { includeSample });
   console.log(
     `Ingested ${result.certs} certifications: ${result.inserted.length} new curriculum versions, ` +
-      `${result.unchanged.length} unchanged. ${result.content?.lessons ?? 0} lessons and ` +
-      `${result.content?.questions ?? 0} questions${includeSample ? " (sample set included)" : ""}; ` +
-      `removed ${result.content?.removedLessons ?? 0} lessons and ${result.content?.removedQuestions ?? 0} questions.`,
+      `${result.unchanged.length} unchanged. ${result.content?.lessons ?? 0} lessons, ` +
+      `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs` +
+      `${includeSample ? " (sample set included)" : ""}; removed ${result.content?.removedLessons ?? 0} lessons, ` +
+      `${result.content?.removedQuestions ?? 0} questions and ${result.content?.removedLabs ?? 0} labs.`,
   );
 } catch (err) {
   if (err instanceof CurriculumError || err instanceof ContentError) {

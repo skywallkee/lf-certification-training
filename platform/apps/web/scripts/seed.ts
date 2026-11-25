@@ -41,6 +41,9 @@ function rng(seed: number) {
   };
 }
 
+/** Emails of the sample learners, so setup can tell whether they exist. */
+export const SAMPLE_EMAILS = Object.values(SAMPLE_USERS).map((u) => u.email);
+
 export async function seed(databaseUrl: string, opts: { today?: string } = {}): Promise<void> {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
   const db = drizzle(pool, { schema });

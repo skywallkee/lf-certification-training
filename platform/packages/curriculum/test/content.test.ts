@@ -20,7 +20,17 @@ describe("content in the repository", () => {
 
   it("leaves the sample set out when includeSample is false", async () => {
     const content = await loadContent(curriculum, { includeSample: false });
-    expect(content).toEqual({ lessons: [], questions: [] });
+    expect(content).toEqual({ lessons: [], questions: [], labs: [] });
+  });
+
+  it("loads the three sample labs, one per cert, with weights adding up to 100 and a reference solution", async () => {
+    const { labs } = await loadContent(curriculum);
+    expect(labs.map((l) => l.cert).sort()).toEqual(["CKA", "CKAD", "CKNE"]);
+    for (const lab of labs) {
+      expect(lab.mock).toBe(true);
+      expect(lab.tasks.reduce((n, t) => n + t.weight, 0)).toBe(100);
+      expect(lab.solution.length).toBeGreaterThan(0);
+    }
   });
 
   it("keeps exactly one deliberately broken question, with a known issue and no correct option", async () => {
@@ -84,5 +94,57 @@ describe("content validation", () => {
     expect(problems).toContain("missing YAML front matter");
     expect(problems).toContain("single-answer question needs exactly 1 correct option, has 2");
     expect(problems).toContain("must be an https URL");
+  });
+});
+
+describe("lab validation", () => {
+  let dir: string;
+  let curriculum: Curriculum;
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "lfct-labs-"));
+    curriculum = { ...(await loadCurriculum()), contentDir: dir };
+  });
+  afterAll(async () => rm(dir, { recursive: true, force: true }));
+
+  it("checks weights, check kinds, ids and the sample folder rule", async () => {
+    await mkdir(path.join(dir, "labs/real"), { recursive: true });
+    await writeFile(
+      path.join(dir, "labs/real/bad.yaml"),
+      [
+        "id: bad-lab",
+        "mock: true",
+        "title: T",
+        "summary: S",
+        "tier: 1",
+        "minutes: 20",
+        "competencies: [cka/cluster-architecture-installation-configuration/manage-role-based-access-control]",
+        "solution: echo",
+        "tasks:",
+        "  - id: a",
+        "    title: A",
+        "    weight: 60",
+        "    body: B",
+        "    checks:",
+        "      - id: both",
+        "        description: D",
+        "        script: 'true'",
+        "        assert: { kind: Pod }",
+        "  - id: b",
+        "    title: B",
+        "    weight: 30",
+        "    body: B",
+        "    checks:",
+        "      - id: ws-assert",
+        "        description: D",
+        "        runIn: workstation",
+        "        assert: { kind: Pod }",
+      ].join("\n"),
+    );
+    const err = await loadContent(curriculum).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ContentError);
+    const problems = (err as ContentError).problems.join("\n");
+    expect(problems).toContain("task weights must add up to 100, they add up to 90");
+    expect(problems).toContain("a check needs exactly one of assert or script");
+    expect(problems).toContain("assert checks always run in the grader");
   });
 });

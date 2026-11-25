@@ -69,6 +69,81 @@ export const QuestionBankSchema = z.strictObject({
   questions: z.array(QuestionSchema).min(1),
 });
 
+/**
+ * Hands-on labs (Phase 2). One YAML file per lab under content/labs. A lab is a set of tasks on a fresh
+ * cluster; each task has graded checks. A check is either a Chainsaw assertion tree (`assert`), matched
+ * against the cluster by the grader, or a shell script (`script`) that passes when it exits 0. Checks run in
+ * a grader container the learner cannot reach (`runIn: grader`), or inside the learner's workstation for
+ * files they were asked to write (`runIn: workstation`). The reference `solution` is a shell script run in
+ * the workstation; the lab self-test applies it and expects every check to pass.
+ */
+export const LabCheckSchema = z
+  .strictObject({
+    id: KeySchema,
+    /** What the check verifies, written as the passing state: "Deployment web has 3 ready replicas". */
+    description: z.string().trim().min(1).max(200),
+    /** Shown when the check fails, to say what is wrong without giving the answer away. */
+    failMessage: z.string().trim().min(1).max(300).optional(),
+    assert: z.record(z.string(), z.unknown()).optional(),
+    /** Namespace for an `assert` on a namespaced resource whose tree has no metadata.namespace. */
+    namespace: KeySchema.optional(),
+    script: z.string().trim().min(1).optional(),
+    runIn: z.enum(["grader", "workstation"]).default("grader"),
+  })
+  .superRefine((c, ctx) => {
+    if (Boolean(c.assert) === Boolean(c.script)) {
+      ctx.addIssue({ code: "custom", message: "a check needs exactly one of assert or script" });
+    }
+    if (c.assert && c.runIn === "workstation") {
+      ctx.addIssue({ code: "custom", path: ["runIn"], message: "assert checks always run in the grader" });
+    }
+  });
+
+export const LabTaskSchema = z.strictObject({
+  id: KeySchema,
+  title: z.string().trim().min(1).max(120),
+  /** Share of the lab score, in percent. Task weights add up to 100. */
+  weight: z.int().min(1).max(100),
+  /** Markdown task text, as the learner reads it. */
+  body: z.string().trim().min(1),
+  /** Up to three progressive hints; using one is recorded. */
+  hints: z.array(z.string().trim().min(1)).max(3).default([]),
+  checks: z.array(LabCheckSchema).min(1),
+});
+
+export const LabSchema = z
+  .strictObject({
+    id: KeySchema,
+    title: z.string().trim().min(1).max(120),
+    summary: z.string().trim().min(1).max(280),
+    /** 1: virtual cluster sized (k3s), 2: kubeadm VMs, 3: Linux VM. Phase 2 runs tier 1 only. */
+    tier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    /** Session length: the timer the learner sees. */
+    minutes: z.int().min(5).max(240),
+    competencies: z.array(CompetencyRefSchema).min(1),
+    docs: z.array(DocLinkSchema).default([]),
+    /** Container images the tasks need, loaded into the cluster before the learner starts. */
+    images: z.array(z.string().regex(/^[a-z0-9./_:-]+$/, "must be an image reference")).default([]),
+    /** Shell run once in the grader with cluster-admin rights before the terminal opens. */
+    setup: z.string().trim().min(1).optional(),
+    /** Reference solution, run in the workstation by the self-test, shown to the learner after the lab. */
+    solution: z.string().trim().min(1),
+    tasks: z.array(LabTaskSchema).min(1),
+    mock: z.boolean().default(false),
+  })
+  .superRefine((lab, ctx) => {
+    const total = lab.tasks.reduce((sum, t) => sum + t.weight, 0);
+    if (total !== 100) ctx.addIssue({ code: "custom", path: ["tasks"], message: `task weights must add up to 100, they add up to ${total}` });
+    const taskIds = lab.tasks.map((t) => t.id);
+    if (new Set(taskIds).size !== taskIds.length) ctx.addIssue({ code: "custom", path: ["tasks"], message: "duplicate task id" });
+    const checkIds = lab.tasks.flatMap((t) => t.checks.map((c) => c.id));
+    if (new Set(checkIds).size !== checkIds.length) ctx.addIssue({ code: "custom", path: ["tasks"], message: "duplicate check id" });
+  });
+
+export type LabInput = z.infer<typeof LabSchema>;
+export type LabTask = z.infer<typeof LabTaskSchema>;
+export type LabCheck = z.infer<typeof LabCheckSchema>;
+
 export type DocLink = z.infer<typeof DocLinkSchema>;
 export type QuestionInput = z.infer<typeof QuestionSchema>;
 
@@ -89,9 +164,16 @@ export interface Question extends QuestionInput {
   hash: string;
 }
 
+export interface Lab extends LabInput {
+  cert: string;
+  file: string;
+  hash: string;
+}
+
 export interface Content {
   lessons: Lesson[];
   questions: Question[];
+  labs: Lab[];
 }
 
 export class ContentError extends Error {
@@ -132,12 +214,13 @@ export interface LoadContentOptions {
   includeSample?: boolean;
 }
 
-/** Loads and validates lessons and question banks against the curriculum. Throws ContentError listing every problem. */
+/** Loads and validates lessons, question banks and labs against the curriculum. Throws ContentError listing every problem. */
 export async function loadContent(curriculum: Curriculum, opts: LoadContentOptions = {}): Promise<Content> {
   const includeSample = opts.includeSample ?? true;
   const problems: string[] = [];
   const lessons: Lesson[] = [];
   const questions: Question[] = [];
+  const labs: Lab[] = [];
   const rel = (full: string) => path.relative(curriculum.contentDir, full).split(path.sep).join("/");
   const checkRefs = (file: string, where: string, refs: string[]) => {
     for (const ref of refs) {
@@ -199,6 +282,31 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
     }
   }
 
+  const labIds = new Set<string>();
+  for (const full of await walk(path.join(curriculum.contentDir, "labs"), /\.ya?ml$/)) {
+    const file = rel(full);
+    let raw: unknown;
+    try {
+      raw = parse(await readFile(full, "utf8"));
+    } catch (err) {
+      problems.push(`${file}: YAML parse error: ${(err as Error).message}`);
+      continue;
+    }
+    const parsed = LabSchema.safeParse(raw);
+    if (!parsed.success) {
+      problems.push(...parsed.error.issues.map((i) => `${file}: ${i.path.join(".") || "(root)"}: ${i.message}`));
+      continue;
+    }
+    const lab = parsed.data;
+    if (labIds.has(lab.id)) problems.push(`${file}: duplicate lab id ${lab.id}`);
+    labIds.add(lab.id);
+    checkRefs(file, "competencies", lab.competencies);
+    if (lab.mock && !file.includes("/sample/")) problems.push(`${file}: mock labs belong under a sample/ folder`);
+    if (!lab.mock && file.includes("/sample/")) problems.push(`${file}: files under sample/ must set mock: true`);
+    if (!includeSample && lab.mock) continue;
+    labs.push({ ...lab, cert: certOf(lab.competencies[0]!), file, hash: hashOf(lab) });
+  }
+
   if (problems.length > 0) throw new ContentError(problems);
-  return { lessons, questions };
+  return { lessons, questions, labs };
 }

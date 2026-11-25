@@ -31,7 +31,7 @@ so content changes ship without an app release.
 | `lessons/` | MDX lessons with YAML front matter |
 | `questions/` | Multiple-choice question banks in YAML |
 | `lessons/sample/`, `questions/sample/` | The mock sample set (see below) |
-| `labs/` | Lab definitions with Chainsaw checks and reference solutions (Phase 2) |
+| `labs/` | Lab definitions with tasks, Chainsaw or shell checks, hints and reference solutions |
 
 ## Lessons
 
@@ -76,9 +76,55 @@ A question bank is a YAML file with a list of questions. Each one has:
 | `source` | `{ title, url }` of the documentation page the question is based on (https) |
 | `knownIssue` | Optional. Marks an item as known to be broken: it is never served in quizzes and opens an item in the admin flag queue |
 
+## Labs
+
+One YAML file per lab under `labs/`. A lab boots a fresh single-node cluster, runs `setup`, and gives the
+learner a terminal and the tasks. Checks grade the cluster when the learner asks and once more at the end.
+
+```yaml
+id: storage-claim                  # unique, lowercase
+title: "Claim a volume"
+summary: "Shown in the catalogue."
+tier: 1                            # 1 = one k3s node (the only tier so far)
+minutes: 20                        # time limit; one 15-minute extension is allowed
+competencies: [cka/storage/implement-storage-classes-dynamic-volume]
+docs: [{ title: "Kubernetes docs: Persistent Volumes", url: https://kubernetes.io/docs/concepts/storage/persistent-volumes/ }]
+images: [nginx:1.29-alpine]        # loaded into the cluster before the learner starts
+setup: |                           # shell, run in the grader with cluster-admin before the terminal opens
+  kubectl create namespace web
+solution: |                        # shell, run as the learner on the workstation; shown after the lab ends
+  kubectl -n web apply -f - <<'YAML'
+  ...
+  YAML
+tasks:
+  - id: claim
+    title: Create the claim
+    weight: 100                    # task weights add up to 100
+    body: Markdown shown in the task panel.
+    hints: ["Up to three, revealed one at a time and recorded."]
+    checks:
+      - id: pvc-bound
+        description: PVC data in web is Bound      # shown when it passes
+        failMessage: PVC data is missing or not Bound yet.   # optional, shown when it fails
+        assert:                                    # a Chainsaw assert: a partial object to match
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata: { name: data, namespace: web }
+          status: { phase: Bound }
+      - id: answer
+        description: The answer file names the class
+        runIn: workstation                         # grader (default) or workstation; asserts run in the grader
+        script: grep -qx local-path /opt/answers/class.txt   # passes on exit code 0
+```
+
+Each check has exactly one of `assert` or `script`. Asserts can use Chainsaw's JMESPath forms, such as
+`(length(spec.containers)): 1`. Before opening a pull request, prove the lab with a real cluster:
+`pnpm --filter @lfct/lab-controller selftest <lab-id>` (some checks must fail before the solution, and all
+must pass after it).
+
 ## The sample set
 
-Phase 1 ships with **mock content only**: 12 lessons and 60 questions across KCNA, CKA and CKNE, written to
+The app ships with **mock content only**: 12 lessons, 60 questions and 3 labs across KCNA, CKA, CKAD and CKNE, written to
 exercise the app (a long lesson, two very short ones, a lesson tagged for two certs, competencies with no
 lesson, and one deliberately broken question). It is not study material. Every sample file sits under a
 `sample/` folder and sets `mock: true`; the app labels it "Sample content".
@@ -92,8 +138,8 @@ To remove it:
   CONTENT_INCLUDE_SAMPLE=false DATABASE_URL=... pnpm curriculum:ingest
   ```
 
-- **From the repository**, when real content replaces it: delete `content/lessons/sample/` and
-  `content/questions/sample/`.
+- **From the repository**, when real content replaces it: delete `content/lessons/sample/`,
+  `content/questions/sample/` and `content/labs/sample/`.
 
 Learner progress points at content by id, so removing items leaves no broken rows: progress on items that no
 longer exist is simply not shown.

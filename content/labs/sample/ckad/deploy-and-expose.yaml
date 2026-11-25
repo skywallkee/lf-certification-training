@@ -1,0 +1,121 @@
+# Sample lab (mock content for building and testing the app, not study material).
+id: sample-ckad-deploy-and-expose
+mock: true
+title: "Sample lab: deploy, configure and expose a web app"
+summary: "Run a three-replica Deployment, feed it a ConfigMap and put a ClusterIP Service in front of it."
+tier: 1
+minutes: 30
+competencies:
+  - ckad/application-design-build/choose-right-workload-resource-deployment
+  - ckad/application-environment-configuration-security/configmaps
+  - ckad/services-networking/provide-troubleshoot-access-applications-via
+docs:
+  - title: "Kubernetes docs: Deployments"
+    url: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+  - title: "Kubernetes docs: ConfigMaps"
+    url: https://kubernetes.io/docs/concepts/configuration/configmap/
+  - title: "Kubernetes docs: Service"
+    url: https://kubernetes.io/docs/concepts/services-networking/service/
+images:
+  - nginx:1.29-alpine
+setup: |
+  kubectl create namespace shop
+solution: |
+  kubectl -n shop create configmap web-config --from-literal=MODE=production
+  kubectl -n shop create deployment web --image=nginx:1.29-alpine --replicas=3
+  kubectl -n shop set env deployment/web --from=configmap/web-config
+  kubectl -n shop expose deployment web --port=80 --target-port=80
+  kubectl -n shop rollout status deployment/web --timeout=120s
+tasks:
+  - id: deployment
+    title: Run the web Deployment
+    weight: 40
+    body: |
+      In the namespace `shop`, create a Deployment named `web` that runs the image `nginx:1.29-alpine`
+      with **3 replicas**. Its pods must carry the label `app=web`.
+
+      Wait until all three replicas are ready.
+    hints:
+      - "`kubectl create deployment` sets the `app=<name>` label for you."
+      - "`--replicas` works on `kubectl create deployment` too."
+      - "`kubectl -n shop rollout status deployment/web` waits until the replicas are ready."
+    checks:
+      - id: deployment-spec
+        description: Deployment web in shop asks for 3 replicas of nginx:1.29-alpine labelled app=web
+        failMessage: Deployment web is missing in shop, or its replicas, image or app=web label differ from the task.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: web
+            namespace: shop
+          spec:
+            replicas: 3
+            template:
+              metadata:
+                labels:
+                  app: web
+              spec:
+                (containers[?image == 'nginx:1.29-alpine']):
+                  - name: nginx
+      - id: deployment-ready
+        description: Deployment web has 3 ready replicas
+        failMessage: Deployment web does not have 3 ready replicas yet.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: web
+            namespace: shop
+          status:
+            readyReplicas: 3
+  - id: config
+    title: Configure it from a ConfigMap
+    weight: 30
+    body: |
+      Create a ConfigMap `web-config` in `shop` with the key `MODE` set to `production`, and make every
+      container in Deployment `web` read it as environment variables.
+    hints:
+      - "`kubectl create configmap --from-literal=KEY=value` creates a ConfigMap in one line."
+      - "`envFrom` with a `configMapRef` loads every key; `kubectl set env --from=configmap/<name>` writes per-key entries, which works too."
+    checks:
+      - id: configmap
+        description: ConfigMap web-config in shop has MODE=production
+        assert:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: web-config
+            namespace: shop
+          data:
+            MODE: production
+      - id: env-from-configmap
+        description: Deployment web reads web-config into its environment
+        failMessage: The web containers do not reference web-config through env or envFrom.
+        script: |
+          kubectl -n shop get deployment web -o json \
+            | jq -e '[.spec.template.spec.containers[] | ((.envFrom // [])[].configMapRef.name, (.env // [])[].valueFrom.configMapKeyRef.name)] | index("web-config") != null'
+  - id: service
+    title: Expose it inside the cluster
+    weight: 30
+    body: |
+      Create a Service named `web` of type `ClusterIP` in `shop` that sends port `80` to port `80` of the
+      `app=web` pods.
+    hints:
+      - "`kubectl expose deployment` copies the Deployment's selector into the Service."
+    checks:
+      - id: service-spec
+        description: Service web in shop is a ClusterIP on port 80 selecting app=web
+        assert:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: web
+            namespace: shop
+          spec:
+            type: ClusterIP
+            selector:
+              app: web
+            ports:
+              - port: 80
+                targetPort: 80

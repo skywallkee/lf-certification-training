@@ -1,0 +1,10 @@
+**/node_modules
+**/.next
+**/test-results
+**/playwright-report
+.git
+infra/terraform/**/.terraform
+*.log
+.env
+.env.*
+!.env.example
