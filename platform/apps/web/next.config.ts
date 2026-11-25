@@ -6,6 +6,11 @@ const config: NextConfig = {
   // The workspace packages ship TypeScript source.
   transpilePackages: ["@lfct/curriculum", "@lfct/labs"],
   serverExternalPackages: ["pg"],
+  // The app uses no next/image, so the standalone bundle leaves out sharp and its libvips builds (~36 MB).
+  images: { unoptimized: true },
+  outputFileTracingExcludes: {
+    "*": ["../../../node_modules/.pnpm/sharp@*/**", "../../../node_modules/.pnpm/@img+*/**"],
+  },
   poweredByHeader: false,
   // Do not write an AGENTS.md into the app on every dev start.
   agentRules: false,
