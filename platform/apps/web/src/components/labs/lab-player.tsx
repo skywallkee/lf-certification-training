@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { CheckCircle2, CircleDashed, Lightbulb, Loader2, XCircle } from "lucide-react";
+import { BookOpen, ListChecks, Loader2 } from "lucide-react";
 import { taskStates, type CheckResult } from "@lfct/labs/status";
 import { checkLabAction, extendLabAction, finishLabAction, revealHintAction } from "@/app/actions/labs";
 import { SampleBadge } from "@/components/status-chip";
@@ -12,6 +12,8 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, Dia
 import { cn } from "@/lib/utils";
 import { en } from "@/messages/en";
 import { BootProgress } from "./boot-progress";
+import { DocsPanel, type DocsLink } from "./docs-panel";
+import { ExercisePanel } from "./exercise-panel";
 import { SessionTimer } from "./session-timer";
 import { TerminalPane } from "./terminal-pane";
 
@@ -21,6 +23,8 @@ export interface PlayerTask {
   weight: number;
   hintsTotal: number;
   hints: string[];
+  /** The cluster (kubectl context) the exercise is about. */
+  cluster: string;
   checks: { id: string }[];
 }
 
@@ -35,14 +39,18 @@ export interface PlayerProps {
   initial: { status: string; bootStep: number; statusMessage: string | null; expiresAt: string | null; extended: boolean; now: string; createdAt: string };
   lastCheck: { results: CheckResult[]; score: number; at: string } | null;
   extendMinutes: number;
+  /** More than one cluster: each exercise names its kubectl context. */
+  multiCluster: boolean;
+  docs: DocsLink[];
 }
 
 type Poll = PlayerProps["initial"];
 
 /**
- * Lab player: task panel on the left, terminal on the right, timer and actions on top, results under each
- * task. Polls the session while it boots and every few seconds after, so expiry and admin kills show up. F6
- * cycles focus between the toolbar, the task panel and the terminal.
+ * Lab player: on the left, tabs for the exercises (one at a time, with flags and Previous/Next) and the
+ * documentation; the terminal on the right; timer and actions on top. Polls the session while it boots and
+ * every few seconds after, so expiry and admin kills show up. F6 cycles focus between the toolbar, the left
+ * panel and the terminal.
  */
 export function LabPlayer(props: PlayerProps) {
   const router = useRouter();
@@ -54,6 +62,7 @@ export function LabPlayer(props: PlayerProps) {
   const [hints, setHints] = useState<Record<string, string[]>>(() => Object.fromEntries(props.tasks.map((t) => [t.id, t.hints])));
   const [notice, setNotice] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [tab, setTab] = useState<"exercises" | "docs">("exercises");
   const toolbar = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -187,85 +196,68 @@ export function LabPlayer(props: PlayerProps) {
         </p>
       ) : null}
 
-      <div ref={mainRef} className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(340px,440px)_1fr] xl:overflow-hidden">
-        <div
-          ref={panel}
-          tabIndex={-1}
-          role="region"
-          aria-label="Tasks"
-          className="flex min-h-0 flex-col gap-4 overflow-y-auto rounded-lg border bg-card p-5"
-        >
-          <div aria-live="polite" className="text-sm">
-            {checkError ? (
-              <p className="rounded-md bg-destructive-soft px-3 py-2 text-destructive">{checkError}</p>
-            ) : check ? (
-              <p className="rounded-md bg-muted px-3 py-2">
-                <strong>{en.labs.checkSummary(passed, total)}</strong> Score so far: {check.score}%.
-              </p>
-            ) : (
-              <p className="text-muted-foreground">{ready ? en.labs.noChecksYet : en.labs.booting}</p>
-            )}
+      <div
+        ref={mainRef}
+        className={cn(
+          "grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:overflow-hidden",
+          tab === "docs" ? "xl:grid-cols-[minmax(420px,1fr)_minmax(0,1fr)]" : "xl:grid-cols-[minmax(340px,460px)_1fr]",
+        )}
+      >
+        <div ref={panel} tabIndex={-1} role="region" aria-label="Exercises and documentation" className="flex min-h-0 flex-col gap-4 rounded-lg border bg-card p-5">
+          <div role="tablist" aria-label="Left panel" className="flex gap-1 rounded-md bg-muted p-1">
+            {(
+              [
+                ["exercises", "Exercises", ListChecks],
+                ["docs", "Documentation", BookOpen],
+              ] as const
+            ).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={`tab-${key}`}
+                aria-selected={tab === key}
+                aria-controls={`panel-${key}`}
+                onClick={() => setTab(key)}
+                className={cn(
+                  "inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded px-3 text-sm font-semibold",
+                  tab === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4" />
+                {label}
+              </button>
+            ))}
           </div>
-          <ol className="flex flex-col gap-5">
-            {props.tasks.map((t, i) => {
-              const st = checking ? "checking" : states[t.id];
-              const results = check?.results.filter((r) => r.taskId === t.id) ?? [];
-              const shown = hints[t.id] ?? [];
-              return (
-                <li key={t.id} className="border-t pt-4 first:border-t-0 first:pt-0">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-base font-semibold">
-                      {i + 1}. {t.title}
-                    </h2>
-                    <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                      {t.weight}% <TaskChip state={st ?? "unchecked"} />
-                    </span>
-                  </div>
-                  <div className="mt-2 text-[15px]">{props.bodies[t.id]}</div>
-                  {results.length > 0 ? (
-                    <ul className="mt-3 flex flex-col gap-1.5" aria-label={`Checks for task ${i + 1}`}>
-                      {results.map((r) => (
-                        <li key={r.checkId} className="flex items-start gap-2 text-sm">
-                          {r.passed ? (
-                            <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
-                          ) : (
-                            <XCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
-                          )}
-                          <span>
-                            <span className="sr-only">{r.passed ? "Passed: " : "Failed: "}</span>
-                            {r.message}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {t.hintsTotal > 0 ? (
-                    <div className="mt-3">
-                      {shown.length > 0 ? (
-                        <ol className="mb-2 flex flex-col gap-1.5">
-                          {shown.map((h, j) => (
-                            <li key={j} className="flex items-start gap-2 rounded-md bg-primary-soft px-3 py-2 text-sm">
-                              <Lightbulb aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
-                              <span>
-                                <span className="font-semibold">Hint {j + 1}: </span>
-                                {h}
-                              </span>
-                            </li>
-                          ))}
-                        </ol>
-                      ) : null}
-                      {shown.length < t.hintsTotal ? (
-                        <Button type="button" size="sm" variant="ghost" disabled={!ready} onClick={() => showHint(t.id)}>
-                          <Lightbulb aria-hidden="true" />
-                          Show hint {shown.length + 1} of {t.hintsTotal}
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ol>
+
+          <div id="panel-exercises" role="tabpanel" aria-labelledby="tab-exercises" hidden={tab !== "exercises"} className="flex min-h-0 flex-1 flex-col gap-4">
+            <div aria-live="polite" className="text-sm">
+              {checkError ? (
+                <p className="rounded-md bg-destructive-soft px-3 py-2 text-destructive">{checkError}</p>
+              ) : check ? (
+                <p className="rounded-md bg-muted px-3 py-2">
+                  <strong>{en.labs.checkSummary(passed, total)}</strong> Score so far: {check.score}%.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">{ready ? en.labs.noChecksYet : en.labs.booting}</p>
+              )}
+            </div>
+            <ExercisePanel
+              sessionId={props.sessionId}
+              tasks={props.tasks}
+              bodies={props.bodies}
+              states={checking ? Object.fromEntries(props.tasks.map((t) => [t.id, "checking" as const])) : states}
+              results={check?.results ?? []}
+              hints={hints}
+              multiCluster={props.multiCluster}
+              canAct={ready}
+              onShowHint={showHint}
+            />
+          </div>
+          {/* Kept mounted while hidden so the page the learner was reading stays put. */}
+          <div id="panel-docs" role="tabpanel" aria-labelledby="tab-docs" hidden={tab !== "docs"} className="flex min-h-0 flex-1 flex-col">
+            <DocsPanel links={props.docs} />
+          </div>
         </div>
 
         <div className="flex min-h-[420px] flex-col">
@@ -294,20 +286,5 @@ function FinishSubmit() {
       {pending ? <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : null}
       {pending ? "Grading and deleting…" : en.labs.finishConfirm}
     </Button>
-  );
-}
-
-function TaskChip({ state }: { state: "passed" | "failed" | "unchecked" | "checking" }) {
-  const map = {
-    passed: { cls: "bg-success-soft text-success", Icon: CheckCircle2, label: "Passed" },
-    failed: { cls: "bg-destructive-soft text-destructive", Icon: XCircle, label: "Not yet" },
-    unchecked: { cls: "bg-muted text-muted-foreground", Icon: CircleDashed, label: "Not checked" },
-    checking: { cls: "bg-primary-soft text-primary", Icon: Loader2, label: "Checking" },
-  }[state];
-  return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold", map.cls)}>
-      <map.Icon aria-hidden="true" className={cn("size-3.5", state === "checking" && "animate-spin motion-reduce:animate-none")} />
-      {map.label}
-    </span>
   );
 }

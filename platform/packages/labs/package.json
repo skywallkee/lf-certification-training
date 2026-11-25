@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
-    "./status": "./src/status.ts"
+    "./status": "./src/status.ts",
+    "./docs": "./src/docs.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

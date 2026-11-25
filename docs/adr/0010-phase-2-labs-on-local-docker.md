@@ -28,7 +28,12 @@ so every feature can be tried without spending credit.
 5. **Grading uses Kyverno Chainsaw asserts and shell checks.** A task's score is its weight times the share
    of its checks that pass. Lab files are validated at ingest; `selftest` proves each lab fails before it is
    solved and passes with its reference solution, in CI too.
-6. **Defaults from the design spec**: 600 lab minutes per learner per month (counted from ready to end), one
+6. **Exam-like player.** A lab may boot up to three clusters, each a kubectl context; every task names its
+   cluster, its checks run against that cluster only, and the learner switches context per task. The player
+   shows one exercise at a time with flags and Previous/Next, and a Documentation tab with the official docs.
+   Docs sites may forbid framing, so the controller serves an allowlist of them (`LAB_DOCS_HOSTS`) at
+   `<site>.localhost`, without the framing headers and with a CSP that lets only the web app frame them.
+7. **Defaults from the design spec**: 600 lab minutes per learner per month (counted from ready to end), one
    active lab per learner, a capacity cap per machine (3), one 15-minute extension, up to 3 hints per task,
    a sweeper every 30 seconds that grades and ends expired labs, fails boots over 10 minutes, and deletes
    orphaned containers by label.

@@ -33,6 +33,28 @@ test("a learner runs a lab: boot, terminal, hint, check, extend, finish and resu
     .click();
   await expect(page.getByText("Hint 1:").first()).toBeVisible();
 
+  // One exercise at a time: move on, flag it, come back.
+  await expect(page.getByText("Exercise 1 of 3")).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText("Exercise 2 of 3")).toBeVisible();
+  await page.getByRole("button", { name: "Flag for later" }).click();
+  await expect(
+    page.getByRole("button", { name: "Flag for later" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: /^Exercise 2: .*flagged$/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expect(page.getByText("Exercise 1 of 3")).toBeVisible();
+
+  // The docs tab shows the official docs through the controller's docs viewer.
+  await page.getByRole("tab", { name: "Documentation" }).click();
+  await expect(page.locator("iframe")).toHaveAttribute(
+    "src",
+    /^http:\/\/kubernetes\.io\.localhost:\d+\/docs\//,
+  );
+  await page.getByRole("tab", { name: "Exercises" }).click();
+
   await page.getByTestId("terminal").click();
   await page.keyboard.type("solve");
   await page.keyboard.press("Enter");

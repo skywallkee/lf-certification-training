@@ -43,6 +43,7 @@ export default defineConfig({
         LAB_CONTROLLER_URL: `http://localhost:${controllerPort}`,
         LAB_TERMINAL_URL: `ws://localhost:${controllerPort}`,
         LAB_PROVIDER_NAME: "fake",
+        LAB_DOCS_URL: `http://{host}.localhost:${controllerPort}`,
       },
     },
     {

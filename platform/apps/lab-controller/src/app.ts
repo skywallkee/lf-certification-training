@@ -1,5 +1,6 @@
 import { loadConfig, type Config } from "./config.ts";
 import { connect } from "./db.ts";
+import { createDocsProxy } from "./docs-proxy.ts";
 import { DockerProvider } from "./provider/docker.ts";
 import { FakeProvider } from "./provider/fake.ts";
 import type { LabProvider } from "./provider/types.ts";
@@ -22,7 +23,8 @@ export async function start(config = loadConfig()) {
   const recovered = await sessions.recoverAfterRestart();
   if (recovered > 0) console.log(`Marked ${recovered} half-started lab session(s) as failed after a restart.`);
 
-  const server = createServer({ sessions, relay, secret: config.controllerSecret, providerName: provider.name });
+  const docs = createDocsProxy({ hosts: config.docsHosts, allowedOrigins: config.allowedOrigins });
+  const server = createServer({ sessions, relay, secret: config.controllerSecret, providerName: provider.name, docs });
   await new Promise<void>((resolve) => server.listen(config.port, resolve));
   console.log(`Lab controller (${provider.name}) listening on :${config.port}`);
 

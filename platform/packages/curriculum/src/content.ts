@@ -108,8 +108,16 @@ export const LabTaskSchema = z.strictObject({
   body: z.string().trim().min(1),
   /** Up to three progressive hints; using one is recorded. */
   hints: z.array(z.string().trim().min(1)).max(3).default([]),
+  /** The cluster this task is about (one of the lab's `clusters`). Required when the lab has more than one. */
+  cluster: z.string().optional(),
   checks: z.array(LabCheckSchema).min(1),
 });
+
+/** A cluster name: also its kubectl context and its host name on the lab network. */
+export const ClusterNameSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{0,15}$/, "must be a short lowercase name (letters, digits, hyphens)")
+  .refine((n) => !["grader", "workstation", "localhost"].includes(n), "is reserved");
 
 export const LabSchema = z
   .strictObject({
@@ -122,9 +130,17 @@ export const LabSchema = z
     minutes: z.int().min(5).max(240),
     competencies: z.array(CompetencyRefSchema).min(1),
     docs: z.array(DocLinkSchema).default([]),
-    /** Container images the tasks need, loaded into the cluster before the learner starts. */
+    /**
+     * Clusters to boot, 1 to 3. Each is a kubectl context on the workstation; with more than one, every task
+     * names its cluster and the learner switches context per task, as in the exams.
+     */
+    clusters: z.array(ClusterNameSchema).min(1).max(3).default(["k8s"]),
+    /** Container images the tasks need, loaded into every cluster before the learner starts. */
     images: z.array(z.string().regex(/^[a-z0-9./_:-]+$/, "must be an image reference")).default([]),
-    /** Shell run once in the grader with cluster-admin rights before the terminal opens. */
+    /**
+     * Shell run once in the grader with cluster-admin rights before the terminal opens. Every cluster is a
+     * context (`kubectl --context <name>`); the first one is the current context.
+     */
     setup: z.string().trim().min(1).optional(),
     /** Reference solution, run in the workstation by the self-test, shown to the learner after the lab. */
     solution: z.string().trim().min(1),
@@ -138,6 +154,15 @@ export const LabSchema = z
     if (new Set(taskIds).size !== taskIds.length) ctx.addIssue({ code: "custom", path: ["tasks"], message: "duplicate task id" });
     const checkIds = lab.tasks.flatMap((t) => t.checks.map((c) => c.id));
     if (new Set(checkIds).size !== checkIds.length) ctx.addIssue({ code: "custom", path: ["tasks"], message: "duplicate check id" });
+    if (new Set(lab.clusters).size !== lab.clusters.length) ctx.addIssue({ code: "custom", path: ["clusters"], message: "duplicate cluster name" });
+    lab.tasks.forEach((t, i) => {
+      if (t.cluster !== undefined && !lab.clusters.includes(t.cluster)) {
+        ctx.addIssue({ code: "custom", path: ["tasks", i, "cluster"], message: `"${t.cluster}" is not one of the lab's clusters (${lab.clusters.join(", ")})` });
+      }
+      if (t.cluster === undefined && lab.clusters.length > 1) {
+        ctx.addIssue({ code: "custom", path: ["tasks", i, "cluster"], message: "required when the lab has more than one cluster" });
+      }
+    });
   });
 
 export type LabInput = z.infer<typeof LabSchema>;

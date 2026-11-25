@@ -67,6 +67,7 @@ services:
       LAB_NETWORK: lfct-labs
       LAB_TOOLS_IMAGE: lfct-lab-tools:local
       LAB_K3S_IMAGE: ${LAB_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1}
+      LAB_DOCS_HOSTS: ${LAB_DOCS_HOSTS:-kubernetes.io,helm.sh}
       LAB_ALLOWED_ORIGINS: ${APP_URL:-http://localhost:3000}
     volumes:
       # Starts and removes lab containers on this machine's Docker.
@@ -106,6 +107,9 @@ services:
       SHOW_DEV_EMAILS: "true"
       LAB_CONTROLLER_URL: http://lab-controller:3001
       LAB_TERMINAL_URL: ws://localhost:${LAB_CONTROLLER_PORT:-3001}
+      # The docs pane: the controller serves these sites at <site>.localhost (resolves to this machine).
+      LAB_DOCS_URL: http://{host}.localhost:${LAB_CONTROLLER_PORT:-3001}
+      LAB_DOCS_HOSTS: ${LAB_DOCS_HOSTS:-kubernetes.io,helm.sh}
       LAB_PROVIDER_NAME: ${LAB_PROVIDER_NAME:-local-docker}
       LAB_MONTHLY_MINUTES: ${LAB_MONTHLY_MINUTES:-600}
       LAB_MAX_ACTIVE_SESSIONS: ${LAB_MAX_ACTIVE_SESSIONS:-3}

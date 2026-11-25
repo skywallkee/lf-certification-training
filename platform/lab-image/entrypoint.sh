@@ -1,19 +1,28 @@
 #!/bin/bash
 # Roles:
-#   workstation  waits for the cluster's kubeconfig, gives it to "candidate", serves tmux through ttyd on 7681
-#   grader       waits for the kubeconfig and idles; the controller runs checks with `docker exec`
-# The cluster container writes its admin kubeconfig to /lab/kubeconfig.yaml (a per-session volume) with
-# 127.0.0.1 as the server; it is rewritten to the cluster's address on the session network.
+#   workstation  waits for the clusters' kubeconfigs, gives them to "candidate", serves tmux through ttyd on 7681
+#   grader       waits for the kubeconfigs and idles; the controller runs checks with `docker exec`
+# Each cluster container writes its admin kubeconfig to /lab/<name>.yaml (a per-session volume) with
+# 127.0.0.1 as the server and "default" as the cluster, user and context names. They are rewritten to the
+# cluster's address on the session network and to the cluster's name, then merged into one kubeconfig with a
+# context per cluster; the first cluster is the current context. Single-cluster kubeconfigs stay in
+# ~/.kube/clusters/<name>.yaml for the grader.
 set -euo pipefail
 role="${1:-workstation}"
-server="${LAB_CLUSTER_SERVER:-https://cluster:6443}"
+read -r -a clusters <<< "${LAB_CLUSTERS:-k8s}"
 
 install_kubeconfig() { # $1 = home directory, $2 = owner
-  for _ in $(seq 1 300); do [ -s /lab/kubeconfig.yaml ] && break; sleep 1; done
-  mkdir -p "$1/.kube"
-  sed "s#https://127.0.0.1:6443#${server}#" /lab/kubeconfig.yaml > "$1/.kube/config"
-  chmod 600 "$1/.kube/config"
-  chown -R "$2" "$1/.kube"
+  local dir="$1/.kube" paths=()
+  mkdir -p "$dir/clusters"
+  for name in "${clusters[@]}"; do
+    for _ in $(seq 1 300); do [ -s "/lab/$name.yaml" ] && break; sleep 1; done
+    sed -e "s#https://127.0.0.1:6443#https://$name:6443#" -e "s#: default\$#: $name#" "/lab/$name.yaml" > "$dir/clusters/$name.yaml"
+    paths+=("$dir/clusters/$name.yaml")
+  done
+  (IFS=:; KUBECONFIG="${paths[*]}" kubectl config view --flatten) > "$dir/config"
+  kubectl --kubeconfig "$dir/config" config use-context "${clusters[0]}" >/dev/null
+  chmod 600 "$dir/config" "$dir"/clusters/*.yaml
+  chown -R "$2" "$dir"
 }
 
 case "$role" in

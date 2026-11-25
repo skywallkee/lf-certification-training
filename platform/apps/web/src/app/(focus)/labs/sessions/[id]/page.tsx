@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
-import { EXTEND_MINUTES, isActive } from "@lfct/labs";
+import { EXTEND_MINUTES, docsViewerUrl, isActive, parseDocsHosts } from "@lfct/labs";
 import { LabPlayer } from "@/components/labs/lab-player";
 import { Markdown } from "@/components/markdown";
+import { env } from "@/env";
 import { getHintUses, getLab, getLastCheck, getSession } from "@/server/labs";
 import { requireUser } from "@/server/session";
 
@@ -29,8 +30,15 @@ export default async function LabSessionPage({ params }: { params: Promise<{ id:
       .filter((h) => h.taskId === t.id)
       .sort((a, b) => a.hintIndex - b.hintIndex)
       .map((h) => t.hints[h.hintIndex] ?? ""),
+    cluster: t.cluster ?? lab.clusters[0] ?? "k8s",
     checks: t.checks.map((c) => ({ id: c.id })),
   }));
+  // The lab's own links first, then the documentation home; each through the docs viewer when allowlisted.
+  const hosts = parseDocsHosts(env.labs.docsHosts);
+  const docLinks = [...lab.docs, { title: "Kubernetes documentation (home)", url: "https://kubernetes.io/docs/home/" }];
+  const docs = docLinks
+    .filter((l, i) => docLinks.findIndex((x) => x.url === l.url) === i)
+    .map((l) => ({ title: l.title, url: l.url, viewerUrl: docsViewerUrl(l.url, env.labs.docsUrl, hosts) }));
   const bodies = Object.fromEntries(lab.tasks.map((t) => [t.id, <Markdown key={t.id}>{t.body}</Markdown>]));
 
   return (
@@ -42,6 +50,8 @@ export default async function LabSessionPage({ params }: { params: Promise<{ id:
       tasks={tasks}
       bodies={bodies}
       extendMinutes={EXTEND_MINUTES}
+      multiCluster={lab.clusters.length > 1}
+      docs={docs}
       initial={{
         status: session.status,
         bootStep: session.bootStep,

@@ -1,3 +1,5 @@
+import { parseDocsHosts } from "@lfct/labs/docs";
+
 /** Controller configuration from the environment. Defaults suit `docker compose up` on a laptop. */
 function int(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -39,6 +41,8 @@ export function loadConfig() {
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean),
+    /** Documentation sites the docs pane may show (LAB_DOCS_HOSTS, comma-separated). */
+    docsHosts: parseDocsHosts(process.env.LAB_DOCS_HOSTS),
     sweepSeconds: int("LAB_SWEEP_SECONDS", 30),
     /** A session still booting after this long is marked failed and removed. */
     bootTimeoutSeconds: int("LAB_BOOT_TIMEOUT_SECONDS", 600),

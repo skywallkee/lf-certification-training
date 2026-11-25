@@ -182,6 +182,8 @@ export interface LabTaskJson {
   weight: number;
   body: string;
   hints: string[];
+  /** The cluster (kubectl context) the task is about. */
+  cluster: string;
   checks: LabCheckJson[];
 }
 
@@ -201,6 +203,8 @@ export const lab = pgTable(
     tier: integer("tier").notNull(),
     minutes: integer("minutes").notNull(),
     docs: jsonb("docs").$type<DocLinkJson[]>().notNull(),
+    /** Cluster names, booted in this order; each is a kubectl context. */
+    clusters: text("clusters").array().notNull().default(["k8s"]),
     images: text("images").array().notNull(),
     setup: text("setup"),
     solution: text("solution").notNull(),

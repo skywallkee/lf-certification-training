@@ -18,6 +18,11 @@ describe("check commands", () => {
     expect(cmd.stdin).toContain("kind: Role");
   });
 
+  it("points kubectl and chainsaw at the task's cluster only", () => {
+    const cmd = checkCommand({ id: "c", description: "d", runIn: "grader", script: "kubectl get ns" }, "c2");
+    expect(cmd.script.split("\n")[0]).toBe('export KUBECONFIG="$HOME/.kube/clusters/c2.yaml"');
+  });
+
   it("runs scripts with errexit and pipefail so every line counts", () => {
     expect(checkCommand({ id: "c", description: "d", runIn: "grader", script: "a\nb" }).script).toBe("set -eo pipefail\na\nb");
   });

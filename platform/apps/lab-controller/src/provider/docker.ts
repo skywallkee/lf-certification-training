@@ -9,8 +9,8 @@ import type { ExecOptions, ExecResult, LabProvider, ProvisionContext, Resources,
  * Local Docker provider: the laptop stand-in for the plan's Tier 1 lab node. Each session gets
  *
  * - a bridge network and a volume, both named after the session;
- * - `cluster`: k3s in a privileged container (the same technique as k3d), writing its admin kubeconfig to the
- *   volume;
+ * - one k3s container per cluster of the lab (privileged, the same technique as k3d), each named after the
+ *   cluster on the session network and writing its admin kubeconfig to the volume;
  * - `grader`: the lab tools image, idle, with cluster-admin rights; checks and the task setup run here, out of
  *   the learner's reach;
  * - `workstation`: the lab tools image serving tmux through ttyd as the unprivileged "candidate" user, with a
@@ -30,7 +30,7 @@ export interface DockerResources extends Resources {
   provider: "local-docker";
   network: string;
   volume: string;
-  containers: { cluster: string; grader: string; workstation: string };
+  containers: { clusters: Record<string, string>; grader: string; workstation: string };
   terminal: { host: string; port: number; credential: string };
 }
 
@@ -81,40 +81,48 @@ export class DockerProvider implements LabProvider {
     await this.ensureImage(this.config.toolsImage);
     for (const image of labImages) await this.ensureImage(image);
 
-    await ctx.onStep("cluster", "Creating the network and starting k3s");
+    const clusterNames = lab.clusters.length > 0 ? lab.clusters : ["k8s"];
+    const plural = clusterNames.length > 1;
+    await ctx.onStep("cluster", plural ? `Creating the network and starting ${clusterNames.length} k3s clusters` : "Creating the network and starting k3s");
     const network = `${base}-net`;
     const volume = `${base}-kube`;
     await this.docker.createNetwork({ Name: network, Driver: "bridge", Labels: this.labels(sessionId, deleteAfter) });
     await this.docker.createVolume({ Name: volume, Labels: this.labels(sessionId, deleteAfter) });
 
-    const cluster = await this.docker.createContainer({
-      name: `${base}-cluster`,
-      Hostname: "lab-node",
-      Image: this.config.k3sImage,
-      Cmd: [
-        "server",
-        "--disable=traefik,metrics-server",
-        "--tls-san=cluster",
-        "--write-kubeconfig=/output/kubeconfig.yaml",
-        "--write-kubeconfig-mode=644",
-      ],
-      Labels: this.labels(sessionId, deleteAfter, "cluster"),
-      HostConfig: {
-        Privileged: true,
-        Tmpfs: { "/run": "", "/var/run": "" },
-        Binds: [`${volume}:/output`],
-        NetworkMode: network,
-        ...(this.config.clusterMemoryMb > 0 ? { Memory: this.config.clusterMemoryMb * 1024 * 1024 } : {}),
-      },
-      NetworkingConfig: { EndpointsConfig: { [network]: { Aliases: ["cluster"] } } },
-    });
-    await cluster.start();
+    const clusters: Record<string, string> = {};
+    for (const name of clusterNames) {
+      const cluster = await this.docker.createContainer({
+        name: `${base}-${name}`,
+        Hostname: `${name}-node`,
+        Image: this.config.k3sImage,
+        Cmd: [
+          "server",
+          "--disable=traefik,metrics-server",
+          `--tls-san=${name}`,
+          `--write-kubeconfig=/output/${name}.yaml`,
+          "--write-kubeconfig-mode=644",
+        ],
+        Labels: this.labels(sessionId, deleteAfter, "cluster"),
+        HostConfig: {
+          Privileged: true,
+          Tmpfs: { "/run": "", "/var/run": "" },
+          Binds: [`${volume}:/output`],
+          NetworkMode: network,
+          ...(this.config.clusterMemoryMb > 0 ? { Memory: this.config.clusterMemoryMb * 1024 * 1024 } : {}),
+        },
+        NetworkingConfig: { EndpointsConfig: { [network]: { Aliases: [name] } } },
+      });
+      await cluster.start();
+      clusters[name] = cluster.id;
+    }
+    const clusterEnv = `LAB_CLUSTERS=${clusterNames.join(" ")}`;
 
     const grader = await this.docker.createContainer({
       name: `${base}-grader`,
       Hostname: "grader",
       Image: this.config.toolsImage,
       Cmd: ["grader"],
+      Env: [clusterEnv],
       Labels: this.labels(sessionId, deleteAfter, "grader"),
       HostConfig: { Binds: [`${volume}:/lab:ro`], NetworkMode: network },
     });
@@ -128,7 +136,7 @@ export class DockerProvider implements LabProvider {
       Hostname: "workstation",
       Image: this.config.toolsImage,
       Cmd: ["workstation"],
-      Env: [`TTYD_CREDENTIAL=${credential}`],
+      Env: [`TTYD_CREDENTIAL=${credential}`, clusterEnv],
       Labels: this.labels(sessionId, deleteAfter, "workstation"),
       ExposedPorts: { [`${TTYD_PORT}/tcp`]: {} },
       HostConfig: {
@@ -147,7 +155,7 @@ export class DockerProvider implements LabProvider {
       provider: "local-docker",
       network,
       volume,
-      containers: { cluster: cluster.id, grader: grader.id, workstation: workstation.id },
+      containers: { clusters, grader: grader.id, workstation: workstation.id },
       terminal: { host: workstationName, port: TTYD_PORT, credential },
     };
     if (this.config.reach === "host") {
@@ -157,18 +165,24 @@ export class DockerProvider implements LabProvider {
       resources.terminal = { host: "127.0.0.1", port: Number(binding.HostPort), credential };
     }
 
-    await ctx.onStep("api", "Waiting for the Kubernetes API and the node");
-    await this.waitFor(sessionId, resources, "kubectl get --raw /readyz >/dev/null 2>&1", 240_000, "the Kubernetes API did not become ready");
-    await this.waitFor(
-      sessionId,
-      resources,
-      "kubectl get nodes -o name 2>/dev/null | grep -q . && kubectl wait --for=condition=Ready nodes --all --timeout=5s >/dev/null 2>&1",
-      180_000,
-      "the node did not become Ready",
+    await ctx.onStep("api", plural ? "Waiting for every cluster's API and node" : "Waiting for the Kubernetes API and the node");
+    await Promise.all(
+      clusterNames.map(async (name) => {
+        const kc = `KUBECONFIG=$HOME/.kube/clusters/${name}.yaml`;
+        await this.waitFor(sessionId, resources, `${kc} kubectl get --raw /readyz >/dev/null 2>&1`, 240_000, `the Kubernetes API of ${name} did not become ready`);
+        await this.waitFor(
+          sessionId,
+          resources,
+          `${kc} kubectl get nodes -o name 2>/dev/null | grep -q . && ${kc} kubectl wait --for=condition=Ready nodes --all --timeout=5s >/dev/null 2>&1`,
+          180_000,
+          `the node of ${name} did not become Ready`,
+        );
+      }),
     );
 
-    await ctx.onStep("load-images", `Loading ${labImages.length} image${labImages.length === 1 ? "" : "s"} into the cluster`);
-    if (labImages.length > 0) await this.importImages(cluster.id, labImages);
+    const imageStep = `Loading ${labImages.length} image${labImages.length === 1 ? "" : "s"} into ${plural ? "each cluster" : "the cluster"}`;
+    await ctx.onStep("load-images", imageStep);
+    if (labImages.length > 0) await Promise.all(Object.values(clusters).map((id) => this.importImages(id, labImages)));
 
     if (lab.setup) {
       await ctx.onStep("setup", "Running the task setup");

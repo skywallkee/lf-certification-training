@@ -9,16 +9,20 @@ const DETAIL_LIMIT = 2000;
 
 type Check = LabRow["tasks"][number]["checks"][number];
 
-/** The shell script and stdin that evaluate one check. Exported for tests. */
-export function checkCommand(check: Check): { script: string; stdin?: string } {
+/**
+ * The shell script and stdin that evaluate one check against the task's cluster: kubectl and Chainsaw see
+ * only that cluster's kubeconfig. Exported for tests.
+ */
+export function checkCommand(check: Check, cluster?: string): { script: string; stdin?: string } {
+  const env = cluster ? `export KUBECONFIG="$HOME/.kube/clusters/${cluster}.yaml"\n` : "";
   if (check.assert) {
     const ns = check.namespace ? ` --namespace ${check.namespace}` : "";
     return {
-      script: `f=$(mktemp --suffix=.yaml) && cat > "$f" && chainsaw assert --file "$f" --timeout ${ASSERT_TIMEOUT} --no-color${ns}`,
+      script: `${env}f=$(mktemp --suffix=.yaml) && cat > "$f" && chainsaw assert --file "$f" --timeout ${ASSERT_TIMEOUT} --no-color${ns}`,
       stdin: stringify(check.assert),
     };
   }
-  return { script: `set -eo pipefail\n${check.script ?? "false"}` };
+  return { script: `${env}set -eo pipefail\n${check.script ?? "false"}` };
 }
 
 /** Runs every check of a lab, in order, and returns one result per check. */
@@ -26,7 +30,7 @@ export async function runChecks(provider: LabProvider, sessionId: string, resour
   const results: CheckResult[] = [];
   for (const task of lab.tasks) {
     for (const check of task.checks) {
-      const { script, stdin } = checkCommand(check);
+      const { script, stdin } = checkCommand(check, task.cluster ?? lab.clusters[0]);
       const where = check.assert ? "grader" : check.runIn;
       let passed = false;
       let detail: string;

@@ -67,7 +67,7 @@ export const en = {
       "The lab controller is not running, so labs cannot start. Locally, start the whole stack with docker compose up.",
     activeSession: "You already have a lab running. Finish it before starting another.",
     finishTitle: "Finish this lab?",
-    finishBody: "Your cluster will be deleted and checks graded one last time.",
+    finishBody: "The lab's clusters will be deleted and the checks graded one last time.",
     finishConfirm: "Finish and delete cluster",
     keepWorking: "Keep working",
     check: "Check my work",

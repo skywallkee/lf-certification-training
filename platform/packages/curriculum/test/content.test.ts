@@ -23,9 +23,13 @@ describe("content in the repository", () => {
     expect(content).toEqual({ lessons: [], questions: [], labs: [] });
   });
 
-  it("loads the three sample labs, one per cert, with weights adding up to 100 and a reference solution", async () => {
+  it("loads the four sample labs, one of them with three clusters, with weights adding up to 100 and a reference solution", async () => {
     const { labs } = await loadContent(curriculum);
-    expect(labs.map((l) => l.cert).sort()).toEqual(["CKA", "CKAD", "CKNE"]);
+    expect(labs.map((l) => l.cert).sort()).toEqual(["CKA", "CKA", "CKAD", "CKNE"]);
+    const multi = labs.find((l) => l.id === "sample-cka-three-clusters")!;
+    expect(multi.clusters).toEqual(["c1", "c2", "c3"]);
+    expect(multi.tasks.map((t) => t.cluster)).toEqual(["c1", "c2", "c3"]);
+    expect(labs.find((l) => l.id === "sample-cka-rbac-pod-reader")!.clusters).toEqual(["k8s"]);
     for (const lab of labs) {
       expect(lab.mock).toBe(true);
       expect(lab.tasks.reduce((n, t) => n + t.weight, 0)).toBe(100);
@@ -146,5 +150,46 @@ describe("lab validation", () => {
     expect(problems).toContain("task weights must add up to 100, they add up to 90");
     expect(problems).toContain("a check needs exactly one of assert or script");
     expect(problems).toContain("assert checks always run in the grader");
+  });
+
+  it("checks cluster names and that every task of a multi-cluster lab names one of them", async () => {
+    await rm(path.join(dir, "labs"), { recursive: true, force: true });
+    await mkdir(path.join(dir, "labs/sample"), { recursive: true });
+    const lab = (clusters: string, firstCluster: string) =>
+      [
+        "id: multi",
+        "mock: true",
+        "title: T",
+        "summary: S",
+        "tier: 1",
+        "minutes: 20",
+        `clusters: ${clusters}`,
+        "competencies: [cka/cluster-architecture-installation-configuration/manage-role-based-access-control]",
+        "solution: echo",
+        "tasks:",
+        "  - id: a",
+        "    title: A",
+        `    cluster: ${firstCluster}`,
+        "    weight: 50",
+        "    body: B",
+        "    checks: [{ id: x, description: D, script: 'true' }]",
+        "  - id: b",
+        "    title: B",
+        "    weight: 50",
+        "    body: B",
+        "    checks: [{ id: y, description: D, script: 'true' }]",
+      ].join("\n");
+    await writeFile(path.join(dir, "labs/sample/multi.yaml"), lab("[c1, c2]", "c9"));
+    let problems = ((await loadContent(curriculum).catch((e: unknown) => e)) as ContentError).problems.join("\n");
+    expect(problems).toContain('"c9" is not one of the lab\'s clusters (c1, c2)');
+    expect(problems).toContain("tasks.1.cluster: required when the lab has more than one cluster");
+
+    await writeFile(path.join(dir, "labs/sample/multi.yaml"), lab("[c1, grader]", "c1"));
+    problems = ((await loadContent(curriculum).catch((e: unknown) => e)) as ContentError).problems.join("\n");
+    expect(problems).toContain("clusters.1: is reserved");
+
+    await writeFile(path.join(dir, "labs/sample/multi.yaml"), lab("[c1, c2, c3, c4]", "c1"));
+    problems = ((await loadContent(curriculum).catch((e: unknown) => e)) as ContentError).problems.join("\n");
+    expect(problems).toContain("expected array to have <=3 items");
   });
 });

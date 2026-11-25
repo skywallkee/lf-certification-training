@@ -36,7 +36,8 @@ export default async function LabPage({ params, searchParams }: { params: Promis
         </div>
         <p className="max-w-[72ch] text-[15px] text-muted-foreground">{lab.summary}</p>
         <p className="text-sm">
-          {lab.certCode} · Tier {lab.tier} · {lab.minutes} minutes · scored per check, task by task
+          {lab.certCode} · Tier {lab.tier} · {lab.minutes} minutes · {lab.clusters.length > 1 ? `${lab.clusters.length} clusters · ` : ""}scored per
+          check, task by task
         </p>
       </header>
       {blocked && block ? (
@@ -62,7 +63,8 @@ export default async function LabPage({ params, searchParams }: { params: Promis
           <Card aria-labelledby="start">
             <CardTitle id="start">Run it</CardTitle>
             <p className="mb-3 mt-1 text-sm text-muted-foreground">
-              You get a fresh single-node cluster, a terminal with kubectl, and {lab.minutes} minutes. Check your work as often as you like.
+              You get {lab.clusters.length > 1 ? `${lab.clusters.length} fresh single-node clusters (${lab.clusters.join(", ")}), one kubectl context each,` : "a fresh single-node cluster,"}{" "}
+              a terminal with kubectl, the official docs, and {lab.minutes} minutes. Check your work as often as you like.
             </p>
             <StartLab lab={lab} usage={usage} block={block} />
           </Card>

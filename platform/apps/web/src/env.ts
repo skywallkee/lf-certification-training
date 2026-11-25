@@ -59,6 +59,17 @@ export const env = {
     get maxActiveSessions() {
       return Number(process.env.LAB_MAX_ACTIVE_SESSIONS ?? 3);
     },
+    /**
+     * Docs viewer: the lab controller serves allowlisted docs sites at this template (`{host}` is the site), so
+     * the lab player can show them in a frame. `*.localhost` resolves to this machine in every major browser.
+     */
+    get docsUrl() {
+      return process.env.LAB_DOCS_URL ?? "http://{host}.localhost:3001";
+    },
+    /** Docs sites the viewer serves; keep it the same as the controller's LAB_DOCS_HOSTS. */
+    get docsHosts() {
+      return process.env.LAB_DOCS_HOSTS;
+    },
     get enabled() {
       return Boolean(process.env.LAB_CONTROLLER_SECRET && process.env.LAB_TOKEN_SECRET);
     },

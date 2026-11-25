@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
+import type { createDocsProxy } from "./docs-proxy.ts";
 import { HttpError, type Sessions } from "./sessions.ts";
 import type { TerminalRelay } from "./relay.ts";
 
@@ -11,8 +12,16 @@ import type { TerminalRelay } from "./relay.ts";
  *   POST /sessions/:id/check        grade now, returns { results, score }
  *   POST /sessions/:id/finish       final grading, delete resources, returns { score }
  *   POST /sessions/:id/kill         delete resources without grading (admin)
+ *
+ * Requests whose Host is `<docs site>.localhost` go to the docs viewer proxy instead (see docs-proxy.ts).
  */
-export function createServer(deps: { sessions: Sessions; relay: TerminalRelay; secret: string; providerName: string }): http.Server {
+export function createServer(deps: {
+  sessions: Sessions;
+  relay: TerminalRelay;
+  secret: string;
+  providerName: string;
+  docs?: ReturnType<typeof createDocsProxy>;
+}): http.Server {
   const expected = Buffer.from(`Bearer ${deps.secret}`);
   const authorized = (req: http.IncomingMessage) => {
     const got = Buffer.from(req.headers.authorization ?? "");
@@ -25,6 +34,8 @@ export function createServer(deps: { sessions: Sessions; relay: TerminalRelay; s
       res.end(JSON.stringify(body));
     };
     try {
+      const site = deps.docs?.siteFor(req);
+      if (site) return await deps.docs!.handle(req, res, site);
       const url = new URL(req.url ?? "/", "http://localhost");
       if (req.method === "GET" && url.pathname === "/health") return send(200, { ok: true, provider: deps.providerName });
       const match = /^\/sessions\/([0-9a-f-]{36})\/(provision|check|finish|kill)$/.exec(url.pathname);

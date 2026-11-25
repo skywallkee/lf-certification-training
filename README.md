@@ -37,7 +37,10 @@ three images and pulls k3s, so give it a few minutes; later starts take seconds.
 Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
 
 Lab containers run privileged (k3s needs it), are labelled `lfct.managed=true`, and are deleted when the
-lab ends. The controller's sweeper removes anything left over, also after a crash. To remove every lab
+lab ends. A lab can boot up to three clusters (one k3s container each, about 600 MB of memory apiece). The
+lab player's Documentation tab shows kubernetes.io and helm.sh through the controller at
+`http://<site>.localhost:3001`, so it needs internet access and a browser that resolves `*.localhost` (Chrome,
+Edge and Firefox do). The controller's sweeper removes anything left over, also after a crash. To remove every lab
 container by hand: `docker rm -f $(docker ps -aq --filter label=lfct.managed=true)`.
 
 ## Develop
