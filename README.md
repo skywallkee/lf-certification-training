@@ -43,6 +43,10 @@ lab player's Documentation tab shows kubernetes.io and helm.sh through the contr
 Edge and Firefox do). The controller's sweeper removes anything left over, also after a crash. To remove every lab
 container by hand: `docker rm -f $(docker ps -aq --filter label=lfct.managed=true)`.
 
+The images are small on purpose: `web` is the Next.js standalone server, and `setup` and `lab-controller` are
+single files bundled with esbuild (`pnpm bundle`), each on plain Alpine with only the node binary, running as a
+non-root user. The lab workstation image stays on Ubuntu so the terminal feels like the exam's.
+
 ## Develop
 
 Needs Node.js 22 and pnpm 10 (`corepack enable`).

@@ -1,6 +1,4 @@
-import { ContentError, loadContent } from "../content.ts";
-import { migrateAndIngest } from "../db/ingest.ts";
-import { CurriculumError, loadCurriculum } from "../load.ts";
+import { ContentError, CurriculumError, ingestAll } from "../db/ingest.ts";
 
 /**
  * Applies migrations and loads content/ (curriculum, lessons, questions, labs) into Postgres. Needs DATABASE_URL.
@@ -11,18 +9,8 @@ if (!url) {
   console.error("DATABASE_URL is not set");
   process.exit(1);
 }
-const includeSample = process.env.CONTENT_INCLUDE_SAMPLE !== "false";
 try {
-  const curriculum = await loadCurriculum(process.argv[2]);
-  const content = await loadContent(curriculum, { includeSample });
-  const result = await migrateAndIngest(url, curriculum, content, { includeSample });
-  console.log(
-    `Ingested ${result.certs} certifications: ${result.inserted.length} new curriculum versions, ` +
-      `${result.unchanged.length} unchanged. ${result.content?.lessons ?? 0} lessons, ` +
-      `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs` +
-      `${includeSample ? " (sample set included)" : ""}; removed ${result.content?.removedLessons ?? 0} lessons, ` +
-      `${result.content?.removedQuestions ?? 0} questions and ${result.content?.removedLabs ?? 0} labs.`,
-  );
+  console.log(await ingestAll(url, { includeSample: process.env.CONTENT_INCLUDE_SAMPLE !== "false", curriculumDir: process.argv[2] }));
 } catch (err) {
   if (err instanceof CurriculumError || err instanceof ContentError) {
     console.error(err.message);

@@ -5,12 +5,15 @@ import { and, eq, ne, notInArray } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
-import type { Content } from "../content.ts";
-import type { Cert, Curriculum } from "../load.ts";
+import { loadContent, type Content } from "../content.ts";
+import { loadCurriculum, type Cert, type Curriculum } from "../load.ts";
 import { sourceUrl } from "../queries.ts";
 import * as schema from "./schema.ts";
 
 export const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../drizzle");
+
+export { ContentError } from "../content.ts";
+export { CurriculumError } from "../load.ts";
 
 export type Db = NodePgDatabase<typeof schema>;
 
@@ -286,4 +289,25 @@ export async function migrateAndIngest(
   } finally {
     await pool.end();
   }
+}
+
+/**
+ * Loads content/ (curriculum, lessons, questions, labs), applies migrations and ingests it all. Returns a one-line
+ * summary. Throws CurriculumError or ContentError when the YAML is invalid.
+ */
+export async function ingestAll(
+  databaseUrl: string,
+  opts: { includeSample?: boolean; curriculumDir?: string } = {},
+): Promise<string> {
+  const includeSample = opts.includeSample ?? true;
+  const curriculum = await loadCurriculum(opts.curriculumDir);
+  const content = await loadContent(curriculum, { includeSample });
+  const result = await migrateAndIngest(databaseUrl, curriculum, content, { includeSample });
+  return (
+    `Ingested ${result.certs} certifications: ${result.inserted.length} new curriculum versions, ` +
+    `${result.unchanged.length} unchanged. ${result.content?.lessons ?? 0} lessons, ` +
+    `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs` +
+    `${includeSample ? " (sample set included)" : ""}; removed ${result.content?.removedLessons ?? 0} lessons, ` +
+    `${result.content?.removedQuestions ?? 0} questions and ${result.content?.removedLabs ?? 0} labs.`
+  );
 }
