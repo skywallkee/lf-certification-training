@@ -206,18 +206,27 @@ export class DockerProvider implements LabProvider {
   }
 
   /**
-   * Streams `docker save` of the images into k3s's containerd. Only the host's platform is exported, which
-   * matters on Docker's containerd image store where `save` would otherwise reference every platform.
+   * Streams `docker save` of the images into k3s's containerd. Only the host's platform is asked for, which
+   * matters on Docker's containerd image store where `save` would otherwise reference every platform. Some
+   * Docker versions refuse that platform filter for images they hold (for example the classic store), so a
+   * refusal is retried without it.
    */
   private async importImages(clusterId: string, images: string[]): Promise<void> {
     const arch = process.arch === "arm64" ? "arm64" : "amd64";
-    const options = { names: images, platform: JSON.stringify({ os: "linux", architecture: arch }) };
-    const tar = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
-      this.docker.modem.dial(
-        { path: "/images/get?", options, method: "GET", isStream: true, statusCodes: { 200: true, 404: "image not found", 500: "server error" } },
-        (err: Error | null, stream: unknown) => (err ? reject(err) : resolve(stream as NodeJS.ReadableStream)),
-      );
-    });
+    const save = (options: Record<string, unknown>) =>
+      new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+        this.docker.modem.dial(
+          { path: "/images/get?", options, method: "GET", isStream: true, statusCodes: { 200: true, 404: "image not found", 500: "server error" } },
+          (err: Error | null, stream: unknown) => (err ? reject(err) : resolve(stream as NodeJS.ReadableStream)),
+        );
+      });
+    let tar: NodeJS.ReadableStream;
+    try {
+      tar = await save({ names: images, platform: JSON.stringify({ os: "linux", architecture: arch }) });
+    } catch (err) {
+      if (!/platform/i.test((err as Error).message)) throw err;
+      tar = await save({ names: images });
+    }
     const result = await this.execRaw(clusterId, ["ctr", "-n", "k8s.io", "images", "import", "-"], { stdinStream: tar, timeoutMs: 600_000 });
     if (result.exitCode !== 0) throw new Error(`loading images into the cluster failed: ${result.output.slice(-500)}`);
   }
