@@ -82,6 +82,44 @@ export async function resendVerificationAction(form: FormData): Promise<void> {
   redirect(`/verify-email?email=${encodeURIComponent(email)}&sent=1`);
 }
 
+const ForgotPassword = z.object({ email: z.email() });
+
+/**
+ * Sends a reset link when the email has an account. The answer is the same either way, so the form cannot be
+ * used to find out who has an account.
+ */
+export async function requestPasswordResetAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const email = String(form.get("email") ?? "").trim();
+  if (!ForgotPassword.safeParse({ email }).success) return { error: "Enter the email you signed up with.", fields: { email } };
+  await getAuth()
+    .api.requestPasswordReset({ body: { email, redirectTo: "/reset-password" }, headers: await headers() })
+    .catch((err: unknown) => console.error("[auth] password reset request failed", err));
+  redirect(`/forgot-password?sent=1&email=${encodeURIComponent(email)}`);
+}
+
+const ResetPassword = z
+  .object({
+    token: z.string().min(1, "This reset link is incomplete. Ask for a new one."),
+    password: z.string().min(10, "Use at least 10 characters for your password.").max(128, "Use at most 128 characters."),
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, { message: "The two passwords do not match." });
+
+export async function resetPasswordAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const parsed = ResetPassword.safeParse({ token: form.get("token"), password: form.get("password"), confirm: form.get("confirm") });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form." };
+  try {
+    await getAuth().api.resetPassword({ body: { token: parsed.data.token, newPassword: parsed.data.password }, headers: await headers() });
+  } catch (err) {
+    if (err instanceof APIError) {
+      if (/token/i.test(err.message)) return { error: "This reset link has expired or was already used. Ask for a new one." };
+      return { error: err.message || "Could not change the password." };
+    }
+    throw err;
+  }
+  redirect("/sign-in?reset=1");
+}
+
 export async function signOutAction(): Promise<void> {
   await getAuth().api.signOut({ headers: await headers() });
   redirect("/");

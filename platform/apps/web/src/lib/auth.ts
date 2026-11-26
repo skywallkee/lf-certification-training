@@ -8,6 +8,9 @@ import * as authSchema from "@/db/auth-schema";
 import { env } from "@/env";
 import { sendEmail } from "@/server/email";
 
+export const VERIFY_SUBJECT = "Verify your email for LF Cert Trainer";
+export const RESET_SUBJECT = "Reset your LF Cert Trainer password";
+
 function createAuth() {
   return betterAuth({
     appName: "LF Cert Trainer",
@@ -17,6 +20,17 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: true,
       minPasswordLength: 10,
+      maxPasswordLength: 128,
+      resetPasswordTokenExpiresIn: 60 * 60,
+      // A reset signs out every device, in case the old password leaked.
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url }) => {
+        await sendEmail({
+          to: user.email,
+          subject: RESET_SUBJECT,
+          text: `Open this link to choose a new password for LF Cert Trainer:\n\n${url}\n\nThe link works for 1 hour. If you did not ask for this, ignore this email; your password stays the same.`,
+        });
+      },
     },
     emailVerification: {
       sendOnSignUp: true,
@@ -25,7 +39,7 @@ function createAuth() {
       sendVerificationEmail: async ({ user, url }) => {
         await sendEmail({
           to: user.email,
-          subject: "Verify your email for LF Cert Trainer",
+          subject: VERIFY_SUBJECT,
           text: `Open this link to verify your email and start studying:\n\n${url}\n\nIf you did not sign up, ignore this email.`,
         });
       },

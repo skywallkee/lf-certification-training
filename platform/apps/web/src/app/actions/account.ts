@@ -1,6 +1,7 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { APIError } from "better-auth/api";
+import { and, eq, notInArray } from "drizzle-orm";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -48,20 +49,36 @@ export async function onboardingAction(_prev: OnboardingState, form: FormData): 
   const hours = z.coerce.number().int().min(1).max(40).safeParse(form.get("hours"));
   if (!hours.success) return { error: "Choose how many hours a week you can study." };
 
-  const focus = chooseFocus(goal.data, goalCert, new Set(passed.map((p) => p.cert)));
   const db = getDb();
+  const [existing] = await db.select({ onboardedAt: profile.onboardedAt }).from(profile).where(eq(profile.userId, user.id));
+  const firstRun = !existing?.onboardedAt;
+  const focus = chooseFocus(goal.data, goalCert, new Set(passed.map((p) => p.cert)));
   await db.transaction(async (tx) => {
+    // The form lists every passed cert (pre-ticked when the learner runs it again), so an unticked one is removed.
+    const keep = passed.map((p) => p.cert);
+    await tx
+      .delete(certStatus)
+      .where(and(eq(certStatus.userId, user.id), eq(certStatus.state, "passed"), keep.length ? notInArray(certStatus.certCode, keep) : undefined));
     for (const p of passed) {
       await tx
         .insert(certStatus)
         .values({ userId: user.id, certCode: p.cert, state: "passed", passedOn: p.date })
         .onConflictDoUpdate({ target: [certStatus.userId, certStatus.certCode], set: { state: "passed", passedOn: p.date, bookedFor: null, updatedAt: new Date() } });
     }
-    const values = { timeZone, goal: goal.data, goalCert, hoursPerWeek: hours.data, focusCert: focus, onboardedAt: new Date(), updatedAt: new Date() };
+    const values = {
+      timeZone,
+      goal: goal.data,
+      goalCert,
+      hoursPerWeek: hours.data,
+      focusCert: focus,
+      onboardedAt: existing?.onboardedAt ?? new Date(),
+      updatedAt: new Date(),
+    };
     await tx.insert(profile).values({ userId: user.id, ...values }).onConflictDoUpdate({ target: profile.userId, set: values });
   });
   revalidatePath("/", "layout");
-  redirect("/today");
+  // The first time, Today shows a short welcome that explains where things are.
+  redirect(firstRun ? "/today?welcome=1" : "/today");
 }
 
 export interface ProfileState {
@@ -82,6 +99,39 @@ export async function updateProfileAction(_prev: ProfileState, form: FormData): 
   await db.insert(profile).values({ userId: user.id, ...values }).onConflictDoUpdate({ target: profile.userId, set: values });
   revalidatePath("/", "layout");
   return { ok: true };
+}
+
+export interface PasswordState {
+  error?: string;
+}
+
+const ChangePassword = z
+  .object({
+    current: z.string().min(1, "Enter your current password."),
+    password: z.string().min(10, "Use at least 10 characters for the new password.").max(128, "Use at most 128 characters."),
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, { message: "The two new passwords do not match." });
+
+/** Changes the password and signs out every other device; this one stays signed in. */
+export async function changePasswordAction(_prev: PasswordState, form: FormData): Promise<PasswordState> {
+  await requireUser("/account");
+  const parsed = ChangePassword.safeParse({ current: form.get("current"), password: form.get("password"), confirm: form.get("confirm") });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form." };
+  try {
+    await getAuth().api.changePassword({
+      body: { currentPassword: parsed.data.current, newPassword: parsed.data.password, revokeOtherSessions: true },
+      headers: await headers(),
+    });
+  } catch (err) {
+    if (err instanceof APIError) {
+      if (/invalid password|incorrect/i.test(err.message)) return { error: "Your current password is not right." };
+      return { error: err.message || "Could not change the password." };
+    }
+    throw err;
+  }
+  // A redirect, not a returned state: the new session cookie refreshes the page, which would drop that state.
+  redirect("/account?password=changed#password");
 }
 
 /**

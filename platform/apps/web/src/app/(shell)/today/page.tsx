@@ -25,7 +25,8 @@ import { learnerToday } from "@/server/today";
 
 export const metadata: Metadata = { title: "Today" };
 
-export default async function TodayPage() {
+export default async function TodayPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+  const { welcome } = await searchParams;
   const { user, profile } = await requireOnboarded("/today");
   const today = learnerToday(profile);
   const catalog = await getCatalog();
@@ -62,6 +63,30 @@ export default async function TodayPage() {
       />
 
       <div className="flex flex-col gap-6">
+        {welcome ? (
+          <Card aria-labelledby="welcome" className="border-primary">
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle id="welcome">You are set up{focus ? `: first up is ${focus.code}` : ""}</CardTitle>
+              <Link href="/today" className="text-sm">
+                Hide
+              </Link>
+            </div>
+            <ul className="mt-3 grid gap-3 text-[15px] sm:grid-cols-3">
+              <li>
+                <span className="font-semibold">Today</span>
+                <span className="block text-sm text-muted-foreground">Your next step, your review queue and your streak. Start each session here.</span>
+              </li>
+              <li>
+                <span className="font-semibold">Path</span>
+                <span className="block text-sm text-muted-foreground">All {total} certs in a suggested order. Add exam dates there when you book.</span>
+              </li>
+              <li>
+                <span className="font-semibold">Labs and mocks</span>
+                <span className="block text-sm text-muted-foreground">Hands-on clusters in your browser, and timed practical exams when you are ready.</span>
+              </li>
+            </ul>
+          </Card>
+        ) : null}
         {held.size === total ? (
           <section aria-labelledby="golden" className="flex flex-col gap-3 rounded-lg border-2 border-success bg-card p-6">
             <p id="golden" className="text-xs font-semibold uppercase tracking-wider text-success">

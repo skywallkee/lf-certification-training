@@ -26,12 +26,29 @@ export const env = {
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
   /**
-   * Development only: show the last emails (verification links) on the verify page, since Phase 1 has no
-   * mail provider. Never set in production; APP_ENV=local allows it in the local Docker stack, which runs a
+   * Development only: show the last emails (verification links) on the verify page, for setups without an
+   * SMTP server. Never set in production; APP_ENV=local allows it in the local Docker stack, which runs a
    * production build on a laptop.
    */
   showDevEmails:
     process.env.SHOW_DEV_EMAILS === "true" && (process.env.NODE_ENV !== "production" || process.env.APP_ENV === "local"),
+  /**
+   * Outgoing email. With SMTP_URL set, mail goes out over SMTP (smtp://user:pass@host:port, or smtps:// for
+   * TLS); the local Docker stack points it at Mailpit, a local inbox at MAIL_INBOX_URL. Without it, emails only
+   * reach the outbox table and the log.
+   */
+  mail: {
+    get smtpUrl() {
+      return process.env.SMTP_URL || undefined;
+    },
+    get from() {
+      return process.env.MAIL_FROM || "LF Cert Trainer <no-reply@lfct.localhost>";
+    },
+    /** Web address of a local test inbox (Mailpit), linked from the verify page. Local use only. */
+    get inboxUrl() {
+      return process.env.MAIL_INBOX_URL || undefined;
+    },
+  },
   /** Hands-on labs (Phase 2). The lab controller provisions sessions and relays the terminal. */
   labs: {
     /** Internal URL the server uses to call the controller. */
