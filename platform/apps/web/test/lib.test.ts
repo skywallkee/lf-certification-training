@@ -152,3 +152,21 @@ describe("path and next step", () => {
     expect(nextStep({ ...base, cert: null })).toEqual({ kind: "pick-focus" });
   });
 });
+
+describe("validity periods", () => {
+  it("has a checked period for every cert in the curriculum", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { VALIDITY_MONTHS } = await import("../src/lib/validity.ts");
+    const dir = join(import.meta.dirname, "../../../../content/curriculum/certs");
+    const codes = readdirSync(dir)
+      .filter((f) => f.endsWith(".yaml"))
+      .map((f) => readFileSync(join(dir, f), "utf8").match(/^code:\s*"?([A-Z]+)"?/m)?.[1]);
+    expect(codes.length).toBeGreaterThanOrEqual(17);
+    for (const code of codes) expect(VALIDITY_MONTHS, `no validity period for ${code}`).toHaveProperty(code!);
+  });
+  it("uses each cert's own period for expiry", () => {
+    expect(expiryDate("LFCS", "2026-02-28")).toBe("2028-02-28");
+    expect(expiryDate("cka", "2024-02-29")).toBe("2026-02-28");
+  });
+});

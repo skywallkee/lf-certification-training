@@ -43,3 +43,18 @@ them so later phases can revisit them on purpose.
   with real content written under [ADR 0008](0008-content-from-public-sources-only.md).
 - If lessons ever accept contributions from outside the repository, the runtime MDX evaluation must be
   replaced with compile-time builds or a sandbox.
+
+## Update, 2026-11-26: deferred items done
+
+- **Email (point 3):** `sendEmail` delivers over SMTP when `SMTP_URL` is set (nodemailer) and still writes
+  every message to `outbox_email` as an audit trail; a failed send is logged and does not fail sign-up. The
+  local Docker stack runs [Mailpit](https://mailpit.axllent.org) as a test inbox (http://localhost:8025), so
+  nothing reaches real addresses. Choosing a hosted provider is still a deployment task: it only needs a new
+  `SMTP_URL` and `MAIL_FROM`.
+- **Validity (point 7):** every one of the 17 certs now has an explicit period in `src/lib/validity.ts`, all
+  24 months, from section 3.2 of the Linux Foundation Global Certification and Confidentiality Agreement,
+  which lists each cert and gives none a different period (checked 2026-11-26). A unit test fails when a cert
+  in `content/curriculum/certs` has no entry.
+- **Syntax highlighting:** fenced code with a language is highlighted on the server with rehype-highlight
+  (highlight.js grammars for bash, shell, YAML, JSON, Dockerfile, Go, Python and INI only), so no highlighter
+  ships to the browser. Untagged and `text` blocks stay plain. Code blocks get a Copy button.

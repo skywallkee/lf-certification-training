@@ -4,11 +4,14 @@ import { AlertTriangle, ArrowRight, Info, Lightbulb } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import * as runtime from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
+import { CodeBlock } from "@/components/code-block";
+import { rehypeHighlightPlugin } from "@/lib/highlight";
 
 /**
  * Renders a lesson's MDX body on the server. Lesson MDX comes only from content/ in this repository
  * (reviewed in pull requests and loaded by the ingest job), never from users, so evaluating it is safe.
- * Components available to lesson authors: <Callout kind title> and <Flow label steps>.
+ * Components available to lesson authors: <Callout kind title> and <Flow label steps>. Fenced code with a
+ * language (```yaml, ```bash) is highlighted and gets a Copy button.
  */
 
 function Callout({ kind = "note", title, children }: { kind?: "note" | "tip" | "warning"; title?: string; children: ReactNode }) {
@@ -59,16 +62,12 @@ function Table(props: ComponentProps<"table">) {
   );
 }
 
-function Pre(props: ComponentProps<"pre">) {
-  return <pre {...props} tabIndex={0} />;
-}
-
 const compiled = new Map<string, Promise<(props: { components: Record<string, unknown> }) => ReactNode>>();
 
 async function compile(hash: string, source: string) {
   let entry = compiled.get(hash);
   if (!entry) {
-    entry = evaluate(source, { ...runtime, remarkPlugins: [remarkGfm] }).then(
+    entry = evaluate(source, { ...runtime, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlightPlugin] }).then(
       (m) => m.default as unknown as (props: { components: Record<string, unknown> }) => ReactNode,
     );
     compiled.set(hash, entry);
@@ -81,7 +80,7 @@ export async function LessonBody({ hash, source }: { hash: string; source: strin
   const Content = await compile(hash, source);
   return (
     <div className="prose-lesson">
-      <Content components={{ Callout, Flow, a: Anchor, table: Table, pre: Pre }} />
+      <Content components={{ Callout, Flow, a: Anchor, table: Table, pre: CodeBlock }} />
     </div>
   );
 }

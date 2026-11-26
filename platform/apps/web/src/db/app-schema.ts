@@ -154,7 +154,7 @@ export const flag = pgTable(
   (t) => [index("flag_status_idx").on(t.status, t.createdAt)],
 );
 
-/** Emails the app would send. Phase 1 has no mail provider: messages land here and in the server log. */
+/** Every email the app sends, kept as an audit trail; delivery goes over SMTP when SMTP_URL is set (server/email.ts). */
 export const outboxEmail = pgTable("outbox_email", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   to: text("to").notNull(),

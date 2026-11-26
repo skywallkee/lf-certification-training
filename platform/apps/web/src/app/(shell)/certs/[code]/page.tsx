@@ -9,6 +9,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { formatLong } from "@/lib/dates";
 import { pct } from "@/lib/readiness";
+import { VALIDITY_SOURCE, validityMonths } from "@/lib/validity";
 import { en } from "@/messages/en";
 import { certRefs, competencyPath, coverageOf, lessonsFor } from "@/server/catalog";
 import { loadCert } from "@/server/cert-page";
@@ -188,7 +189,12 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
           <p className="mb-4 mt-1 text-[15px] text-muted-foreground">
             {view?.status === "passed" || view?.status === "expiring" || view?.status === "expired"
               ? `Passed ${formatLong(view.passedOn!)}. ${view.status === "expired" ? "Expired" : "Expires"} ${formatLong(view.expiresOn!)}.`
-              : "Tell us when your exam is booked or passed. Expiry dates are worked out for you."}
+              : "Tell us when your exam is booked or passed. Expiry dates are worked out for you."}{" "}
+            {cert.code} stays current for {validityMonths(cert.code)} months after you pass{" "}
+            <a href={VALIDITY_SOURCE.url} target="_blank" rel="noreferrer">
+              (Linux Foundation policy)
+            </a>
+            .
           </p>
           <ExamStatusForm cert={cert.code} state={reported?.state ?? null} date={reported?.bookedFor ?? reported?.passedOn ?? null} today={today} />
         </Card>
