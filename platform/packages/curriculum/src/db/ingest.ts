@@ -201,6 +201,8 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
         solution: l.solution,
         tasks: l.tasks.map((t) => ({ ...t, cluster: t.cluster ?? l.clusters[0]! })),
         competencyRefs: l.competencies,
+        kind: l.kind,
+        passPercent: l.passPercent ?? null,
         mock: l.mock,
         file: l.file,
         contentHash: l.hash,
@@ -306,7 +308,7 @@ export async function ingestAll(
   return (
     `Ingested ${result.certs} certifications: ${result.inserted.length} new curriculum versions, ` +
     `${result.unchanged.length} unchanged. ${result.content?.lessons ?? 0} lessons, ` +
-    `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs` +
+    `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs and mock exams` +
     `${includeSample ? " (sample set included)" : ""}; removed ${result.content?.removedLessons ?? 0} lessons, ` +
     `${result.content?.removedQuestions ?? 0} questions and ${result.content?.removedLabs ?? 0} labs.`
   );

@@ -25,7 +25,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
         { key: "search", href: "/search", label: en.nav.search },
         { key: "saved", href: "/saved", label: en.nav.bookmarks },
         { key: "labs", href: "/labs", label: en.nav.labs },
-        { key: "mocks", href: "#", label: en.nav.mocks, disabled: en.nav.comingMocks },
+        { key: "mocks", href: "/mocks", label: en.nav.mocks },
       ]
     : [
         { key: "certs", href: "/certs", label: en.nav.certs },

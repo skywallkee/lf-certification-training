@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ContentError, loadContent, loadCurriculum, type Curriculum } from "../src/index.ts";
+import { ContentError, loadContent, loadCurriculum, mockProblems, type Curriculum, type LabInput } from "../src/index.ts";
 
 describe("content in the repository", () => {
   let curriculum: Curriculum;
@@ -23,8 +23,31 @@ describe("content in the repository", () => {
     expect(content).toEqual({ lessons: [], questions: [], labs: [] });
   });
 
+  it("loads the two sample CKA mock exams: three clusters, a pass mark, a competency per task and no hints", async () => {
+    const mocks = (await loadContent(curriculum)).labs.filter((l) => l.kind === "mock");
+    expect(mocks.map((m) => [m.id, m.minutes, m.tasks.length])).toEqual([
+      ["sample-cka-mock-full", 120, 16],
+      ["sample-cka-mock-half", 60, 8],
+    ]);
+    for (const m of mocks) {
+      expect(m.clusters).toEqual(["c1", "c2", "c3"]);
+      expect(m.passPercent).toBe(66);
+      expect(m.tasks.every((t) => t.competency?.startsWith("cka/") && t.hints.length === 0 && t.doc)).toBe(true);
+    }
+  });
+
+  it("holds mock exams to their extra rules", () => {
+    const base = mockBase();
+    expect(mockProblems(base)).toEqual([]);
+    expect(mockProblems({ ...base, passPercent: undefined })).toContain("passPercent: required for a mock exam");
+    expect(mockProblems({ ...base, tasks: base.tasks.map((t, i) => (i === 0 ? { ...t, hints: ["x"], competency: undefined } : t)) })).toEqual([
+      "tasks.0.hints: mock exams have no hints, as in the real exam",
+      "tasks.0.competency: required in a mock exam (it decides the score per domain)",
+    ]);
+  });
+
   it("loads the four sample labs, one of them with three clusters, with weights adding up to 100 and a reference solution", async () => {
-    const { labs } = await loadContent(curriculum);
+    const labs = (await loadContent(curriculum)).labs.filter((l) => l.kind === "lab");
     expect(labs.map((l) => l.cert).sort()).toEqual(["CKA", "CKA", "CKAD", "CKNE"]);
     const multi = labs.find((l) => l.id === "sample-cka-three-clusters")!;
     expect(multi.clusters).toEqual(["c1", "c2", "c3"]);
@@ -193,3 +216,29 @@ describe("lab validation", () => {
     expect(problems).toContain("expected array to have <=3 items");
   });
 });
+
+function mockBase(): LabInput {
+  return {
+    id: "m",
+    title: "t",
+    summary: "s",
+    tier: 1,
+    minutes: 60,
+    passPercent: 66,
+    competencies: ["cka/storage/implement-storage-classes-dynamic-volume"],
+    docs: [],
+    clusters: ["c1"],
+    images: [],
+    solution: "true",
+    mock: true,
+    tasks: [1, 2, 3, 4].map((n) => ({
+      id: `t${n}`,
+      title: "t",
+      weight: 25,
+      body: "b",
+      hints: [],
+      competency: "cka/storage/implement-storage-classes-dynamic-volume",
+      checks: [{ id: `c${n}`, description: "d", runIn: "grader" as const, script: "true" }],
+    })),
+  };
+}

@@ -15,6 +15,13 @@
       "when": 1795603226944,
       "tag": "0001_labs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795639579854,
+      "tag": "0002_mock_exams",
+      "breakpoints": true
     }
   ]
 }

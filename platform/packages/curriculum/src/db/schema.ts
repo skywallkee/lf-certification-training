@@ -184,11 +184,16 @@ export interface LabTaskJson {
   hints: string[];
   /** The cluster (kubectl context) the task is about. */
   cluster: string;
+  /** Mock exams: the competency the task tests (its domain groups the score). */
+  competency?: string;
+  /** Mock exams: the doc page that covers the task. */
+  doc?: DocLinkJson;
   checks: LabCheckJson[];
 }
 
 /**
- * Hands-on labs, one row per file in content/labs. Tasks carry their checks; the web app never sends checks
+ * Hands-on labs, one row per file in content/labs, and practical mock exams (kind "mock"), one per file in
+ * content/mocks: a mock is a long lab with a pass mark. Tasks carry their checks; the web app never sends checks
  * or the solution to the browser before the session ends. Keyed by the lab's stable id.
  */
 export const lab = pgTable(
@@ -210,6 +215,10 @@ export const lab = pgTable(
     solution: text("solution").notNull(),
     tasks: jsonb("tasks").$type<LabTaskJson[]>().notNull(),
     competencyRefs: text("competency_refs").array().notNull(),
+    /** "lab" or "mock" (a practical mock exam). */
+    kind: text("kind").$type<"lab" | "mock">().notNull().default("lab"),
+    /** Mock exams: pass mark in percent. */
+    passPercent: integer("pass_percent"),
     mock: boolean("mock").notNull().default(false),
     file: text("file").notNull(),
     contentHash: text("content_hash").notNull(),

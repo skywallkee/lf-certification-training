@@ -1,0 +1,292 @@
+# Sample practical mock exam (mock content for building and testing the app, not study material).
+# The half-length version of full-mock.yaml: same format, eight of its tasks, one hour.
+id: sample-cka-mock-half
+mock: true
+title: Sample CKA mock exam (half, 1 hour)
+summary: 'Eight mock tasks across three clusters in one hour: the short version of the full sample mock, for a quick timed
+  run.'
+tier: 1
+minutes: 60
+passPercent: 66
+clusters:
+- c1
+- c2
+- c3
+competencies:
+- cka/cluster-architecture-installation-configuration/manage-role-based-access-control
+- cka/workloads-scheduling/application-deployments-perform-rolling-update
+- cka/servicing-networking/define-enforce-network-policies
+- cka/storage/implement-storage-classes-dynamic-volume
+- cka/troubleshooting/troubleshoot-clusters-nodes
+docs:
+- title: 'Kubernetes docs: kubectl Quick Reference'
+  url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+- title: 'Kubernetes docs: Configure Access to Multiple Clusters'
+  url: https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/
+images:
+- nginx:1.28-alpine
+- nginx:1.29-alpine
+setup: |
+  kubectl --context c1 create namespace shop
+  kubectl --context c1 -n shop create deployment web --image=nginx:1.28-alpine --replicas=2
+  kubectl --context c1 -n shop create serviceaccount auditor
+  kubectl --context c1 cordon $(kubectl --context c1 get nodes -o name)
+  kubectl --context c2 create namespace payments
+  kubectl --context c2 create namespace store
+  kubectl --context c2 -n store create deployment catalog --image=nginx:1.29-alpine --port=8080
+  kubectl --context c2 -n store create deployment orders --image=nginx:1.29-alpine
+  kubectl --context c2 -n store create service clusterip orders --tcp=80:80
+  kubectl --context c2 -n store set selector service orders app=order
+  kubectl --context c3 create namespace ops
+  kubectl --context c3 create namespace db
+  kubectl --context c3 -n ops create deployment reports --image=nginx:1.29-alpnie
+solution: |
+  kubectl config use-context c1
+  kubectl -n shop create role log-reader --verb=get,list --resource=pods,pods/log
+  kubectl -n shop create rolebinding auditor-log-reader --role=log-reader --serviceaccount=shop:auditor
+  kubectl -n shop set image deployment/web nginx=nginx:1.29-alpine
+  kubectl -n shop patch deployment web -p '{"spec":{"strategy":{"rollingUpdate":{"maxUnavailable":0}}}}'
+  kubectl uncordon $(kubectl get nodes -o name)
+  kubectl config use-context c2
+  kubectl -n payments apply -f - <<'YAML'
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata: { name: default-deny-ingress }
+  spec:
+    podSelector: {}
+    policyTypes: [Ingress]
+  YAML
+  kubectl -n store expose deployment catalog --name=catalog --type=NodePort --port=80 --target-port=8080 \
+    --overrides='{"spec":{"ports":[{"port":80,"targetPort":8080,"nodePort":30080,"protocol":"TCP"}]}}'
+  kubectl -n store set selector service orders app=orders
+  kubectl config use-context c3
+  kubectl -n db apply -f - <<'YAML'
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata: { name: data }
+  spec:
+    accessModes: [ReadWriteOnce]
+    storageClassName: local-path
+    resources: { requests: { storage: 1Gi } }
+  YAML
+  kubectl -n ops set image deployment/reports nginx=nginx:1.29-alpine
+tasks:
+- id: rbac
+  title: Let the auditor read logs
+  cluster: c1
+  weight: 13
+  competency: cka/cluster-architecture-installation-configuration/manage-role-based-access-control
+  doc:
+    title: Using RBAC Authorization
+    url: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+  body: |
+    In the namespace `shop`, create a Role `log-reader` that allows `get` and `list` on `pods` and `pods/log`.
+    Bind it to the service account `auditor` with a RoleBinding named `auditor-log-reader`.
+  checks:
+  - id: rbac-role
+    description: Role log-reader allows get and list on pods and pods/log
+    failMessage: Role log-reader in shop is missing, or does not allow get and list on pods and pods/log.
+    script: |
+      r=$(kubectl -n shop get role log-reader -o jsonpath='{.rules[*].resources}')
+      v=$(kubectl -n shop get role log-reader -o jsonpath='{.rules[*].verbs}')
+      echo "$r" | grep -q '"pods"' && echo "$r" | grep -q '"pods/log"' && echo "$v" | grep -q '"get"' && echo "$v" | grep -q '"list"'
+  - id: rbac-binding
+    description: The auditor service account can list pod logs in shop
+    failMessage: The service account shop/auditor still cannot list pods/log in shop.
+    script: kubectl auth can-i list pods/log -n shop --as=system:serviceaccount:shop:auditor
+- id: rollout
+  title: Roll out a new image safely
+  cluster: c1
+  weight: 12
+  competency: cka/workloads-scheduling/application-deployments-perform-rolling-update
+  doc:
+    title: 'Deployments: rolling update'
+    url: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-update-deployment
+  body: |
+    Update the Deployment `web` in `shop` to the image `nginx:1.29-alpine`. Change its rolling update
+    strategy so that no pod is unavailable during an update (`maxUnavailable: 0`).
+  checks:
+  - id: rollout-image
+    description: Deployment web runs nginx:1.29-alpine
+    failMessage: Deployment web in shop does not use nginx:1.29-alpine yet.
+    assert:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+        namespace: shop
+      spec:
+        template:
+          spec:
+            (containers[0].image): nginx:1.29-alpine
+  - id: rollout-strategy
+    description: Deployment web allows no unavailable pods during updates
+    failMessage: The rolling update strategy of web still allows unavailable pods.
+    assert:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+        namespace: shop
+      spec:
+        strategy:
+          rollingUpdate:
+            (to_string(maxUnavailable)): '0'
+- id: uncordon
+  title: Bring the node back
+  cluster: c1
+  weight: 12
+  competency: cka/troubleshooting/troubleshoot-clusters-nodes
+  doc:
+    title: Safely Drain a Node
+    url: https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/
+  body: |
+    New pods on `c1` stay Pending because the cluster's node does not accept them. Make the node schedulable
+    again.
+  checks:
+  - id: node-schedulable
+    description: Every node on c1 accepts new pods
+    failMessage: A node on c1 is still marked unschedulable.
+    script: test -z "$(kubectl get nodes -o jsonpath='{.items[*].spec.unschedulable}')"
+- id: deny-all
+  title: Deny all ingress to payments
+  cluster: c2
+  weight: 13
+  competency: cka/servicing-networking/define-enforce-network-policies
+  doc:
+    title: 'Network Policies: default deny'
+    url: https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-deny-all-ingress-traffic
+  body: |
+    Create a NetworkPolicy `default-deny-ingress` in `payments` that selects every pod and allows no
+    ingress traffic.
+  checks:
+  - id: deny-policy
+    description: default-deny-ingress selects all pods and allows no ingress
+    failMessage: default-deny-ingress is missing, does not select every pod, or still has ingress rules.
+    assert:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: default-deny-ingress
+        namespace: payments
+      spec:
+        podSelector:
+          (matchLabels == null && matchExpressions == null): true
+        policyTypes:
+        - Ingress
+        (ingress == null || length(ingress) == `0`): true
+- id: nodeport
+  title: Expose the catalogue
+  cluster: c2
+  weight: 12
+  competency: cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types
+  doc:
+    title: 'Service: type NodePort'
+    url: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport
+  body: |
+    Expose the Deployment `catalog` in `store` with a Service `catalog` of type `NodePort`: port `80`,
+    target port `8080`, node port `30080`.
+  checks:
+  - id: nodeport-service
+    description: Service catalog is a NodePort on 30080, port 80 to 8080
+    failMessage: Service catalog in store is missing, not a NodePort, or uses different ports.
+    assert:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: catalog
+        namespace: store
+      spec:
+        type: NodePort
+        (ports[0].port): 80
+        (to_string(ports[0].targetPort)): '8080'
+        (ports[0].nodePort): 30080
+  - id: nodeport-selector
+    description: Service catalog selects the catalog pods
+    failMessage: Service catalog does not select the pods of the catalog Deployment (app=catalog).
+    assert:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: catalog
+        namespace: store
+      spec:
+        selector:
+          app: catalog
+- id: fix-service
+  title: Fix the orders Service
+  cluster: c2
+  weight: 13
+  competency: cka/troubleshooting/troubleshoot-services-networking
+  doc:
+    title: Debug Services
+    url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/
+  body: |
+    The Service `orders` in `store` has no endpoints. Fix the Service, not the Deployment, so that it sends
+    traffic to the pods of the Deployment `orders`.
+  checks:
+  - id: service-selector
+    description: Service orders selects app=orders
+    failMessage: Service orders still does not select the pods of the orders Deployment.
+    assert:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: orders
+        namespace: store
+      spec:
+        selector:
+          app: orders
+- id: pvc
+  title: Claim storage for the database
+  cluster: c3
+  weight: 12
+  competency: cka/storage/manage-persistent-volumes-persistent-volume
+  doc:
+    title: PersistentVolumeClaims
+    url: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
+  body: |
+    In the namespace `db`, create a PersistentVolumeClaim `data` that requests `1Gi` with access mode
+    `ReadWriteOnce` from the StorageClass `local-path`.
+  checks:
+  - id: pvc-spec
+    description: PVC data asks local-path for 1Gi ReadWriteOnce
+    failMessage: PVC data in db is missing, or asks for another size, access mode or class.
+    assert:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: data
+        namespace: db
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 1Gi
+- id: broken-image
+  title: Fix the reports Deployment
+  cluster: c3
+  weight: 13
+  competency: cka/troubleshooting/troubleshoot-cluster-components
+  doc:
+    title: Debug Pods
+    url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/
+  body: |
+    The pods of the Deployment `reports` in `ops` never start. Find out why from the pod events and fix the
+    Deployment so it runs `nginx:1.29-alpine`.
+  checks:
+  - id: reports-image
+    description: Deployment reports uses nginx:1.29-alpine
+    failMessage: Deployment reports in ops still uses a wrong image.
+    assert:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: reports
+        namespace: ops
+      spec:
+        template:
+          spec:
+            (containers[0].image): nginx:1.29-alpine

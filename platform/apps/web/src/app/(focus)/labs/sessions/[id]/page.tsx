@@ -16,6 +16,7 @@ export default async function LabSessionPage({ params }: { params: Promise<{ id:
   const user = await requireUser(`/labs/sessions/${id}`);
   const session = await getSession(id, user.id);
   if (!session) notFound();
+  if (session.mode !== "lab") redirect(`/mocks/attempts/${id}`);
   if (!isActive(session.status) && session.status !== "failed") redirect(`/labs/history/${id}`);
   const [lab, hintUses, last] = await Promise.all([getLab(session.labId), getHintUses(id), getLastCheck(id, "check")]);
   if (!lab) notFound();

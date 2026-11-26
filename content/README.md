@@ -129,9 +129,33 @@ moment, so wait for it before creating bare pods (see the CKNE sample lab). Each
 `pnpm --filter @lfct/lab-controller selftest <lab-id>` (some checks must fail before the solution, and all
 must pass after it).
 
+## Mock exams
+
+Practical (hands-on) mock exams live under `mocks/`, one YAML file per mock, in the lab format above with
+three differences, checked by `pnpm curriculum:validate`:
+
+```yaml
+id: cka-mock-1
+minutes: 120                       # 120 for a full mock, 60 for a half mock (at least 30)
+passPercent: 66                    # required: the cert's pass mark
+clusters: [c1, c2, c3]
+tasks:                             # at least 4; 15 to 20 for a full mock
+  - id: rbac
+    cluster: c1
+    weight: 7
+    competency: cka/cluster-architecture-installation-configuration/manage-role-based-access-control  # required: decides the score per domain
+    doc: { title: "Using RBAC Authorization", url: "https://kubernetes.io/docs/reference/access-authn-authz/rbac/" }  # optional: linked when the task is missed
+    body: ...
+    checks: [...]                  # as in labs; no hints in a mock exam
+```
+
+Task statements stay hidden until the learner presses Start. In exam mode nothing is graded until Submit or
+time up (the terminal freezes first); practice mode adds a Check button per task. Prove a mock exactly like a
+lab: `pnpm --filter @lfct/lab-controller selftest <mock-id>`.
+
 ## The sample set
 
-The app ships with **mock content only**: 12 lessons, 60 questions and 4 labs across KCNA, CKA, CKAD and CKNE, written to
+The app ships with **mock content only**: 12 lessons, 60 questions, 4 labs and 2 practical mock exams (CKA, full and half) across KCNA, CKA, CKAD and CKNE, written to
 exercise the app (a long lesson, two very short ones, a lesson tagged for two certs, competencies with no
 lesson, and one deliberately broken question). It is not study material. Every sample file sits under a
 `sample/` folder and sets `mock: true`; the app labels it "Sample content".
@@ -146,7 +170,7 @@ To remove it:
   ```
 
 - **From the repository**, when real content replaces it: delete `content/lessons/sample/`,
-  `content/questions/sample/` and `content/labs/sample/`.
+  `content/questions/sample/`, `content/labs/sample/` and `content/mocks/sample/`.
 
 Learner progress points at content by id, so removing items leaves no broken rows: progress on items that no
 longer exist is simply not shown.

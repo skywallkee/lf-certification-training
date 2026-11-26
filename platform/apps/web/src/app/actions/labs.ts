@@ -19,6 +19,7 @@ export async function startLabAction(form: FormData): Promise<void> {
   const user = await requireUser(`/labs/${labId}`);
   const lab = await getLab(labId);
   if (!lab) redirect("/labs");
+  if (lab.kind === "mock") redirect(`/mocks/${lab.id}`);
   const [usage, capacity] = await Promise.all([getUsage(user.id), getCapacity()]);
   const block = blockFor(lab, usage, capacity);
   if (block?.reason === "active-session") redirect(`/labs/sessions/${block.sessionId}`);
@@ -54,6 +55,7 @@ export async function checkLabAction(sessionId: string): Promise<CheckState> {
   const user = await requireUser(`/labs/sessions/${id}`);
   const session = await getSession(id, user.id);
   if (!session || session.status !== "ready") return { ok: false, error: "This lab is not running." };
+  if (session.mode !== "lab") return { ok: false, error: "Mock exams check one task at a time, in practice mode only." };
   try {
     const out = await callController<{ results: CheckResult[]; score: number }>(`/sessions/${id}/check`);
     return { ok: true, results: out.results.map(({ detail: _detail, ...r }) => r), score: out.score, at: new Date().toISOString() };
@@ -90,6 +92,7 @@ export async function extendLabAction(sessionId: string): Promise<ExtendState> {
   const usage = await getUsage(user.id);
   const session = usage.active?.id === id ? usage.active : null;
   if (!session || session.status !== "ready" || !session.expiresAt) return { ok: false, error: "This lab is not running." };
+  if (session.mode !== "lab") return { ok: false, error: "Mock exams cannot be extended." };
   if (session.extended) return { ok: false, error: "You have already extended this lab once." };
   const remaining = Math.max(0, Math.ceil((session.expiresAt.getTime() - Date.now()) / 60_000));
   if (usage.minutesLeft - remaining < EXTEND_MINUTES) return { ok: false, error: "Your lab minutes for this month do not cover an extension." };

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { QuotaMeter } from "@/components/labs/quota-meter";
 import { StartLab, blockMessage } from "@/components/labs/start-lab";
 import { Markdown } from "@/components/markdown";
@@ -20,6 +20,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
   const user = await requireUser(`/labs/${id}`);
   const lab = await getLab(id);
   if (!lab) notFound();
+  if (lab.kind === "mock") redirect(`/mocks/${lab.id}`);
   const [usage, capacity, catalog] = await Promise.all([getUsage(user.id), getCapacity(), getCatalog()]);
   const block = blockFor(lab, usage, capacity);
   const { blocked } = await searchParams;

@@ -18,6 +18,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       statusMessage: s.statusMessage,
       expiresAt: s.expiresAt?.toISOString() ?? null,
       extended: s.extended,
+      mode: s.mode,
+      startedAt: s.startedAt?.toISOString() ?? null,
       now: new Date().toISOString(),
     },
     { headers: { "cache-control": "no-store" } },
