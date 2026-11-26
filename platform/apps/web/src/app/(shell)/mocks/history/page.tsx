@@ -65,34 +65,36 @@ export default async function MockHistoryPage() {
                 {domains.length > 0 ? (
                   <div>
                     <h3 className="text-sm font-semibold">By domain, first attempt to latest</h3>
-                    <table className="mt-2 w-full text-left text-sm">
-                      <thead className="text-muted-foreground">
-                        <tr>
-                          <th scope="col" className="py-2 font-semibold">Domain</th>
-                          <th scope="col" className="py-2 font-semibold">
-                            <span className="sr-only">Trend</span>
-                          </th>
-                          <th scope="col" className="py-2 font-semibold">First</th>
-                          <th scope="col" className="py-2 font-semibold">Latest</th>
-                          <th scope="col" className="py-2 font-semibold">Change</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {domains.map((d) => (
-                          <tr key={d.domain} className="border-t">
-                            <td className="py-2 pr-2">{domainName(cert, d.domain)}</td>
-                            <td className="py-2 pr-2">
-                              <Sparkline values={d.percents} />
-                            </td>
-                            <td className="py-2">{d.first === null ? "–" : `${d.first}%`}</td>
-                            <td className={cn("py-2 font-semibold", d.latest !== null && d.latest < passMark && "text-warning")}>{d.latest === null ? "–" : `${d.latest}%`}</td>
-                            <td className="py-2">
-                              <Change value={d.change} />
-                            </td>
+                    <div className="relative mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Scores by domain, scrolls sideways on small screens">
+                      <table className="w-full min-w-[320px] text-left text-sm">
+                        <thead className="text-muted-foreground">
+                          <tr>
+                            <th scope="col" className="py-2 font-semibold">Domain</th>
+                            <th scope="col" className="py-2 font-semibold">
+                              <span className="sr-only">Trend</span>
+                            </th>
+                            <th scope="col" className="py-2 font-semibold">First</th>
+                            <th scope="col" className="py-2 font-semibold">Latest</th>
+                            <th scope="col" className="py-2 font-semibold">Change</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {domains.map((d) => (
+                            <tr key={d.domain} className="border-t">
+                              <td className="py-2 pr-2">{domainName(cert, d.domain)}</td>
+                              <td className="py-2 pr-2">
+                                <Sparkline values={d.percents} />
+                              </td>
+                              <td className="py-2">{d.first === null ? "–" : `${d.first}%`}</td>
+                              <td className={cn("py-2 font-semibold", d.latest !== null && d.latest < passMark && "text-warning")}>{d.latest === null ? "–" : `${d.latest}%`}</td>
+                              <td className="py-2">
+                                <Change value={d.change} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                     {weakest && weakest.latest !== null && weakest.latest < 100 ? (
                       <p className="mt-3 text-sm">
                         Weakest now: <strong>{domainName(cert, weakest.domain)}</strong>.{" "}
@@ -107,7 +109,7 @@ export default async function MockHistoryPage() {
           })
         )}
 
-        <Card aria-labelledby="all-attempts" className="overflow-x-auto p-0">
+        <Card aria-labelledby="all-attempts" className="relative overflow-x-auto p-0">
           <CardTitle id="all-attempts" className="px-5 pt-5">
             All attempts
           </CardTitle>

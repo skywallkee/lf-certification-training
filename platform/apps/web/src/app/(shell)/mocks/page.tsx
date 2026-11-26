@@ -91,7 +91,7 @@ export default async function MocksPage() {
           ))
         )}
 
-        <Card aria-labelledby="attempts" className="overflow-x-auto p-0">
+        <Card aria-labelledby="attempts" className="relative overflow-x-auto p-0">
           <CardTitle id="attempts" className="px-5 pt-5">
             Recent attempts
           </CardTitle>
