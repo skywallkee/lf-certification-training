@@ -11,6 +11,7 @@ export const en = {
     main: "Main",
     today: "Today",
     path: "Path",
+    plan: "Plan",
     progress: "Progress",
     certs: "Certs",
     review: "Review",

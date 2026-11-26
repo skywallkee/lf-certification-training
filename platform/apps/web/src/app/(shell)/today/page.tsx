@@ -9,6 +9,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { formatLong, formatShort, formatWeekday } from "@/lib/dates";
 import { nextStep } from "@/lib/next-step";
 import { reviewMinutes } from "@/lib/review";
+import { formatMinutes } from "@/lib/study-plan";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
 import {
@@ -20,6 +21,7 @@ import {
   getStreak,
   heldCerts,
 } from "@/server/progress";
+import { getPlans } from "@/server/plan";
 import { requireOnboarded } from "@/server/session";
 import { learnerToday } from "@/server/today";
 
@@ -31,14 +33,17 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const today = learnerToday(profile);
   const catalog = await getCatalog();
   const focus = profile.focusCert ? catalog.certs.get(profile.focusCert) ?? null : null;
-  const [views, due, streak, activity, completed, readiness] = await Promise.all([
+  const [views, due, streak, activity, completed, readiness, plans] = await Promise.all([
     getStatusViews(user.id, catalog, today, profile.focusCert),
     getReviewDue(user.id, today),
     getStreak(user.id, profile.timeZone, today),
     getRecentActivity(user.id, catalog),
     getCompletedLessons(user.id),
     focus ? getReadiness(user.id, focus, today) : Promise.resolve(null),
+    getPlans(user.id, catalog, { today, hoursPerWeek: profile.hoursPerWeek, focusCert: profile.focusCert }),
   ]);
+  const nextPlan = plans.find((p) => p.plan && p.plan.daysLeft >= 0);
+  const week = nextPlan?.plan?.weeks[0];
   const held = heldCerts(views);
   const booked = [...views.values()].filter((v) => v.status === "booked").length;
   const total = catalog.certs.size;
@@ -129,6 +134,38 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ) : null}
 
           <div className="flex flex-col gap-6">
+            <Card aria-labelledby="week-plan">
+              <div className="flex items-baseline justify-between gap-3">
+                <CardTitle id="week-plan">{nextPlan ? `This week for ${nextPlan.cert.code}` : "Study plan"}</CardTitle>
+                <Link href="/plan" className="text-sm">
+                  Open plan
+                </Link>
+              </div>
+              {nextPlan?.plan && nextPlan.date && week ? (
+                <>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Exam on {formatLong(nextPlan.date.examOn)}, {nextPlan.plan.daysLeft} day{nextPlan.plan.daysLeft === 1 ? "" : "s"} left
+                    {week.minutes > 0 ? `. About ${formatMinutes(week.minutes)} this week.` : "."}
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1.5 text-[15px]">
+                    {week.tasks
+                      .filter((t) => t.kind !== "exam" && t.kind !== "rest")
+                      .slice(0, 3)
+                      .map((t) => (
+                        <li key={t.label}>
+                          {t.href ? <Link href={t.href}>{t.label}</Link> : t.label}
+                          {t.minutes > 0 ? <span className="whitespace-nowrap text-sm text-muted-foreground"> · {formatMinutes(t.minutes)}</span> : null}
+                        </li>
+                      ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="mt-2 text-[15px] text-muted-foreground">
+                  Set an exam date{focus ? ` for ${focus.code}` : ""} and get a week-by-week plan to it. <Link href="/plan">Set a date</Link>
+                </p>
+              )}
+            </Card>
+
             <Card aria-labelledby="review-queue">
               <CardTitle id="review-queue">Review queue</CardTitle>
               <p className="mt-2 text-[15px] text-muted-foreground">

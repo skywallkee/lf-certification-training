@@ -44,6 +44,8 @@ export default defineConfig({
         LAB_TERMINAL_URL: `ws://localhost:${controllerPort}`,
         LAB_PROVIDER_NAME: "fake",
         LAB_DOCS_URL: `http://{host}.localhost:${controllerPort}`,
+        // The reminder tests call the run endpoint themselves.
+        REMINDERS_INTERVAL_MINUTES: "0",
       },
     },
     {
