@@ -231,6 +231,8 @@ export async function submitAnswerAction(quizId: string, questionId: string, sel
   const db = getDb();
   const [q] = await db.select().from(quiz).where(and(eq(quiz.id, quizId), eq(quiz.userId, user.id)));
   if (!q || !q.questionIds.includes(questionId)) return { error: "This question is not part of the quiz." };
+  // Mock exam answers are saved as a draft and graded on submit (actions/quiz-mocks.ts).
+  if (q.kind === "mock") return { error: "This question is part of a mock exam." };
   const [item] = await db.select().from(question).where(eq(question.id, questionId));
   if (!item) return { error: "This question is no longer available." };
   const choice = [...new Set(selected.map(String))].filter((id) => item.options.some((o) => o.id === id)).sort();

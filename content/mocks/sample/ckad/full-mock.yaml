@@ -1,0 +1,461 @@
+# Sample practical mock exam (mock content for building and testing the app, not study material).
+# CKAD layout: two hours, two clusters, tasks weighted by the CKAD domains (design and build 20, deployment 20,
+# observability and maintenance 15, environment, configuration and security 25, services and networking 20).
+id: sample-ckad-mock-full
+mock: true
+title: Sample CKAD mock exam (full, 2 hours)
+summary: 'Eleven mock tasks across two clusters in two hours, weighted like the CKAD domains: multi-container pods,
+  rollouts, probes, config, security contexts and networking.'
+tier: 1
+minutes: 120
+passPercent: 66
+clusters:
+  - c1
+  - c2
+competencies:
+  - ckad/application-design-build/multi-container-pod-design-patterns
+  - ckad/application-deployment/deployments-perform-rolling-updates
+  - ckad/application-observability-maintenance/implement-probes-health-checks
+  - ckad/application-environment-configuration-security/configmaps
+  - ckad/services-networking/demonstrate-basic-understanding-networkpolicies
+docs:
+  - title: "Kubernetes docs: kubectl Quick Reference"
+    url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+  - title: "Kubernetes docs: Configure Access to Multiple Clusters"
+    url: https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/
+images:
+  - nginx:1.28-alpine
+  - nginx:1.29-alpine
+setup: |
+  # c1: app design, deployments and observability.
+  for ns in apps release probe debug; do kubectl --context c1 create namespace $ns; done
+  kubectl --context c1 -n release create deployment frontend --image=nginx:1.28-alpine --replicas=2
+  kubectl --context c1 -n release rollout status deployment/frontend --timeout=120s || true
+  kubectl --context c1 -n release set image deployment/frontend nginx=nginx:1.29-alpnie
+  kubectl --context c1 apply -f - <<'YAML'
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata: { name: shop-blue, namespace: release }
+  spec:
+    replicas: 1
+    selector: { matchLabels: { app: shop, version: blue } }
+    template:
+      metadata: { labels: { app: shop, version: blue } }
+      spec: { containers: [{ name: nginx, image: "nginx:1.28-alpine" }] }
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata: { name: shop-green, namespace: release }
+  spec:
+    replicas: 1
+    selector: { matchLabels: { app: shop, version: green } }
+    template:
+      metadata: { labels: { app: shop, version: green } }
+      spec: { containers: [{ name: nginx, image: "nginx:1.29-alpine" }] }
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata: { name: shop, namespace: release }
+  spec:
+    selector: { app: shop, version: blue }
+    ports: [{ port: 80, targetPort: 80 }]
+  YAML
+  kubectl --context c1 -n probe create deployment web --image=nginx:1.29-alpine
+  kubectl --context c1 -n debug create deployment alpha --image=nginx:1.29-alpine
+  kubectl --context c1 -n debug create deployment beta --image=nginx:1.29-alpnie
+  kubectl --context c1 -n debug create deployment gamma --image=nginx:1.28-alpine
+  # c2: configuration, security and networking.
+  for ns in config data web; do kubectl --context c2 create namespace $ns; done
+  kubectl --context c2 -n config create deployment api --image=nginx:1.29-alpine
+  kubectl --context c2 -n config create deployment secure-app --image=nginx:1.29-alpine
+  kubectl --context c2 -n data create deployment db --image=nginx:1.29-alpine
+  kubectl --context c2 -n data create deployment api --image=nginx:1.29-alpine
+  kubectl --context c2 -n data patch deployment api -p '{"spec":{"template":{"metadata":{"labels":{"role":"api"}}}}}'
+  kubectl --context c2 -n web create deployment shop --image=nginx:1.29-alpine
+  kubectl --context c2 -n web expose deployment shop --port=80
+solution: |
+  kubectl config use-context c1
+  kubectl apply -f - <<'YAML'
+  apiVersion: v1
+  kind: Pod
+  metadata: { name: logger, namespace: apps }
+  spec:
+    volumes: [{ name: logs, emptyDir: {} }]
+    containers:
+      - name: app
+        image: nginx:1.29-alpine
+        command: ["sh", "-c", "while true; do date >> /var/log/app/app.log; sleep 5; done"]
+        volumeMounts: [{ name: logs, mountPath: /var/log/app }]
+      - name: log-tail
+        image: nginx:1.29-alpine
+        command: ["sh", "-c", "touch /var/log/app/app.log; tail -F /var/log/app/app.log"]
+        volumeMounts: [{ name: logs, mountPath: /var/log/app }]
+  YAML
+  kubectl -n apps create cronjob cleanup --image=nginx:1.29-alpine --schedule='*/30 * * * *' -- sh -c 'echo cleaning up'
+  kubectl -n apps patch cronjob cleanup -p '{"spec":{"successfulJobsHistoryLimit":2}}'
+  kubectl -n release rollout undo deployment/frontend
+  kubectl -n release patch service shop -p '{"spec":{"selector":{"app":"shop","version":"green"}}}'
+  kubectl -n probe patch deployment web --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":80},"periodSeconds":5}}]'
+  mkdir -p /opt/answers && echo beta > /opt/answers/broken.txt
+  kubectl -n debug set image deployment/beta nginx=nginx:1.29-alpine
+  kubectl config use-context c2
+  kubectl -n config create configmap app-config --from-literal=LOG_LEVEL=debug
+  kubectl -n config set env deployment/api --from=configmap/app-config
+  kubectl -n config create secret generic db-creds --from-literal=password=s3cret
+  kubectl apply -f - <<'YAML'
+  apiVersion: v1
+  kind: Pod
+  metadata: { name: db-client, namespace: config }
+  spec:
+    volumes: [{ name: creds, secret: { secretName: db-creds } }]
+    containers:
+      - name: client
+        image: nginx:1.29-alpine
+        volumeMounts: [{ name: creds, mountPath: /etc/creds, readOnly: true }]
+  YAML
+  kubectl -n config patch deployment secure-app --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{"runAsUser":1000,"allowPrivilegeEscalation":false}}]'
+  kubectl apply -f - <<'YAML'
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata: { name: db-allow-api, namespace: data }
+  spec:
+    podSelector: { matchLabels: { app: db } }
+    policyTypes: [Ingress]
+    ingress:
+      - from: [{ podSelector: { matchLabels: { role: api } } }]
+        ports: [{ protocol: TCP, port: 5432 }]
+  YAML
+  kubectl -n web create ingress shop --rule='shop.example.com/*=shop:80'
+  kubectl -n config rollout status deployment/api --timeout=120s
+  kubectl -n config wait --for=condition=Ready pod/db-client --timeout=120s
+  kubectl config use-context c1
+  kubectl -n apps wait --for=condition=Ready pod/logger --timeout=120s
+tasks:
+  - id: sidecar
+    title: Add a log sidecar
+    cluster: c1
+    weight: 10
+    competency: ckad/application-design-build/multi-container-pod-design-patterns
+    doc:
+      title: "Kubernetes docs: Sidecar containers"
+      url: https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
+    body: |
+      In the namespace `apps`, create a Pod `logger` with two containers, both from `nginx:1.29-alpine`:
+
+      - `app` runs `while true; do date >> /var/log/app/app.log; sleep 5; done` in `sh -c`.
+      - `log-tail` runs `tail -F /var/log/app/app.log` in `sh -c`.
+
+      Both mount an `emptyDir` volume named `logs` at `/var/log/app`. The Pod must be Ready.
+    checks:
+      - id: sidecar-containers
+        description: Pod logger runs the app and log-tail containers
+        failMessage: Pod logger in apps is missing, or does not have the containers app and log-tail.
+        script: |
+          n=$(kubectl -n apps get pod logger -o jsonpath='{.spec.containers[*].name}')
+          echo "$n" | grep -qw app && echo "$n" | grep -qw log-tail
+      - id: sidecar-volume
+        description: Both containers share the emptyDir logs at /var/log/app
+        failMessage: The logs volume is missing, is not an emptyDir, or is not mounted at /var/log/app in both containers.
+        script: |
+          test -n "$(kubectl -n apps get pod logger -o jsonpath='{.spec.volumes[?(@.name=="logs")].emptyDir}')"
+          test "$(kubectl -n apps get pod logger -o jsonpath='{.spec.containers[*].volumeMounts[?(@.name=="logs")].mountPath}')" = "/var/log/app /var/log/app"
+      - id: sidecar-ready
+        description: Pod logger is Ready
+        failMessage: Pod logger is not Ready yet.
+        script: kubectl -n apps wait --for=condition=Ready pod/logger --timeout=5s
+  - id: cronjob
+    title: Schedule a cleanup job
+    cluster: c1
+    weight: 10
+    competency: ckad/application-design-build/choose-right-workload-resource-deployment
+    doc:
+      title: "Kubernetes docs: CronJob"
+      url: https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/
+    body: |
+      In `apps`, create a CronJob `cleanup` that runs every 30 minutes (`*/30 * * * *`) with the image
+      `nginx:1.29-alpine` and the command `sh -c 'echo cleaning up'`. Keep the history of only the last
+      **2** successful jobs.
+    checks:
+      - id: cronjob-spec
+        description: CronJob cleanup runs every 30 minutes with nginx:1.29-alpine and keeps 2 successful jobs
+        failMessage: CronJob cleanup in apps is missing, or its schedule, image or successful job history differ from the task.
+        assert:
+          apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: cleanup
+            namespace: apps
+          spec:
+            schedule: '*/30 * * * *'
+            successfulJobsHistoryLimit: 2
+            jobTemplate:
+              spec:
+                template:
+                  spec:
+                    (containers[0].image): nginx:1.29-alpine
+  - id: rollback
+    title: Roll back a bad release
+    cluster: c1
+    weight: 10
+    competency: ckad/application-deployment/deployments-perform-rolling-updates
+    doc:
+      title: "Deployments: rolling back"
+      url: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-back-a-deployment
+    body: |
+      The latest rollout of the Deployment `frontend` in `release` is stuck. Roll it back to the previous
+      revision, so it runs `nginx:1.28-alpine` again.
+    checks:
+      - id: rollback-image
+        description: Deployment frontend runs nginx:1.28-alpine again
+        failMessage: Deployment frontend in release still uses the broken image.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+            namespace: release
+          spec:
+            template:
+              spec:
+                (containers[0].image): nginx:1.28-alpine
+  - id: blue-green
+    title: Switch traffic to green
+    cluster: c1
+    weight: 10
+    competency: ckad/application-deployment/kubernetes-primitives-implement-common
+    doc:
+      title: "Kubernetes docs: Service"
+      url: https://kubernetes.io/docs/concepts/services-networking/service/
+    body: |
+      In `release`, the Deployments `shop-blue` and `shop-green` both run, and the Service `shop` sends traffic
+      to the blue pods. Switch the Service to the green pods (`version=green`), without changing either
+      Deployment.
+    checks:
+      - id: service-green
+        description: Service shop selects app=shop, version=green
+        failMessage: Service shop still does not select the green pods (app=shop, version=green).
+        assert:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: shop
+            namespace: release
+          spec:
+            selector:
+              app: shop
+              version: green
+      - id: blue-untouched
+        description: Deployment shop-blue still runs one replica
+        failMessage: The shop-blue Deployment was changed; the task was to switch the Service only.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: shop-blue
+            namespace: release
+          spec:
+            replicas: 1
+  - id: probe
+    title: Add a readiness probe
+    cluster: c1
+    weight: 8
+    competency: ckad/application-observability-maintenance/implement-probes-health-checks
+    doc:
+      title: "Kubernetes docs: Configure Liveness, Readiness and Startup Probes"
+      url: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+    body: |
+      Give the container of the Deployment `web` in `probe` a readiness probe: an HTTP GET on path `/` and
+      port `80`, every 5 seconds.
+    checks:
+      - id: probe-spec
+        description: Deployment web has an HTTP readiness probe on / port 80 every 5 seconds
+        failMessage: Deployment web in probe has no readiness probe, or it checks another path, port or period.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: web
+            namespace: probe
+          spec:
+            template:
+              spec:
+                (containers[0].readinessProbe.httpGet.path): /
+                (to_string(containers[0].readinessProbe.httpGet.port)): '80'
+                (containers[0].readinessProbe.periodSeconds): 5
+  - id: debug
+    title: Find the failing Deployment
+    cluster: c1
+    weight: 7
+    competency: ckad/application-observability-maintenance/debugging-kubernetes
+    doc:
+      title: "Kubernetes docs: Debug Pods"
+      url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/
+    body: |
+      One Deployment in `debug` never gets a ready pod. Write its name, and nothing else, to
+      `/opt/answers/broken.txt`. Then fix it so it runs `nginx:1.29-alpine`.
+    checks:
+      - id: debug-answer
+        description: /opt/answers/broken.txt names the failing Deployment
+        failMessage: /opt/answers/broken.txt is missing or does not name just the failing Deployment.
+        runIn: workstation
+        script: grep -qx beta /opt/answers/broken.txt
+      - id: debug-fixed
+        description: Deployment beta runs nginx:1.29-alpine
+        failMessage: Deployment beta in debug still uses an image that does not exist.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: beta
+            namespace: debug
+          spec:
+            template:
+              spec:
+                (containers[0].image): nginx:1.29-alpine
+  - id: configmap
+    title: Configure the API from a ConfigMap
+    cluster: c2
+    weight: 8
+    competency: ckad/application-environment-configuration-security/configmaps
+    doc:
+      title: "Kubernetes docs: Configure a Pod to Use a ConfigMap"
+      url: https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
+    body: |
+      In `config`, create a ConfigMap `app-config` with `LOG_LEVEL=debug`. Make its keys environment
+      variables of the Deployment `api`, so `printenv LOG_LEVEL` in its pod prints `debug`.
+    checks:
+      - id: configmap-data
+        description: ConfigMap app-config holds LOG_LEVEL=debug
+        failMessage: ConfigMap app-config in config is missing or LOG_LEVEL is not debug.
+        assert:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: app-config
+            namespace: config
+          data:
+            LOG_LEVEL: debug
+      - id: configmap-env
+        description: The api pod sees LOG_LEVEL=debug
+        failMessage: The running api pod does not have LOG_LEVEL=debug in its environment (did the rollout finish?).
+        script: test "$(kubectl -n config exec deploy/api -- printenv LOG_LEVEL)" = debug
+  - id: secret
+    title: Mount a Secret
+    cluster: c2
+    weight: 8
+    competency: ckad/application-environment-configuration-security/create-consume-secrets
+    doc:
+      title: "Kubernetes docs: Secrets as files"
+      url: https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod
+    body: |
+      In `config`, create a Secret `db-creds` with `password=s3cret`. Run a Pod `db-client` from
+      `nginx:1.29-alpine` that mounts the Secret read-only at `/etc/creds`.
+    checks:
+      - id: secret-file
+        description: Pod db-client reads s3cret from /etc/creds/password
+        failMessage: Pod db-client in config is missing, not running, or /etc/creds/password does not hold the password.
+        script: test "$(kubectl -n config exec db-client -- cat /etc/creds/password)" = s3cret
+  - id: security-context
+    title: Run the app without privileges
+    cluster: c2
+    weight: 9
+    competency: ckad/application-environment-configuration-security/application-security-securitycontexts
+    doc:
+      title: "Kubernetes docs: Configure a Security Context"
+      url: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    body: |
+      Change the Deployment `secure-app` in `config` so its container runs as user ID `1000` and cannot
+      gain more privileges than its parent process (`allowPrivilegeEscalation: false`).
+    checks:
+      - id: run-as-user
+        description: secure-app runs as user 1000
+        failMessage: Deployment secure-app does not set runAsUser 1000 for its container or pod.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: secure-app
+            namespace: config
+          spec:
+            template:
+              spec:
+                (containers[0].securityContext.runAsUser || securityContext.runAsUser): 1000
+      - id: no-escalation
+        description: secure-app does not allow privilege escalation
+        failMessage: The container of secure-app still allows privilege escalation.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: secure-app
+            namespace: config
+          spec:
+            template:
+              spec:
+                (containers[0].securityContext.allowPrivilegeEscalation): false
+  - id: network-policy
+    title: Let only the API reach the database
+    cluster: c2
+    weight: 10
+    competency: ckad/services-networking/demonstrate-basic-understanding-networkpolicies
+    doc:
+      title: "Kubernetes docs: Network Policies"
+      url: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+    body: |
+      In `data`, create a NetworkPolicy `db-allow-api` that selects the pods labelled `app=db` and allows
+      ingress to them only from pods labelled `role=api`, on TCP port `5432`.
+    checks:
+      - id: policy-spec
+        description: db-allow-api lets role=api pods reach app=db pods on TCP 5432 only
+        failMessage: NetworkPolicy db-allow-api in data is missing, selects other pods, or allows other sources or ports.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: db-allow-api
+            namespace: data
+          spec:
+            podSelector:
+              matchLabels:
+                app: db
+            ingress:
+              - from:
+                  - podSelector:
+                      matchLabels:
+                        role: api
+                ports:
+                  - port: 5432
+                    protocol: TCP
+  - id: ingress
+    title: Expose the shop on a host name
+    cluster: c2
+    weight: 10
+    competency: ckad/services-networking/ingress-rules-expose-applications
+    doc:
+      title: "Kubernetes docs: Ingress"
+      url: https://kubernetes.io/docs/concepts/services-networking/ingress/
+    body: |
+      In `web`, create an Ingress `shop` that sends every path of the host `shop.example.com` (path `/`,
+      type `Prefix`) to the Service `shop` on port `80`.
+    checks:
+      - id: ingress-rule
+        description: Ingress shop routes shop.example.com/ to shop:80
+        failMessage: Ingress shop in web is missing, or its host, path or backend differ from the task.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: shop
+            namespace: web
+          spec:
+            rules:
+              - host: shop.example.com
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: shop
+                          port:
+                            number: 80

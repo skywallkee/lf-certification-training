@@ -80,3 +80,53 @@ test("exam mode shows no checks, and leaving before Start costs nothing", async 
   // Compared with the practice attempt of the first test, which scored 100%.
   await expect(page.getByText(/from your previous attempt/)).toBeVisible();
 });
+
+test("a learner sits a multiple-choice mock: answers save as they go, then submit, score per domain and review", async ({ page }) => {
+  await signIn(page, "new@example.com");
+  await page.goto("/mocks");
+  const card = page.getByRole("listitem").filter({ hasText: "Sample KCNA quick check (10 questions)" });
+  await expect(card).toContainText("Multiple choice · 15 min · 10 questions · pass mark 75%");
+  await card.getByRole("button", { name: "Start the exam" }).click();
+  await expect(page).toHaveURL(/\/mocks\/quiz\//);
+  await expect(page.getByRole("heading", { name: "Question 1 of 10" })).toBeVisible();
+  await expectAccessible(page, "Multiple-choice mock player");
+
+  // Answer the first question, flag the second, and come back after a reload: both are kept.
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/mocks/quiz/"));
+  await page.locator("main fieldset input").first().check();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Flag for later" }).click();
+  await saved;
+  await expect(page.getByText("All answers saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("1 of 10 answered")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Question 2, not answered, flagged" })).toBeVisible();
+
+  // The mocks page offers to resume the running attempt instead of starting another.
+  await page.goto("/mocks");
+  await page.getByRole("listitem").filter({ hasText: "Sample KCNA quick check (10 questions)" }).getByRole("link", { name: "Resume the attempt" }).click();
+  await expect(page).toHaveURL(/\/mocks\/quiz\//);
+
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByText("9 questions are not answered and will count as wrong.")).toBeVisible();
+  await expect(page.getByText("You flagged 1 question for later.")).toBeVisible();
+  await page.getByRole("button", { name: "Submit and grade" }).click();
+  await expect(page).toHaveURL(/\/mocks\/quiz-results\//, { timeout: 30_000 });
+  await expect(page.getByText("Not a pass yet")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Score per domain" })).toBeVisible();
+  await expect(page.getByText(/Question \d+: not answered/).first()).toBeVisible();
+  await expectAccessible(page, "Multiple-choice mock results");
+
+  await page.goto("/mocks/history");
+  await expect(page.getByRole("link", { name: "Sample KCNA quick check (10 questions)" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Multiple choice" }).first()).toBeVisible();
+});
+
+test("the full KCNA mock draws what the sample bank holds and keeps the real exam's pace", async ({ page }) => {
+  await signIn(page, "golden@example.com");
+  await page.goto("/mocks");
+  const card = page.getByRole("listitem").filter({ hasText: "Sample KCNA mock exam (full, 90 minutes)" });
+  await expect(card).toContainText(/The bank has \d+ of the 60 questions/);
+  await card.getByRole("button", { name: "Start the exam" }).click();
+  await expect(page.getByRole("heading", { name: /^Question 1 of \d+$/ })).toBeVisible();
+});

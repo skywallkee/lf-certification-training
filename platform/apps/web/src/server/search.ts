@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
-import { lab, lesson, question } from "@lfct/curriculum/db";
+import { lab, lesson, question, quizMock } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
 import { plainText, scoreItem, snippetAround, tokenize, truncate, type SearchKind, type SearchResult } from "@/lib/search";
 import { competencyPath, getCatalog } from "./catalog";
@@ -37,7 +37,7 @@ export async function search(query: string, options: SearchOptions = {}): Promis
   const db = getDb();
   const results: (SearchResult & { score: number })[] = [];
 
-  const [lessons, questions, labs] = await Promise.all([
+  const [lessons, questions, labs, quizMocks] = await Promise.all([
     want("lesson")
       ? db
           .select({ id: lesson.id, title: lesson.title, summary: lesson.summary, body: lesson.body, refs: lesson.competencyRefs, cert: lesson.certCode, mock: lesson.mock })
@@ -57,6 +57,12 @@ export async function search(query: string, options: SearchOptions = {}): Promis
           .select({ id: lab.id, title: lab.title, summary: lab.summary, tasks: lab.tasks, cert: lab.certCode, kind: lab.kind, mock: lab.mock, minutes: lab.minutes })
           .from(lab)
           .where(and(eq(lab.published, true), cert ? eq(lab.certCode, cert) : undefined))
+      : [],
+    want("mock")
+      ? db
+          .select({ id: quizMock.id, title: quizMock.title, summary: quizMock.summary, cert: quizMock.certCode, mock: quizMock.mock, minutes: quizMock.minutes, count: quizMock.questionCount })
+          .from(quizMock)
+          .where(and(eq(quizMock.published, true), cert ? eq(quizMock.certCode, cert) : undefined))
       : [],
   ]);
 
@@ -117,6 +123,12 @@ export async function search(query: string, options: SearchOptions = {}): Promis
       mock: x.mock,
       score: s + 1,
     });
+  }
+
+  for (const m of quizMocks) {
+    const s = scoreItem(tokens, { title: m.title, secondary: `${m.summary} multiple choice` }, query);
+    if (s === 0) continue;
+    results.push({ kind: "mock", title: m.title, href: "/mocks", cert: m.cert, context: `${m.cert} · multiple-choice mock exam · ${m.count} questions · ${m.minutes} min`, mock: m.mock, score: s + 1 });
   }
 
   return results

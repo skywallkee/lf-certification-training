@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { FieldError, FieldHint } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 import type { CertOption } from "./fields";
-import { LabForm, LessonForm, QuestionForm } from "./item-forms";
+import { LabForm, LessonForm, QuestionForm, QuizMockForm } from "./item-forms";
 
-type ItemType = "lesson" | "question" | "lab" | "mock";
+type ItemType = "lesson" | "question" | "lab" | "mock" | "quiz-mock";
 type View = "form" | "source" | "preview";
 
 const SOURCE_HINT: Record<ItemType, string> = {
@@ -16,6 +16,7 @@ const SOURCE_HINT: Record<ItemType, string> = {
   question: "The question as a one-question bank file. Same format as content/questions.",
   lab: "The lab as its YAML file. Same format as content/labs (see content/README.md).",
   mock: "The mock exam as its YAML file. Same format as content/mocks (see content/README.md).",
+  "quiz-mock": "The multiple-choice mock as its YAML file (format: multiple-choice). Same format as content/mocks (see content/README.md).",
 };
 
 /**
@@ -120,6 +121,8 @@ export function ContentEditor({
             <LessonForm {...formProps} />
           ) : type === "question" ? (
             <QuestionForm {...formProps} />
+          ) : type === "quiz-mock" ? (
+            <QuizMockForm {...formProps} />
           ) : (
             <LabForm {...formProps} isMock={type === "mock"} />
           )

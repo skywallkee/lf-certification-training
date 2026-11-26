@@ -171,6 +171,39 @@ export const LabSchema = z
     });
   });
 
+/**
+ * Multiple-choice mock exams for the knowledge certs (KCNA, KCSA, CGOA and the like). One YAML file per mock under
+ * content/mocks with `format: multiple-choice`. A mock either lists its questions, or (the default) draws
+ * `questionCount` questions from the cert's published bank at the start of each attempt, spread over the domains by
+ * their exam weight. Timed, no feedback until the learner submits, then a score per domain against the pass mark.
+ */
+export const QuizMockSchema = z
+  .strictObject({
+    format: z.literal("multiple-choice"),
+    id: KeySchema,
+    title: z.string().trim().min(1).max(120),
+    summary: z.string().trim().min(1).max(280),
+    /** The cert code, upper case (KCNA). Its questions are the pool. */
+    cert: z.string().regex(/^[A-Z][A-Z0-9]{1,7}$/, "must be a cert code such as KCNA"),
+    /** The exam timer. */
+    minutes: z.int().min(5).max(240),
+    /** Questions per attempt (60 in the real KCNA and KCSA). With a fixed list, at most the list's length. */
+    questionCount: z.int().min(1).max(120),
+    /** Pass mark in percent (75 for KCNA and KCSA). */
+    passPercent: z.int().min(1).max(100),
+    /** A fixed list of question ids, asked in a shuffled order. Leave out to draw from the bank by domain weight. */
+    questions: z.array(KeySchema).min(1).optional(),
+    mock: z.boolean().default(false),
+  })
+  .superRefine((m, ctx) => {
+    if (m.questions && new Set(m.questions).size !== m.questions.length) ctx.addIssue({ code: "custom", path: ["questions"], message: "duplicate question id" });
+    if (m.questions && m.questionCount > m.questions.length) {
+      ctx.addIssue({ code: "custom", path: ["questionCount"], message: `is more than the ${m.questions.length} listed questions` });
+    }
+  });
+
+export type QuizMockInput = z.infer<typeof QuizMockSchema>;
+
 export type LabInput = z.infer<typeof LabSchema>;
 export type LabTask = z.infer<typeof LabTaskSchema>;
 export type LabCheck = z.infer<typeof LabCheckSchema>;
@@ -203,10 +236,16 @@ export interface Lab extends LabInput {
   hash: string;
 }
 
+export interface QuizMock extends QuizMockInput {
+  file: string;
+  hash: string;
+}
+
 export interface Content {
   lessons: Lesson[];
   questions: Question[];
   labs: Lab[];
+  quizMocks: QuizMock[];
 }
 
 export class ContentError extends Error {
@@ -254,6 +293,7 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
   const lessons: Lesson[] = [];
   const questions: Question[] = [];
   const labs: Lab[] = [];
+  const quizMocks: QuizMock[] = [];
   const rel = (full: string) => path.relative(curriculum.contentDir, full).split(path.sep).join("/");
   const checkRefs = (file: string, where: string, refs: string[]) => {
     for (const ref of refs) {
@@ -318,6 +358,7 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
   // Labs and practical mock exams share one format and one table: a mock exam is a long lab with a pass mark,
   // tasks tagged with a competency each, and no hints (see content/README.md).
   const labIds = new Set<string>();
+  const quizMockFiles: { m: QuizMockInput; file: string }[] = [];
   const labFiles = [
     ...(await walk(path.join(curriculum.contentDir, "labs"), /\.ya?ml$/)).map((full) => ({ full, kind: "lab" as const })),
     ...(await walk(path.join(curriculum.contentDir, "mocks"), /\.ya?ml$/)).map((full) => ({ full, kind: "mock" as const })),
@@ -329,6 +370,21 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
       raw = parse(await readFile(full, "utf8"));
     } catch (err) {
       problems.push(`${file}: YAML parse error: ${(err as Error).message}`);
+      continue;
+    }
+    if (kind === "mock" && isQuizMockFile(raw)) {
+      const qm = QuizMockSchema.safeParse(raw);
+      if (!qm.success) {
+        problems.push(...qm.error.issues.map((i) => `${file}: ${i.path.join(".") || "(root)"}: ${i.message}`));
+        continue;
+      }
+      const m = qm.data;
+      if (labIds.has(m.id)) problems.push(`${file}: duplicate mock or lab id ${m.id}`);
+      labIds.add(m.id);
+      problems.push(...quizMockProblems(m, curriculum).map((p) => `${file}: ${p}`));
+      if (m.mock && !file.includes("/sample/")) problems.push(`${file}: mock exams marked mock belong under a sample/ folder`);
+      if (!m.mock && file.includes("/sample/")) problems.push(`${file}: files under sample/ must set mock: true`);
+      quizMockFiles.push({ m, file });
       continue;
     }
     const parsed = LabSchema.safeParse(raw);
@@ -349,8 +405,33 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
     labs.push({ ...lab, kind, cert: certOf(lab.competencies[0]!), file, hash: hashOf(lab) });
   }
 
+  // Fixed question lists must name questions of the mock's cert (checked once every bank is loaded).
+  const questionCert = new Map(questions.map((q) => [q.id, q.cert]));
+  for (const { m, file } of quizMockFiles) {
+    m.questions?.forEach((id, i) => {
+      const cert = questionCert.get(id);
+      if (!questionIds.has(id)) problems.push(`${file}: questions.${i}: unknown question "${id}"`);
+      else if (cert !== undefined && cert !== m.cert) problems.push(`${file}: questions.${i}: "${id}" is a ${cert} question, not ${m.cert}`);
+    });
+    if (!includeSample && m.mock) continue;
+    quizMocks.push({ ...m, file, hash: hashOf(m) });
+  }
+
   if (problems.length > 0) throw new ContentError(problems);
-  return { lessons, questions, labs };
+  return { lessons, questions, labs, quizMocks };
+}
+
+/** True for a file under content/mocks in the multiple-choice format (it says `format: multiple-choice`). */
+export function isQuizMockFile(raw: unknown): boolean {
+  return typeof raw === "object" && raw !== null && (raw as Record<string, unknown>).format === "multiple-choice";
+}
+
+/** Rules for a multiple-choice mock that need the curriculum. Exported for tests and the editor. */
+export function quizMockProblems(m: QuizMockInput, curriculum: { certs: ReadonlyMap<string, { examStyle: string }> }): string[] {
+  const cert = curriculum.certs.get(m.cert);
+  if (!cert) return [`cert: unknown cert "${m.cert}"`];
+  if (cert.examStyle !== "multiple-choice") return [`cert: ${m.cert} is a hands-on exam; write a practical mock exam for it instead`];
+  return [];
 }
 
 /** Extra rules for practical mock exams, on top of the lab format. Exported for tests. */

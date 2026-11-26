@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import { ContentError, loadContent, loadCurriculum, mockProblems, type Curriculum, type LabInput } from "../src/index.ts";
 
 describe("content in the repository", () => {
@@ -10,29 +11,75 @@ describe("content in the repository", () => {
     curriculum = await loadCurriculum();
   });
 
-  it("loads the sample set: 12 lessons and 60 questions across KCNA, CKA and CKNE, all marked mock", async () => {
+  it("loads the sample set: 12 lessons and 74 questions across KCNA, KCSA, CKA and CKNE, all marked mock", async () => {
     const content = await loadContent(curriculum);
     expect(content.lessons).toHaveLength(12);
-    expect(content.questions).toHaveLength(60);
-    expect(new Set([...content.lessons, ...content.questions].map((i) => i.cert))).toEqual(new Set(["KCNA", "CKA", "CKNE"]));
+    expect(content.questions).toHaveLength(74);
+    expect(new Set([...content.lessons, ...content.questions].map((i) => i.cert))).toEqual(new Set(["KCNA", "KCSA", "CKA", "CKNE"]));
     expect([...content.lessons, ...content.questions].every((i) => i.mock)).toBe(true);
   });
 
   it("leaves the sample set out when includeSample is false", async () => {
     const content = await loadContent(curriculum, { includeSample: false });
-    expect(content).toEqual({ lessons: [], questions: [], labs: [] });
+    expect(content).toEqual({ lessons: [], questions: [], labs: [], quizMocks: [] });
   });
 
-  it("loads the two sample CKA mock exams: three clusters, a pass mark, a competency per task and no hints", async () => {
+  it("loads the sample practical mock exams for CKA, CKAD and CKS: a pass mark, a competency per task and no hints", async () => {
     const mocks = (await loadContent(curriculum)).labs.filter((l) => l.kind === "mock");
-    expect(mocks.map((m) => [m.id, m.minutes, m.tasks.length])).toEqual([
-      ["sample-cka-mock-full", 120, 16],
-      ["sample-cka-mock-half", 60, 8],
+    expect(mocks.map((m) => [m.id, m.minutes, m.tasks.length, m.passPercent, m.clusters.length])).toEqual([
+      ["sample-cka-mock-full", 120, 16, 66, 3],
+      ["sample-cka-mock-half", 60, 8, 66, 3],
+      ["sample-ckad-mock-full", 120, 11, 66, 2],
+      ["sample-cks-mock-full", 120, 12, 67, 2],
     ]);
     for (const m of mocks) {
-      expect(m.clusters).toEqual(["c1", "c2", "c3"]);
-      expect(m.passPercent).toBe(66);
-      expect(m.tasks.every((t) => t.competency?.startsWith("cka/") && t.hints.length === 0 && t.doc)).toBe(true);
+      const prefix = `${m.cert.toLowerCase()}/`;
+      expect(m.tasks.every((t) => t.competency?.startsWith(prefix) && t.hints.length === 0 && t.doc)).toBe(true);
+    }
+  });
+
+  it("weights the CKAD and CKS mocks like their exam domains", async () => {
+    const mocks = (await loadContent(curriculum)).labs.filter((l) => l.id === "sample-ckad-mock-full" || l.id === "sample-cks-mock-full");
+    for (const m of mocks) {
+      const cert = curriculum.certs.get(m.cert)!;
+      const byDomain = new Map<string, number>();
+      for (const t of m.tasks) {
+        const domain = t.competency!.split("/")[1]!;
+        byDomain.set(domain, (byDomain.get(domain) ?? 0) + t.weight);
+      }
+      expect(Object.fromEntries(byDomain)).toEqual(Object.fromEntries(cert.domains.map((d) => [d.key, d.weight])));
+    }
+  });
+
+  it("loads the sample multiple-choice mocks for KCNA and KCSA, one with a fixed question list", async () => {
+    const { quizMocks } = await loadContent(curriculum);
+    expect(quizMocks.map((m) => [m.id, m.cert, m.minutes, m.questionCount, m.passPercent, m.questions?.length ?? null])).toEqual([
+      ["sample-kcna-mock-full", "KCNA", 90, 60, 75, null],
+      ["sample-kcna-mock-quick", "KCNA", 15, 10, 75, 10],
+      ["sample-kcsa-mock-full", "KCSA", 90, 60, 75, null],
+    ]);
+  });
+
+  it("holds multiple-choice mocks to their rules", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "lfct-quiz-mock-"));
+    try {
+      await cp(path.join(curriculum.contentDir, "curriculum"), path.join(dir, "curriculum"), { recursive: true });
+      await mkdir(path.join(dir, "questions"), { recursive: true });
+      await writeFile(path.join(dir, "questions", "kcna.yaml"), stringify({ questions: [questionOf("kcna-q1", "kcna/kubernetes-fundamentals/scheduling")] }));
+      await mkdir(path.join(dir, "mocks"), { recursive: true });
+      const mock = { format: "multiple-choice", id: "m1", title: "T", summary: "S", minutes: 90, questionCount: 2, passPercent: 75 };
+      await writeFile(path.join(dir, "mocks", "a.yaml"), stringify({ ...mock, id: "hands-on", cert: "CKA" }));
+      await writeFile(path.join(dir, "mocks", "b.yaml"), stringify({ ...mock, id: "listed", cert: "KCNA", questions: ["kcna-q1", "nope"] }));
+      await writeFile(path.join(dir, "mocks", "c.yaml"), stringify({ ...mock, id: "too-many", cert: "KCNA", questions: ["kcna-q1"] }));
+      const err = await loadContent(await loadCurriculum(dir)).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ContentError);
+      expect((err as ContentError).problems).toEqual([
+        "mocks/a.yaml: cert: CKA is a hands-on exam; write a practical mock exam for it instead",
+        "mocks/c.yaml: questionCount: is more than the 1 listed questions",
+        'mocks/b.yaml: questions.1: unknown question "nope"',
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
@@ -240,5 +287,20 @@ function mockBase(): LabInput {
       competency: "cka/storage/implement-storage-classes-dynamic-volume",
       checks: [{ id: `c${n}`, description: "d", runIn: "grader" as const, script: "true" }],
     })),
+  };
+}
+
+function questionOf(id: string, competency: string) {
+  return {
+    id,
+    kind: "single",
+    competencies: [competency],
+    stem: "Q?",
+    options: [
+      { id: "a", text: "A", correct: true },
+      { id: "b", text: "B" },
+    ],
+    explanation: "E",
+    source: { title: "S", url: "https://kubernetes.io/docs/" },
   };
 }

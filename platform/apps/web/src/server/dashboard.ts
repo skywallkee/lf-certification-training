@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/db";
-import { labSession } from "@/db/schema";
+import { labSession, quiz } from "@/db/schema";
 import { bookingChecks, bookReady, type BookingCheck, type MockAttemptSummary } from "@/lib/booking";
 import type { CertStatusView } from "@/lib/cert-status";
 import type { IsoDate } from "@/lib/dates";
@@ -9,6 +9,7 @@ import type { Readiness } from "@/lib/readiness";
 import type { Catalog, CatalogCert } from "./catalog";
 import { listLabs } from "./labs";
 import { listMocks } from "./mocks";
+import { listQuizMocks } from "./quiz-mocks";
 import { getCompletedLessons, getEvidence, getReadiness, getReadinessHistory, getReviewQueue, getStatusViews } from "./progress";
 
 /**
@@ -44,7 +45,7 @@ const ORDER: Record<string, number> = { booked: 0, studying: 1 };
 
 export async function getDashboard(userId: string, catalog: Catalog, today: IsoDate, focusCert: string | null): Promise<Dashboard> {
   const db = getDb();
-  const [views, completed, labs, mocks, sessions, queue] = await Promise.all([
+  const [views, completed, labs, practicalMocks, sessions, queue, quizMocks, quizAttempts] = await Promise.all([
     getStatusViews(userId, catalog, today, focusCert),
     getCompletedLessons(userId),
     listLabs(),
@@ -54,7 +55,21 @@ export async function getDashboard(userId: string, catalog: Catalog, today: IsoD
       .from(labSession)
       .where(and(eq(labSession.userId, userId), isNotNull(labSession.score))),
     getReviewQueue(userId),
+    listQuizMocks(),
+    db
+      .select({ mockId: quiz.mockId, certCode: quiz.certCode, score: quiz.score, createdAt: quiz.createdAt, finishedAt: quiz.finishedAt })
+      .from(quiz)
+      .where(and(eq(quiz.userId, userId), eq(quiz.kind, "mock"), isNotNull(quiz.score))),
   ]);
+  // Practical and multiple-choice mock exams count alike here: a graded exam-mode attempt with a pass mark.
+  const mocks = [
+    ...practicalMocks.map((m) => ({ id: m.id, certCode: m.certCode, passPercent: m.passPercent ?? 66 })),
+    ...quizMocks.map((m) => ({ id: m.id, certCode: m.certCode, passPercent: m.passPercent })),
+  ];
+  const examAttempts = [
+    ...sessions.filter((s) => s.mode === "exam" && s.startedAt).map((s) => ({ mockId: s.labId, certCode: s.certCode, score: s.score!, startedAt: s.startedAt!, endedAt: s.endedAt })),
+    ...quizAttempts.map((a) => ({ mockId: a.mockId ?? "", certCode: a.certCode ?? "", score: a.score!, startedAt: a.createdAt, endedAt: a.finishedAt })),
+  ];
 
   const activeCodes = [...views]
     .filter(([code, v]) => v.status === "booked" || v.status === "studying" || code === focusCert)
@@ -75,14 +90,12 @@ export async function getDashboard(userId: string, catalog: Catalog, today: IsoD
       const certLabs = labs.filter((l) => l.certCode === code);
       const labSessions = sessions.filter((s) => s.certCode === code && s.mode === "lab");
       const certMocks = mocks.filter((m) => m.certCode === code);
-      const exams = sessions
-        .filter((s) => s.certCode === code && s.mode === "exam" && s.startedAt)
-        .sort((a, b) => a.startedAt!.getTime() - b.startedAt!.getTime());
-      const passMarkOf = (labId: string) => certMocks.find((m) => m.id === labId)?.passPercent ?? 66;
+      const exams = examAttempts.filter((s) => s.certCode === code).sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+      const passMarkOf = (mockId: string) => certMocks.find((m) => m.id === mockId)?.passPercent ?? 66;
       const attempts: MockAttemptSummary[] = exams.map((s) => ({
-        at: (s.endedAt ?? s.startedAt!).toISOString().slice(0, 10),
-        score: s.score!,
-        passMark: passMarkOf(s.labId),
+        at: (s.endedAt ?? s.startedAt).toISOString().slice(0, 10),
+        score: s.score,
+        passMark: passMarkOf(s.mockId),
       }));
       const checks = bookingChecks(readiness, { mockAvailable: certMocks.length > 0, attempts, today });
       const certQueue = queue.filter((q) => q.certCode === code);
@@ -102,9 +115,9 @@ export async function getDashboard(userId: string, catalog: Catalog, today: IsoD
         mocks: {
           available: certMocks.length,
           attempts: exams.length,
-          best: exams.length ? Math.max(...exams.map((s) => s.score!)) : null,
+          best: exams.length ? Math.max(...exams.map((s) => s.score)) : null,
           latest: exams.at(-1)?.score ?? null,
-          passMark: exams.length ? passMarkOf(exams.at(-1)!.labId) : (certMocks[0]?.passPercent ?? null),
+          passMark: exams.length ? passMarkOf(exams.at(-1)!.mockId) : (certMocks[0]?.passPercent ?? null),
         },
         reviewDue: certQueue.filter((q) => q.dueOn <= today).length,
         reviewQueued: certQueue.length,
@@ -127,7 +140,7 @@ export async function getDashboard(userId: string, catalog: Catalog, today: IsoD
     totals: {
       lessons: completed.size,
       labsSolved: new Set(sessions.filter((s) => s.mode === "lab" && s.score === 100).map((s) => s.labId)).size,
-      mockAttempts: sessions.filter((s) => s.mode === "exam" && s.startedAt).length,
+      mockAttempts: examAttempts.length,
       reviewDue: queue.filter((q) => q.dueOn <= today).length,
     },
   };

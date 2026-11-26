@@ -1,0 +1,21 @@
+# Sample multiple-choice mock exam with a fixed question list (mock content, not study material).
+format: multiple-choice
+id: sample-kcna-mock-quick
+mock: true
+title: Sample KCNA quick check (10 questions)
+summary: Ten fixed KCNA questions in fifteen minutes, in a new order each time. A short timed run before the full mock.
+cert: KCNA
+minutes: 15
+questionCount: 10
+passPercent: 75
+questions:
+- sample-kcna-001
+- sample-kcna-002
+- sample-kcna-003
+- sample-kcna-006
+- sample-kcna-009
+- sample-kcna-012
+- sample-kcna-015
+- sample-kcna-018
+- sample-kcna-021
+- sample-kcna-024

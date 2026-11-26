@@ -84,7 +84,7 @@ export const en = {
   },
   mocks: {
     title: "Mock exams",
-    lead: "Timed, hands-on mock exams on three clusters, with only the official docs. Exam mode gives no feedback until the end, like the real exam; practice mode adds a Check button per task.",
+    lead: "Timed mock exams in the format of each real exam. Hands-on certs run on up to three clusters with only the official docs (exam mode gives no feedback until the end; practice mode adds a Check button per task). Knowledge certs get a timed multiple-choice exam.",
     examMode: "Exam mode",
     examModeHint: "No hints and no checking along the way. Graded when you submit or time runs out.",
     practiceMode: "Practice mode",
@@ -120,6 +120,20 @@ export const en = {
     warn: (minutes: number) => `${minutes} minutes left.`,
     checkTask: "Check this task",
     noFeedback: "Exam mode: no feedback until you submit. Flag tasks to come back to them.",
+  },
+  quizMocks: {
+    lead: "Timed multiple-choice exams for the knowledge certs, drawn from the question bank by domain weight. No feedback until you submit. They need no lab, so there is no monthly limit.",
+    grading: "Grading your exam…",
+    timeUp: "Time is up. Grading the answers you gave…",
+    submitBody: (answered: number, total: number) => `You answered ${answered} of ${total} questions. Your answers are graded now and you cannot change them afterwards.`,
+    unanswered: (n: number) => `${n} question${n === 1 ? " is" : "s are"} not answered and will count as wrong.`,
+    flagged: (n: number) => `You flagged ${n} question${n === 1 ? "" : "s"} for later.`,
+    noFeedback: (pass: number) => `No feedback until you submit. Unanswered questions count as wrong. Pass mark ${pass}%.`,
+    empty: "This mock exam has no questions to ask yet: its question bank is empty or every question is a draft.",
+    short: (count: number, wanted: number, minutes: number) =>
+      `The bank has ${count} of the ${wanted} questions this mock asks for, so an attempt asks ${count} in ${minutes} minutes (the same pace as the real exam).`,
+    resume: "Resume the attempt",
+    start: "Start the exam",
   },
 } as const;
 

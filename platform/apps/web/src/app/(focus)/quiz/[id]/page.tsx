@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { question as questionTable } from "@lfct/curriculum/db";
 import { FlagButton } from "@/components/item-tools";
@@ -26,6 +26,7 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
   const db = getDb();
   const [q] = await db.select().from(quiz).where(and(eq(quiz.id, id), eq(quiz.userId, user.id)));
   if (!q) notFound();
+  if (q.kind === "mock") redirect(`/mocks/quiz/${id}`);
   const [answers, questions, catalog] = await Promise.all([
     db.select().from(answer).where(eq(answer.quizId, id)),
     db.select().from(questionTable).where(inArray(questionTable.id, q.questionIds)),

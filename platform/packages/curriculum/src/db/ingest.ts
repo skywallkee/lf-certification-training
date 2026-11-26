@@ -140,6 +140,8 @@ export interface ContentIngestResult {
   removedLessons: number;
   removedQuestions: number;
   removedLabs: number;
+  quizMocks: number;
+  removedQuizMocks: number;
 }
 
 /**
@@ -213,6 +215,24 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
         .values({ id: l.id, ...values })
         .onConflictDoUpdate({ target: schema.lab.id, set: { ...values, updatedAt: new Date() }, setWhere: eq(schema.lab.origin, "file") });
     }
+    for (const m of content.quizMocks) {
+      const values = {
+        certCode: m.cert,
+        title: m.title,
+        summary: m.summary,
+        minutes: m.minutes,
+        questionCount: m.questionCount,
+        passPercent: m.passPercent,
+        questionIds: m.questions ?? null,
+        mock: m.mock,
+        file: m.file,
+        contentHash: m.hash,
+      };
+      await tx
+        .insert(schema.quizMock)
+        .values({ id: m.id, ...values })
+        .onConflictDoUpdate({ target: schema.quizMock.id, set: { ...values, updatedAt: new Date() }, setWhere: eq(schema.quizMock.origin, "file") });
+    }
     const lessonIds = content.lessons.map((l) => l.id);
     const questionIds = content.questions.map((q) => q.id);
     const removedLessons = await tx
@@ -228,6 +248,11 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
       .delete(schema.lab)
       .where(and(eq(schema.lab.origin, "file"), labIds.length > 0 ? notInArray(schema.lab.id, labIds) : undefined))
       .returning({ id: schema.lab.id });
+    const quizMockIds = content.quizMocks.map((m) => m.id);
+    const removedQuizMocks = await tx
+      .delete(schema.quizMock)
+      .where(and(eq(schema.quizMock.origin, "file"), quizMockIds.length > 0 ? notInArray(schema.quizMock.id, quizMockIds) : undefined))
+      .returning({ id: schema.quizMock.id });
     return {
       lessons: content.lessons.length,
       questions: content.questions.length,
@@ -235,16 +260,19 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
       removedLessons: removedLessons.length,
       removedQuestions: removedQuestions.length,
       removedLabs: removedLabs.length,
+      quizMocks: content.quizMocks.length,
+      removedQuizMocks: removedQuizMocks.length,
     };
   });
 }
 
 /** Deletes every lesson, question and lab marked mock: the one-step removal of the sample set. */
-export async function removeSampleContent(db: Db): Promise<{ lessons: number; questions: number; labs: number }> {
+export async function removeSampleContent(db: Db): Promise<{ lessons: number; questions: number; labs: number; quizMocks: number }> {
+  const quizMocks = await db.delete(schema.quizMock).where(eq(schema.quizMock.mock, true)).returning({ id: schema.quizMock.id });
   const lessons = await db.delete(schema.lesson).where(eq(schema.lesson.mock, true)).returning({ id: schema.lesson.id });
   const questions = await db.delete(schema.question).where(eq(schema.question.mock, true)).returning({ id: schema.question.id });
   const labs = await db.delete(schema.lab).where(eq(schema.lab.mock, true)).returning({ id: schema.lab.id });
-  return { lessons: lessons.length, questions: questions.length, labs: labs.length };
+  return { lessons: lessons.length, questions: questions.length, labs: labs.length, quizMocks: quizMocks.length };
 }
 
 /** Applies the curriculum package's migrations. */
@@ -309,7 +337,7 @@ export async function ingestAll(
   return (
     `Ingested ${result.certs} certifications: ${result.inserted.length} new curriculum versions, ` +
     `${result.unchanged.length} unchanged. ${result.content?.lessons ?? 0} lessons, ` +
-    `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs and mock exams` +
+    `${result.content?.questions ?? 0} questions and ${result.content?.labs ?? 0} labs and practical mock exams, ${result.content?.quizMocks ?? 0} multiple-choice mock exams` +
     `${includeSample ? " (sample set included)" : ""}; removed ${result.content?.removedLessons ?? 0} lessons, ` +
     `${result.content?.removedQuestions ?? 0} questions and ${result.content?.removedLabs ?? 0} labs.`
   );

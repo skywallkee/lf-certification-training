@@ -32,6 +32,7 @@ so content changes ship without an app release.
 | `questions/` | Multiple-choice question banks in YAML |
 | `lessons/sample/`, `questions/sample/` | The mock sample set (see below) |
 | `labs/` | Lab definitions with tasks, Chainsaw or shell checks, hints and reference solutions |
+| `mocks/` | Mock exams: practical ones in the lab format, multiple-choice ones with `format: multiple-choice` |
 
 ## Lessons
 
@@ -131,6 +132,11 @@ must pass after it).
 
 ## Mock exams
 
+Each cert gets a mock in the format of its real exam: a practical (hands-on) mock for the performance-based certs
+(CKA, CKAD, CKS, CKNE, LFCS) and a multiple-choice mock for the others (KCNA, KCSA, CGOA and the like).
+
+### Practical mock exams
+
 Practical (hands-on) mock exams live under `mocks/`, one YAML file per mock, in the lab format above with
 three differences, checked by `pnpm curriculum:validate`:
 
@@ -153,9 +159,36 @@ Task statements stay hidden until the learner presses Start. In exam mode nothin
 time up (the terminal freezes first); practice mode adds a Check button per task. Prove a mock exactly like a
 lab: `pnpm --filter @lfct/lab-controller selftest <mock-id>`.
 
+Match the real exam's layout: its duration, its pass mark (66% for CKA and CKAD, 67% for CKS) and task weights
+that add up per domain to the curriculum's domain weights (a unit test checks this for the CKAD and CKS samples).
+
+### Multiple-choice mock exams
+
+A multiple-choice mock is a short YAML file under `mocks/` that starts with `format: multiple-choice`. It asks
+questions from the cert's question bank (`questions/`), so it has no questions of its own:
+
+```yaml
+format: multiple-choice            # required: marks the file as a multiple-choice mock
+id: kcna-mock-1
+title: KCNA mock exam
+summary: Sixty questions in ninety minutes, like the real exam.
+cert: KCNA                         # a multiple-choice cert
+minutes: 90                        # the exam timer
+questionCount: 60                  # questions per attempt
+passPercent: 75                    # the cert's pass mark
+questions: [kcna-001, kcna-002]    # optional: a fixed list, asked in a new order each time
+mock: false
+```
+
+Without `questions`, each attempt draws `questionCount` published questions of the cert, split over the domains by
+their exam weight and preferring questions the learner has not answered yet. If the bank holds fewer, the attempt
+asks what there is and scales the timer to the same pace. There is no feedback until the learner submits (or time
+runs out); then each answered question is recorded like a quiz answer, so it counts toward readiness and missed
+questions join the review queue. Multiple-choice mocks need no lab, so they have no monthly limit.
+
 ## Editing content in the app
 
-Admins can also create and edit lessons, questions, labs and mock exams in the app, under **Admin > Content**,
+Admins can also create and edit lessons, questions, labs and both kinds of mock exam in the app, under **Admin > Content**,
 without touching this folder. The editor has a form view and a source view that shows the item in exactly the
 file format described above, and it validates with the same schemas as the ingest.
 
@@ -174,7 +207,9 @@ file format described above, and it validates with the same schemas as the inges
 
 ## The sample set
 
-The app ships with **mock content only**: 12 lessons, 60 questions, 4 labs and 2 practical mock exams (CKA, full and half) across KCNA, CKA, CKAD and CKNE, written to
+The app ships with **mock content only**: 12 lessons, 74 questions, 4 labs, 4 practical mock exams (CKA full and
+half, CKAD, CKS) and 3 multiple-choice mock exams (KCNA full and quick, KCSA) across KCNA, KCSA, CKA, CKAD, CKS and
+CKNE, written to
 exercise the app (a long lesson, two very short ones, a lesson tagged for two certs, competencies with no
 lesson, and one deliberately broken question). It is not study material. Every sample file sits under a
 `sample/` folder and sets `mock: true`; the app labels it "Sample content".

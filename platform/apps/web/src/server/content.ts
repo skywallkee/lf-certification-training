@@ -8,8 +8,9 @@ import {
   type LabEdit,
   type LessonEdit,
   type QuestionEdit,
+  type QuizMockEdit,
 } from "@lfct/curriculum";
-import { lab as labTable, lesson as lessonTable, question as questionTable } from "@lfct/curriculum/db";
+import { lab as labTable, lesson as lessonTable, question as questionTable, quizMock as quizMockTable } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
 import { contentRevision, user as userTable } from "@/db/schema";
 import { getCatalog } from "./catalog";
@@ -22,22 +23,24 @@ import { getCatalog } from "./catalog";
 export type LessonRow = typeof lessonTable.$inferSelect;
 export type QuestionRow = typeof questionTable.$inferSelect;
 export type LabRow = typeof labTable.$inferSelect;
-export type ItemEdit = LessonEdit | QuestionEdit | LabEdit;
+export type QuizMockRow = typeof quizMockTable.$inferSelect;
+export type ItemEdit = LessonEdit | QuestionEdit | LabEdit | QuizMockEdit;
 
 export const TYPE_LABEL: Record<ItemType, { one: string; many: string }> = {
   lesson: { one: "lesson", many: "Lessons" },
   question: { one: "question", many: "Questions" },
   lab: { one: "lab", many: "Labs" },
-  mock: { one: "mock exam", many: "Mock exams" },
+  mock: { one: "practical mock exam", many: "Practical mocks" },
+  "quiz-mock": { one: "multiple-choice mock", many: "Multiple-choice mocks" },
 };
 
 export function isItemType(value: string): value is ItemType {
-  return value === "lesson" || value === "question" || value === "lab" || value === "mock";
+  return value === "lesson" || value === "question" || value === "lab" || value === "mock" || value === "quiz-mock";
 }
 
 export async function authoringContext(): Promise<AuthoringContext> {
   const catalog = await getCatalog();
-  return { competencies: new Set(catalog.competencies.keys()) };
+  return { competencies: new Set(catalog.competencies.keys()), certs: catalog.certs };
 }
 
 export function lessonEditOf(row: LessonRow): LessonEdit {
@@ -84,6 +87,21 @@ export function labEditOf(row: LabRow): LabEdit {
     // The ingest fills in the cluster of single-cluster labs; leave it out again so the file stays short.
     tasks: row.tasks.map(({ cluster, ...t }) => ({ ...t, ...(single ? {} : { cluster }) })),
     ...(row.passPercent !== null ? { passPercent: row.passPercent } : {}),
+    mock: row.mock,
+  };
+}
+
+export function quizMockEditOf(row: QuizMockRow): QuizMockEdit {
+  return {
+    format: "multiple-choice",
+    id: row.id,
+    title: row.title,
+    summary: row.summary,
+    cert: row.certCode,
+    minutes: row.minutes,
+    questionCount: row.questionCount,
+    passPercent: row.passPercent,
+    ...(row.questionIds ? { questions: row.questionIds } : {}),
     mock: row.mock,
   };
 }
@@ -142,6 +160,20 @@ export function labValues(l: LabEdit, kind: "lab" | "mock") {
   };
 }
 
+export function quizMockValues(m: QuizMockEdit) {
+  return {
+    certCode: m.cert,
+    title: m.title,
+    summary: m.summary,
+    minutes: m.minutes,
+    questionCount: m.questionCount,
+    passPercent: m.passPercent,
+    questionIds: m.questions ?? null,
+    mock: m.mock,
+    contentHash: hashOfItem(m),
+  };
+}
+
 export interface ItemMeta {
   type: ItemType;
   id: string;
@@ -178,22 +210,30 @@ export async function getItem(type: ItemType, id: string): Promise<LoadedItem | 
       ? { meta: { type, id, title: firstLine(row.stem), certCode: row.certCode, origin: row.origin, published: row.published, mock: row.mock, file: row.file, knownIssue: Boolean(row.knownIssue), updatedAt: row.updatedAt }, edit: questionEditOf(row) }
       : null;
   }
+  if (type === "quiz-mock") {
+    const [row] = await db.select().from(quizMockTable).where(eq(quizMockTable.id, id));
+    return row ? { meta: { type, id, title: row.title, certCode: row.certCode, origin: row.origin, published: row.published, mock: row.mock, file: row.file, knownIssue: false, updatedAt: row.updatedAt }, edit: quizMockEditOf(row) } : null;
+  }
   const [row] = await db.select().from(labTable).where(and(eq(labTable.id, id), eq(labTable.kind, type)));
   return row ? { meta: { type, id, title: row.title, certCode: row.certCode, origin: row.origin, published: row.published, mock: row.mock, file: row.file, knownIssue: false, updatedAt: row.updatedAt }, edit: labEditOf(row) } : null;
 }
 
-/** True when any content table already uses this id for this type (labs and mock exams share one id space). */
+/** True when any content table already uses this id for this type (labs and both kinds of mock exam share one id space). */
 export async function idTaken(type: ItemType, id: string): Promise<boolean> {
   const db = getDb();
   if (type === "lesson") return (await db.select({ id: lessonTable.id }).from(lessonTable).where(eq(lessonTable.id, id))).length > 0;
   if (type === "question") return (await db.select({ id: questionTable.id }).from(questionTable).where(eq(questionTable.id, id))).length > 0;
-  return (await db.select({ id: labTable.id }).from(labTable).where(eq(labTable.id, id))).length > 0;
+  const [labs, quizMocks] = await Promise.all([
+    db.select({ id: labTable.id }).from(labTable).where(eq(labTable.id, id)),
+    db.select({ id: quizMockTable.id }).from(quizMockTable).where(eq(quizMockTable.id, id)),
+  ]);
+  return labs.length + quizMocks.length > 0;
 }
 
 /** Every item of every type, for the content list. Small (hundreds of rows), so filtered in memory. */
 export async function listItems(): Promise<ItemMeta[]> {
   const db = getDb();
-  const [lessons, questions, labs] = await Promise.all([
+  const [lessons, questions, labs, quizMocks] = await Promise.all([
     db
       .select({ id: lessonTable.id, title: lessonTable.title, certCode: lessonTable.certCode, origin: lessonTable.origin, published: lessonTable.published, mock: lessonTable.mock, file: lessonTable.file, updatedAt: lessonTable.updatedAt })
       .from(lessonTable)
@@ -206,11 +246,16 @@ export async function listItems(): Promise<ItemMeta[]> {
       .select({ id: labTable.id, title: labTable.title, kind: labTable.kind, certCode: labTable.certCode, origin: labTable.origin, published: labTable.published, mock: labTable.mock, file: labTable.file, updatedAt: labTable.updatedAt })
       .from(labTable)
       .orderBy(asc(labTable.certCode), asc(labTable.title)),
+    db
+      .select({ id: quizMockTable.id, title: quizMockTable.title, certCode: quizMockTable.certCode, origin: quizMockTable.origin, published: quizMockTable.published, mock: quizMockTable.mock, file: quizMockTable.file, updatedAt: quizMockTable.updatedAt })
+      .from(quizMockTable)
+      .orderBy(asc(quizMockTable.certCode), asc(quizMockTable.title)),
   ]);
   return [
     ...lessons.map((l) => ({ ...l, type: "lesson" as const, knownIssue: false })),
     ...questions.map(({ stem, knownIssue, ...q }) => ({ ...q, type: "question" as const, title: firstLine(stem), knownIssue: Boolean(knownIssue) })),
     ...labs.map(({ kind, ...l }) => ({ ...l, type: kind, knownIssue: false })),
+    ...quizMocks.map((m) => ({ ...m, type: "quiz-mock" as const, knownIssue: false })),
   ];
 }
 
@@ -252,6 +297,7 @@ export async function certOptions() {
     .map((c) => ({
       code: c.code,
       name: c.name,
+      examStyle: c.examStyle,
       domains: c.domains.map((d) => ({ key: d.key, name: d.name, competencies: d.competencies.map((x) => ({ ref: x.ref, statement: x.statement })) })),
     }));
 }
@@ -277,6 +323,9 @@ export function newItemTemplate(type: ItemType): Record<string, unknown> {
       source: { title: "", url: "https://kubernetes.io/docs/" },
       mock: true,
     };
+  }
+  if (type === "quiz-mock") {
+    return { format: "multiple-choice", id: "", title: "", summary: "", cert: "KCNA", minutes: 90, questionCount: 60, passPercent: 75, mock: true };
   }
   const task = (n: number, weight: number) => ({
     id: `task-${n}`,

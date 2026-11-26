@@ -357,3 +357,57 @@ export function LabForm({ value, onChange, certs, isNew, isMock }: FormProps & {
     </div>
   );
 }
+
+/** A multiple-choice mock exam: timer, size and pass mark, and where its questions come from. */
+export function QuizMockForm({ value, onChange, certs, isNew }: FormProps) {
+  const set = (patch: Obj) => onChange({ ...value, ...patch });
+  const choiceCerts = certs.filter((c) => c.examStyle === "multiple-choice");
+  const fixed = Array.isArray(value.questions);
+  const cert = choiceCerts.find((c) => c.code === str(value.cert));
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="grid gap-5 sm:grid-cols-2">
+        <IdField value={str(value.id)} onChange={(id) => set({ id })} isNew={isNew} />
+        <Field label="Cert" hint="Multiple-choice certs only. Hands-on certs get a practical mock exam.">
+          {(id) => (
+            <Select id={id} value={str(value.cert)} onChange={(e) => set({ cert: e.target.value })}>
+              {cert ? null : <option value="">Choose…</option>}
+              {choiceCerts.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} · {c.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      </div>
+      <TextField label="Title" maxLength={120} value={str(value.title)} onChange={(title) => set({ title })} />
+      <TextAreaField label="Summary" hint="One or two sentences, up to 280 characters. Shown on the mock exams page." rows={2} value={str(value.summary)} onChange={(summary) => set({ summary })} />
+      <div className="grid gap-5 sm:grid-cols-3">
+        <NumberField label="Minutes" hint="The exam timer (90 for KCNA and KCSA)." min={5} max={240} value={num(value.minutes)} onChange={(minutes) => set({ minutes })} />
+        <NumberField label="Questions" hint="Per attempt (60 for KCNA and KCSA)." min={1} max={120} value={num(value.questionCount)} onChange={(questionCount) => set({ questionCount })} />
+        <NumberField label="Pass mark (%)" hint="75 for KCNA and KCSA." min={1} max={100} value={num(value.passPercent)} onChange={(passPercent) => set({ passPercent })} />
+      </div>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1.5 text-sm font-medium">Questions come from</legend>
+        <label className="flex items-start gap-2 text-[15px]">
+          <input type="radio" name="question-source" className="mt-1 size-4" checked={!fixed} onChange={() => set({ questions: undefined })} />
+          <span>
+            The {cert?.code ?? "cert's"} question bank, drawn for each attempt by domain weight
+            {cert ? <span className="block text-sm text-muted-foreground">{cert.domains.map((d) => d.name).join(" · ")}</span> : null}
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-[15px]">
+          <input type="radio" name="question-source" className="mt-1 size-4" checked={fixed} onChange={() => set({ questions: fixed ? value.questions : [""] })} />
+          A fixed list of questions, asked in a new order each time
+        </label>
+      </fieldset>
+      {fixed ? (
+        <StringListField label="Question ids" hint="Published questions of the same cert. Questions per attempt can be at most the length of the list." mono value={strs(value.questions)} addLabel="Add question" onChange={(questions) => set({ questions })} />
+      ) : (
+        <FieldHint>If the bank holds fewer questions than asked, an attempt asks what there is, with the timer scaled to the same pace.</FieldHint>
+      )}
+      <CheckboxField label="Sample content" hint={SAMPLE_HINT} checked={value.mock === true} onChange={(mock) => set({ mock })} />
+    </div>
+  );
+}
