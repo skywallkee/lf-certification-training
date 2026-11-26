@@ -44,7 +44,7 @@ test("a learner takes a mock exam in practice mode: prepare, start, check a task
 
   await page.goto("/mocks/history");
   await expect(page.getByRole("heading", { name: "Mock exam history", level: 1 })).toBeVisible();
-  await expect(page.getByText("By domain, first attempt to latest")).toBeVisible();
+  await expect(page.getByText("By domain, first attempt to latest").first()).toBeVisible();
   await expectAccessible(page, "Mock history");
 });
 

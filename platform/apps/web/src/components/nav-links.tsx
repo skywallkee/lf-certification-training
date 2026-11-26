@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookMarked, CalendarCheck, FlaskConical, GraduationCap, Map, RotateCcw, Search, Settings, Shield, Timer } from "lucide-react";
+import { BookMarked, CalendarCheck, FlaskConical, GraduationCap, Map, RotateCcw, Search, Settings, Shield, Timer, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { en } from "@/messages/en";
 
 const ICONS = {
   today: CalendarCheck,
   path: Map,
+  progress: TrendingUp,
   certs: GraduationCap,
   review: RotateCcw,
   search: Search,

@@ -34,7 +34,7 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
   const ids = q.questionIds.filter((qid) => byId.has(qid));
   const answered = new Map(answers.map((a) => [a.questionId, a]));
   const currentIndex = ids.findIndex((qid) => !answered.has(qid));
-  const title = q.kind === "review" ? "Review" : `${q.certCode} practice`;
+  const title = q.kind === "review" ? (q.certCode ? `${q.certCode} review` : "Review") : `${q.certCode} practice`;
   const domainLabel =
     q.kind === "practice" && q.certCode && q.domainKeys.length === 1
       ? catalog.certs.get(q.certCode)?.domains.find((d) => d.key === q.domainKeys[0])?.name
