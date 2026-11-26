@@ -1,4 +1,4 @@
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { count, desc, eq, isNotNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ingestRun, question } from "@lfct/curriculum/db";
@@ -7,7 +7,7 @@ import { CoverageBadge } from "@/components/coverage-badge";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getDb } from "@/db";
-import { flag, user as userTable } from "@/db/schema";
+import { discussionReport, flag, user as userTable } from "@/db/schema";
 import { certRefs, competencyPath, coverageOf, getCatalog } from "@/server/catalog";
 import { requireAdmin } from "@/server/session";
 
@@ -25,7 +25,7 @@ export default async function AdminPage() {
   const admin = await requireAdmin();
   const db = getDb();
   const catalog = await getCatalog();
-  const [runs, flags, known, users] = await Promise.all([
+  const [runs, flags, known, users, [reportCount]] = await Promise.all([
     db.select().from(ingestRun).orderBy(desc(ingestRun.id)).limit(5),
     db.select().from(flag).where(eq(flag.status, "open")).orderBy(desc(flag.createdAt)).limit(50),
     db.select({ id: question.id, issue: question.knownIssue, refs: question.competencyRefs }).from(question).where(isNotNull(question.knownIssue)),
@@ -34,7 +34,9 @@ export default async function AdminPage() {
       .from(userTable)
       .orderBy(desc(userTable.createdAt))
       .limit(100),
+    db.select({ n: count() }).from(discussionReport).where(eq(discussionReport.status, "open")),
   ]);
+  const openReports = reportCount?.n ?? 0;
   const describe = (type: string, id: string) => {
     if (type === "lesson") {
       const l = catalog.lessonsById.get(id);
@@ -47,7 +49,7 @@ export default async function AdminPage() {
     <>
       <PageHeader
         title="Admin"
-        lead="Content, ingest, coverage, reported problems, users and analytics."
+        lead="Content, ingest, coverage, reported problems, users, discussions and analytics."
         actions={
           <>
             <Link href="/admin/content" className="text-sm font-medium">
@@ -58,6 +60,9 @@ export default async function AdminPage() {
             </Link>
             <Link href="/admin/analytics" className="text-sm font-medium">
               Analytics: learners and usage
+            </Link>
+            <Link href="/admin/discussions" className="text-sm font-medium">
+              Discussions: {openReports === 0 ? "moderation" : `${openReports} open report${openReports === 1 ? "" : "s"}`}
             </Link>
           </>
         }

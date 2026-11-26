@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { ChangePasswordForm, DeleteAccount, ProfileForm } from "@/components/forms/account-forms";
+import { DiscussionEmailForm } from "@/components/forms/discussion-email-form";
 import { RemindersForm } from "@/components/forms/plan-forms";
 import { PageHeader } from "@/components/page-header";
 import { ThemeChoice } from "@/components/theme-toggle";
@@ -60,6 +61,12 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             timeZone={tz}
             verified={verified?.v ?? false}
           />
+        </Card>
+        <Card aria-labelledby="discussion-emails" id="discussion-emails-card">
+          <CardTitle id="discussion-emails" className="mb-4">
+            Discussion emails
+          </CardTitle>
+          <DiscussionEmailForm on={profile?.notifyDiscussions ?? true} verified={verified?.v ?? false} />
         </Card>
         <Card aria-labelledby="goal">
           <CardTitle id="goal">Goal and focus cert</CardTitle>

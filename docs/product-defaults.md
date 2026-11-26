@@ -54,3 +54,17 @@ named next to it.
 | E4 | Every change keeps history; any version can be restored | `content_revision` |
 | E5 | Grading checks are edited as plain text | content editor |
 | E6 | A single admin publishes directly, no review step | content editor |
+
+## F. Discussions (ADR 0022)
+
+Chosen when discussions were added on 2026-11-26 and not yet reviewed. Constants are in `platform/apps/web/src/lib/discussions.ts`.
+
+| # | Default | Where |
+|---|---------|-------|
+| F1 | Only signed-in learners read and write discussions, so names are never public | `components/discussions/discussion.tsx` |
+| F2 | Threads with one level of replies; one accepted reply per thread, picked by the thread's author or an admin | `lib/discussions.ts` |
+| F3 | Question and mock task discussions start folded until the learner has answered or taken the mock | `startsFolded` |
+| F4 | All discussions are hidden while an exam-mode mock runs; practice mode is not locked | `pickActiveExam` |
+| F5 | Reports from 3 learners hide a post until an admin decides | `AUTO_HIDE_REPORTS` |
+| F6 | Discussion emails on by default (opt-out), at most one per discussion an hour per learner | `EMAIL_THROTTLE_MS`, Account |
+| F7 | 10 posts per learner per 10 minutes, 5,000 characters a post | `POST_LIMIT`, `BODY_MAX` |
