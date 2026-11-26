@@ -273,3 +273,24 @@ export const labHintUse = pgTable(
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.taskId, t.hintIndex] })],
 );
+
+/**
+ * One row per save in the admin content editor: who changed which lesson, question, lab or mock exam, and the
+ * item as it was after the change (in the content file format), so an admin can see the history and restore an
+ * earlier version. No foreign key to the content tables: history outlives a deleted item.
+ */
+export const contentRevision = pgTable(
+  "content_revision",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    itemType: text("item_type").$type<"lesson" | "question" | "lab" | "mock">().notNull(),
+    itemId: text("item_id").notNull(),
+    /** created, updated, published, unpublished, deleted, restored, reverted (back to the file version). */
+    action: text("action").notNull(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    /** The item after the change, as the editor's JSON (null for a delete or a revert). */
+    snapshot: jsonb("snapshot").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("content_revision_item_idx").on(t.itemType, t.itemId, t.createdAt)],
+);

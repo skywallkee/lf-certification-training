@@ -4,10 +4,12 @@ import { AlertTriangle, ArrowRight, Info, Lightbulb } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import * as runtime from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
+import { mdxProblems } from "@/lib/mdx-safety";
 
 /**
- * Renders a lesson's MDX body on the server. Lesson MDX comes only from content/ in this repository
- * (reviewed in pull requests and loaded by the ingest job), never from users, so evaluating it is safe.
+ * Renders a lesson's MDX body on the server. Lesson MDX comes from content/ in this repository (reviewed in pull
+ * requests and loaded by the ingest job) or from the admin editor, never from learners. MDX written in the editor
+ * is checked against a safe subset (lib/mdx-safety.ts) when saved and again here before it is evaluated.
  * Components available to lesson authors: <Callout kind title> and <Flow label steps>.
  */
 
@@ -66,6 +68,11 @@ function Pre(props: ComponentProps<"pre">) {
 const compiled = new Map<string, Promise<(props: { components: Record<string, unknown> }) => ReactNode>>();
 
 async function compile(hash: string, source: string) {
+  // Editor previews change with every keystroke: evaluate them without filling the cache.
+  if (hash.startsWith("preview:")) {
+    const m = await evaluate(source, { ...runtime, remarkPlugins: [remarkGfm] });
+    return m.default as unknown as (props: { components: Record<string, unknown> }) => ReactNode;
+  }
   let entry = compiled.get(hash);
   if (!entry) {
     entry = evaluate(source, { ...runtime, remarkPlugins: [remarkGfm] }).then(
@@ -77,7 +84,17 @@ async function compile(hash: string, source: string) {
   return entry;
 }
 
-export async function LessonBody({ hash, source }: { hash: string; source: string }) {
+export async function LessonBody({ hash, source, untrusted = false }: { hash: string; source: string; untrusted?: boolean }) {
+  if (untrusted) {
+    const problems = mdxProblems(source);
+    if (problems.length > 0) {
+      return (
+        <p role="alert" className="text-destructive">
+          This lesson cannot be shown: {problems[0]}
+        </p>
+      );
+    }
+  }
   const Content = await compile(hash, source);
   return (
     <div className="prose-lesson">

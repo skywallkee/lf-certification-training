@@ -143,9 +143,10 @@ export interface ContentIngestResult {
 }
 
 /**
- * Upserts lessons and questions and deletes rows whose file no longer exists (or that were left out,
- * such as the sample set when includeSample is false). Run after ingestCurriculum: rows reference
- * certification.code.
+ * Upserts lessons, questions and labs and deletes rows whose file no longer exists (or that were left out,
+ * such as the sample set when includeSample is false). Rows created or edited in the admin editor
+ * (origin "app") are never overwritten or deleted: the app's version wins until an admin reverts it to the
+ * file. Run after ingestCurriculum: rows reference certification.code.
  */
 export async function ingestContent(db: Db, content: Content): Promise<ContentIngestResult> {
   return db.transaction(async (tx) => {
@@ -165,7 +166,7 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
       await tx
         .insert(schema.lesson)
         .values({ id: l.id, ...values })
-        .onConflictDoUpdate({ target: schema.lesson.id, set: { ...values, updatedAt: new Date() } });
+        .onConflictDoUpdate({ target: schema.lesson.id, set: { ...values, updatedAt: new Date() }, setWhere: eq(schema.lesson.origin, "file") });
     }
     for (const q of content.questions) {
       const values = {
@@ -185,7 +186,7 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
       await tx
         .insert(schema.question)
         .values({ id: q.id, ...values })
-        .onConflictDoUpdate({ target: schema.question.id, set: { ...values, updatedAt: new Date() } });
+        .onConflictDoUpdate({ target: schema.question.id, set: { ...values, updatedAt: new Date() }, setWhere: eq(schema.question.origin, "file") });
     }
     for (const l of content.labs) {
       const values = {
@@ -210,22 +211,22 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
       await tx
         .insert(schema.lab)
         .values({ id: l.id, ...values })
-        .onConflictDoUpdate({ target: schema.lab.id, set: { ...values, updatedAt: new Date() } });
+        .onConflictDoUpdate({ target: schema.lab.id, set: { ...values, updatedAt: new Date() }, setWhere: eq(schema.lab.origin, "file") });
     }
     const lessonIds = content.lessons.map((l) => l.id);
     const questionIds = content.questions.map((q) => q.id);
     const removedLessons = await tx
       .delete(schema.lesson)
-      .where(lessonIds.length > 0 ? notInArray(schema.lesson.id, lessonIds) : undefined)
+      .where(and(eq(schema.lesson.origin, "file"), lessonIds.length > 0 ? notInArray(schema.lesson.id, lessonIds) : undefined))
       .returning({ id: schema.lesson.id });
     const removedQuestions = await tx
       .delete(schema.question)
-      .where(questionIds.length > 0 ? notInArray(schema.question.id, questionIds) : undefined)
+      .where(and(eq(schema.question.origin, "file"), questionIds.length > 0 ? notInArray(schema.question.id, questionIds) : undefined))
       .returning({ id: schema.question.id });
     const labIds = content.labs.map((l) => l.id);
     const removedLabs = await tx
       .delete(schema.lab)
-      .where(labIds.length > 0 ? notInArray(schema.lab.id, labIds) : undefined)
+      .where(and(eq(schema.lab.origin, "file"), labIds.length > 0 ? notInArray(schema.lab.id, labIds) : undefined))
       .returning({ id: schema.lab.id });
     return {
       lessons: content.lessons.length,

@@ -10,6 +10,7 @@ import { labSession } from "@/db/schema";
 import { env } from "@/env";
 import { callController, ControllerError, getCapacity, getSession, getUsage } from "@/server/labs";
 import { getMock, getMockAttemptsUsed, mockBlockFor } from "@/server/mocks";
+import { canOpen } from "@/server/labs";
 import { requireUser } from "@/server/session";
 
 const SessionId = z.uuid();
@@ -23,7 +24,7 @@ export async function startMockAction(form: FormData): Promise<void> {
   const mode = z.enum(MOCK_MODES).catch("exam").parse(form.get("mode"));
   const user = await requireUser(`/mocks/${mockId}`);
   const mock = await getMock(mockId);
-  if (!mock) redirect("/mocks");
+  if (!mock || !canOpen(mock, user)) redirect("/mocks");
   const [used, usage, capacity] = await Promise.all([getMockAttemptsUsed(user.id), getUsage(user.id), getCapacity()]);
   const block = mockBlockFor(mock, mode, used, usage, capacity);
   // The lab session page sends a mock attempt on to the mock player.

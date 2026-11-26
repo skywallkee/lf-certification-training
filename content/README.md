@@ -153,6 +153,25 @@ Task statements stay hidden until the learner presses Start. In exam mode nothin
 time up (the terminal freezes first); practice mode adds a Check button per task. Prove a mock exactly like a
 lab: `pnpm --filter @lfct/lab-controller selftest <mock-id>`.
 
+## Editing content in the app
+
+Admins can also create and edit lessons, questions, labs and mock exams in the app, under **Admin > Content**,
+without touching this folder. The editor has a form view and a source view that shows the item in exactly the
+file format described above, and it validates with the same schemas as the ingest.
+
+- New items start as **drafts**: learners do not see them in lists, search, quizzes or the lab catalogue until
+  an admin publishes them. Admins can open a draft lab or mock exam by its link to try it.
+- An item created or edited in the app is stored in the database with `origin = app`. The ingest never
+  overwrites or deletes those rows, so the app version wins over a file with the same id. **Revert to file
+  version** on an edited item undoes the app edits and hands it back to the ingest.
+- Every save is recorded in a history with the item as it was; any earlier version can be restored.
+- **Download file** exports the item in its file format and names the path to commit it at, so content
+  written in the app can move into this repository.
+- Lesson MDX written in the app is held to a safe subset before it is saved or rendered: Markdown plus
+  `<Callout>` and `<Flow>` with plain values as props (no imports, `{expressions}` or other tags).
+- Items that learners have already used cannot be deleted, only unpublished; ingested items cannot be deleted
+  in the app (remove the file instead).
+
 ## The sample set
 
 The app ships with **mock content only**: 12 lessons, 60 questions, 4 labs and 2 practical mock exams (CKA, full and half) across KCNA, CKA, CKAD and CKNE, written to

@@ -4,10 +4,10 @@ import { notFound, redirect } from "next/navigation";
 import { QuotaMeter } from "@/components/labs/quota-meter";
 import { StartLab, blockMessage } from "@/components/labs/start-lab";
 import { Markdown } from "@/components/markdown";
-import { SampleBadge } from "@/components/status-chip";
+import { DraftBadge, SampleBadge } from "@/components/status-chip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { competencyPath, getCatalog } from "@/server/catalog";
-import { blockFor, getCapacity, getLab, getUsage } from "@/server/labs";
+import { blockFor, canOpen, getCapacity, getLab, getUsage } from "@/server/labs";
 import { requireUser } from "@/server/session";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -19,7 +19,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
   const { id } = await params;
   const user = await requireUser(`/labs/${id}`);
   const lab = await getLab(id);
-  if (!lab) notFound();
+  if (!lab || !canOpen(lab, user)) notFound();
   if (lab.kind === "mock") redirect(`/mocks/${lab.id}`);
   const [usage, capacity, catalog] = await Promise.all([getUsage(user.id), getCapacity(), getCatalog()]);
   const block = blockFor(lab, usage, capacity);
@@ -34,6 +34,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-[30px] font-bold">{lab.title}</h1>
           {lab.mock ? <SampleBadge /> : null}
+          {lab.published ? null : <DraftBadge />}
         </div>
         <p className="max-w-[72ch] text-[15px] text-muted-foreground">{lab.summary}</p>
         <p className="text-sm">

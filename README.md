@@ -104,7 +104,7 @@ Sample learners all use the password `sample-password-123`:
 | `new@example.com` | Just signed up, no answers yet |
 | `mid@example.com` | KCSA and CKAD passed, KCNA expiring, CKA booked, 10 days of CKA practice and a review queue |
 | `golden@example.com` | All 17 certs held, KCSA expiring |
-| `admin@example.com` | Admin: ingest runs, flag queue, coverage, users |
+| `admin@example.com` | Admin: content editor (Admin > Content), ingest runs, flag queue, coverage, users |
 
 Sign-up works without a mail provider: in development the verify page shows the link that would have been
 emailed. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate

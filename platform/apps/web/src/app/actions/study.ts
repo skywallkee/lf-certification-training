@@ -171,7 +171,7 @@ export async function startQuizAction(form: FormData): Promise<void> {
   const candidates = await db
     .select({ id: question.id, refs: question.competencyRefs })
     .from(question)
-    .where(and(eq(question.certCode, code), isNull(question.knownIssue)));
+    .where(and(eq(question.certCode, code), isNull(question.knownIssue), eq(question.published, true)));
   const pool = competency
     ? candidates.filter((q) => q.refs.includes(competency))
     : prefixes.length === 0
