@@ -47,7 +47,7 @@ export default async function AdminPage() {
     <>
       <PageHeader
         title="Admin"
-        lead="Content, ingest, coverage, reported problems and users."
+        lead="Content, ingest, coverage, reported problems, users and analytics."
         actions={
           <>
             <Link href="/admin/content" className="text-sm font-medium">
@@ -55,6 +55,9 @@ export default async function AdminPage() {
             </Link>
             <Link href="/admin/labs" className="text-sm font-medium">
               Labs: sessions and spend
+            </Link>
+            <Link href="/admin/analytics" className="text-sm font-medium">
+              Analytics: learners and usage
             </Link>
           </>
         }

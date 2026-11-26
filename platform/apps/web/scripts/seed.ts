@@ -7,11 +7,13 @@ import pg from "pg";
 import * as schema from "../src/db/schema.ts";
 import { addDays, addMonths, todayIn } from "../src/lib/dates.ts";
 import { nextReviewState, type ReviewState } from "../src/lib/review.ts";
+import { seedCohort } from "./seed-cohort.ts";
 
 /**
  * Seeds the sample learners described in the spec, one per stage, so Today, Path and readiness can be
  * checked at each: a new user, a mid-path user (3 passed, 1 booked, 1 expiring) and a Golden user, plus an
- * admin. Dates are relative to today so the states stay true. Development and test databases only.
+ * admin, and the sample cohort behind the admin analytics page (seed-cohort.ts). Dates are relative to today so the
+ * states stay true. Development and test databases only.
  * Run after migrations and the content ingest: pnpm --filter @lfct/web db:seed
  */
 export const SAMPLE_PASSWORD = "sample-password-123";
@@ -44,7 +46,7 @@ function rng(seed: number) {
 /** Emails of the sample learners, so setup can tell whether they exist. */
 export const SAMPLE_EMAILS = Object.values(SAMPLE_USERS).map((u) => u.email);
 
-export async function seed(databaseUrl: string, opts: { today?: string } = {}): Promise<void> {
+export async function seed(databaseUrl: string, opts: { today?: string; cohort?: boolean } = {}): Promise<void> {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
   const db = drizzle(pool, { schema });
   const today = opts.today ?? todayIn("UTC");
@@ -178,6 +180,7 @@ export async function seed(databaseUrl: string, opts: { today?: string } = {}): 
     if (rbacLab) await graded(rbacLab, "lab", addDays(lastMonth, -4), () => true);
     if (fullMock) await graded(fullMock, "exam", lastMonth, (i) => i % 3 !== 2 && i < fullMock.tasks.length - 2);
     console.log(`Seeded ${Object.keys(SAMPLE_USERS).length} sample learners (password: ${SAMPLE_PASSWORD}).`);
+    if (opts.cohort !== false) console.log(`Seeded ${await seedCohort(db, today)} sample cohort learners for the admin analytics page.`);
   } finally {
     await pool.end();
   }
