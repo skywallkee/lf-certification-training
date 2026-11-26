@@ -20,7 +20,7 @@ beforeAll(async () => {
   await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
   const docs = createDocsProxy({
     hosts: ["kubernetes.io"],
-    allowedOrigins: ["http://localhost:3000"],
+    allowedOrigins: ["http://localhost:4000"],
     upstream: () => `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
   });
   proxy = http.createServer((req, res) => {
@@ -65,7 +65,7 @@ describe("docs viewer proxy", () => {
     expect(res.status).toBe(200);
     expect(res.headers["x-frame-options"]).toBeUndefined();
     expect(res.headers["set-cookie"]).toBeUndefined();
-    expect(res.headers["content-security-policy"]).toBe("frame-ancestors http://localhost:3000");
+    expect(res.headers["content-security-policy"]).toBe("frame-ancestors http://localhost:4000");
     expect(res.body).toContain(`href="http://kubernetes.io.localhost:${proxyPort}/docs/concepts/"`);
     expect(res.body).toContain('href="https://kubernetes.io.evil.example/"');
     expect(res.body).toContain('href="https://example.com/"');

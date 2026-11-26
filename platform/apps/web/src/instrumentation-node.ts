@@ -9,7 +9,7 @@ import { remindersSecret } from "./lib/cron-secret";
 const minutes = Number(process.env.REMINDERS_INTERVAL_MINUTES ?? 10);
 
 if (minutes > 0 && process.env.NEXT_PHASE !== "phase-production-build") {
-  const port = process.env.PORT ?? "3000";
+  const port = process.env.PORT ?? "4000";
   const run = async () => {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/reminders/run`, {

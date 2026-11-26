@@ -48,7 +48,7 @@ them so later phases can revisit them on purpose.
 
 - **Email (point 3):** `sendEmail` delivers over SMTP when `SMTP_URL` is set (nodemailer) and still writes
   every message to `outbox_email` as an audit trail; a failed send is logged and does not fail sign-up. The
-  local Docker stack runs [Mailpit](https://mailpit.axllent.org) as a test inbox (http://localhost:8025), so
+  local Docker stack runs [Mailpit](https://mailpit.axllent.org) as a test inbox (http://localhost:4025), so
   nothing reaches real addresses. Choosing a hosted provider is still a deployment task: it only needs a new
   `SMTP_URL` and `MAIL_FROM`.
 - **Validity (point 7):** every one of the 17 certs now has an explicit period in `src/lib/validity.ts`, all

@@ -31,19 +31,23 @@ session, all in Docker. You need Docker with Compose v2 and about 4 GB of free m
 docker compose up --build
 ```
 
-Then open http://localhost:3000 and sign in as one of the sample learners below. The first start builds
+Then open http://localhost:4000 and sign in as one of the sample learners below. The first start builds
 three images and pulls k3s, so give it a few minutes; later starts take seconds. A lab boots in about
 10 to 30 seconds. Data is kept in the `pgdata` volume across restarts (`docker compose down -v` wipes it).
 Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
 
+Everything listens on 127.0.0.1 in the 4000s so it stays clear of other local apps: web 4000, lab controller 4001,
+Mailpit 4025 (SMTP 4026) and Postgres 4432. Change any of them with `WEB_PORT`, `LAB_CONTROLLER_PORT`, `MAILPIT_PORT`,
+`MAILPIT_SMTP_PORT` or `POSTGRES_PORT` in `.env`; the app's links follow.
+
 Emails the app sends (sign-up verification, password reset links and study reminders) go to a local test inbox, [Mailpit](https://mailpit.axllent.org),
-at http://localhost:8025. Study reminders are off until a learner turns them on under Account; the web app checks for due
+at http://localhost:4025. Study reminders are off until a learner turns them on under Account; the web app checks for due
 reminders every 10 minutes (`REMINDERS_INTERVAL_MINUTES`), and "Email me this week's plan" on the Plan page sends one at once. Discussion emails (new posts in discussions a learner follows, accepted answers) are on by default and can be turned off under Account or from the link in each email. Nothing reaches real addresses unless you set `SMTP_URL` in `.env` to a real provider.
 
 Lab containers run privileged (k3s needs it), are labelled `lfct.managed=true`, and are deleted when the
 lab ends. A lab can boot up to three clusters (one k3s container each, about 600 MB of memory apiece). The
 lab player's Documentation tab shows kubernetes.io and helm.sh through the controller at
-`http://<site>.localhost:3001`, so it needs internet access and a browser that resolves `*.localhost` (Chrome,
+`http://<site>.localhost:4001`, so it needs internet access and a browser that resolves `*.localhost` (Chrome,
 Edge and Firefox do). The controller's sweeper removes anything left over, also after a crash. To remove every lab
 container by hand: `docker rm -f $(docker ps -aq --filter label=lfct.managed=true)`.
 
@@ -82,8 +86,8 @@ pnpm curriculum:verify-sources  # re-check the YAML against the pinned cncf/curr
 Load the curriculum into a local Postgres:
 
 ```sh
-docker run -d --name lfct-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres pnpm curriculum:ingest
+docker run -d --name lfct-pg -e POSTGRES_PASSWORD=postgres -p 4432:5432 postgres:17
+DATABASE_URL=postgres://postgres:postgres@localhost:4432/postgres pnpm curriculum:ingest
 ```
 
 ### Web app
@@ -92,14 +96,14 @@ LF Cert Trainer runs against a local Postgres with the curriculum, the sample co
 learners:
 
 ```sh
-docker run -d --name lfct-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17
+docker run -d --name lfct-pg -e POSTGRES_PASSWORD=postgres -p 4432:5432 postgres:17
 docker exec lfct-pg createdb -U postgres lfct
 cp platform/apps/web/.env.example platform/apps/web/.env.local   # then set BETTER_AUTH_SECRET
-export DATABASE_URL=postgres://postgres:postgres@localhost:5432/lfct
+export DATABASE_URL=postgres://postgres:postgres@localhost:4432/lfct
 pnpm --filter @lfct/web db:migrate   # app tables (auth, progress, review)
 pnpm curriculum:ingest               # curriculum, lessons and questions, sample set included
 pnpm --filter @lfct/web db:seed      # sample learners
-pnpm --filter @lfct/web dev          # http://localhost:3000
+pnpm --filter @lfct/web dev          # http://localhost:4000
 ```
 
 To work on labs without Docker containers per session, run the lab controller with the fake provider (no
@@ -107,7 +111,7 @@ real cluster; type `solve` in its terminal to pass every check):
 
 ```sh
 export LAB_CONTROLLER_SECRET=dev-controller-secret LAB_TOKEN_SECRET=dev-token-secret-at-least-32-characters
-LAB_PROVIDER=fake pnpm --filter @lfct/lab-controller dev    # :3001, uses DATABASE_URL
+LAB_PROVIDER=fake pnpm --filter @lfct/lab-controller dev    # :4001, uses DATABASE_URL
 ```
 
 With `LAB_PROVIDER=docker` (the default) the controller starts real k3s clusters on your Docker and needs
@@ -132,12 +136,12 @@ them) with six months of answers, labs and mock exams, so Admin > Analytics has 
 database gets the cohort on the next `docker compose up`; your own progress is kept.
 
 Sign-up works without a mail server: in development the verify page shows the emailed link, and with
-`SMTP_URL=smtp://localhost:1025` plus `docker compose up -d mailpit` the emails also land in the local inbox. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
+`SMTP_URL=smtp://localhost:4026` plus `docker compose up -d mailpit` the emails also land in the local inbox. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
 database:
 
 ```sh
 pnpm --filter @lfct/web build
-E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/lfct_e2e pnpm --filter @lfct/web e2e
+E2E_DATABASE_URL=postgres://postgres:postgres@localhost:4432/lfct_e2e pnpm --filter @lfct/web e2e
 ```
 
 ### Curriculum MCP server
