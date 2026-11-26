@@ -55,18 +55,18 @@ export function ChangePasswordForm({ changed }: { changed: boolean }) {
     <form action={action} className="flex max-w-md flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="current">Current password</Label>
-        <Input id="current" name="current" type="password" autoComplete="current-password" required />
+        <Input id="current" name="current" type="password" autoComplete="current-password" required {...(state.error ? { "aria-invalid": true, "aria-describedby": "password-error" } : {})} />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="new-password">New password</Label>
-        <Input id="new-password" name="password" type="password" autoComplete="new-password" minLength={10} required aria-describedby="new-password-hint" />
+        <Input id="new-password" name="password" type="password" autoComplete="new-password" minLength={10} required aria-invalid={Boolean(state.error)} aria-describedby={state.error ? "new-password-hint password-error" : "new-password-hint"} />
         <FieldHint id="new-password-hint">At least 10 characters.</FieldHint>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="confirm-password">Repeat the new password</Label>
-        <Input id="confirm-password" name="confirm" type="password" autoComplete="new-password" minLength={10} required />
+        <Input id="confirm-password" name="confirm" type="password" autoComplete="new-password" minLength={10} required {...(state.error ? { "aria-invalid": true, "aria-describedby": "password-error" } : {})} />
       </div>
-      {state.error ? <FieldError>{state.error}</FieldError> : null}
+      {state.error ? <FieldError id="password-error">{state.error}</FieldError> : null}
       {changed && !state.error ? (
         <p role="status" className="text-sm font-medium text-success">
           Password changed. Other devices were signed out.
@@ -99,8 +99,8 @@ export function DeleteAccount() {
         </DialogDescription>
         <form action={action} className="mt-4 flex flex-col gap-3">
           <Label htmlFor="confirm">Type DELETE to confirm</Label>
-          <Input id="confirm" name="confirm" autoComplete="off" required />
-          {state.error ? <FieldError>{state.error}</FieldError> : null}
+          <Input id="confirm" name="confirm" autoComplete="off" required {...(state.error ? { "aria-invalid": true, "aria-describedby": "delete-error" } : {})} />
+          {state.error ? <FieldError id="delete-error">{state.error}</FieldError> : null}
           <div className="mt-2 flex flex-wrap justify-end gap-2">
             <DialogClose asChild>
               <Button type="button" variant="ghost">

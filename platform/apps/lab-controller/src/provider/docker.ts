@@ -40,6 +40,13 @@ export interface DockerResources extends Resources {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Limits for the workstation and grader containers, where learner input runs: no privilege gain through setuid
+ * binaries (ttyd starts as root and drops to "candidate" with su, which still works), and a process cap so a fork
+ * bomb in the terminal stops at the container instead of filling the host's process table.
+ */
+export const TOOLS_LIMITS: { SecurityOpt: string[]; PidsLimit: number } = { SecurityOpt: ["no-new-privileges"], PidsLimit: 1024 };
+
 export class DockerProvider implements LabProvider {
   readonly name = "local-docker";
   private readonly docker: Docker;
@@ -138,7 +145,7 @@ export class DockerProvider implements LabProvider {
         Cmd: ["grader"],
         Env: [clusterEnv],
         Labels: this.labels(sessionId, deleteAfter, "grader"),
-        HostConfig: { Binds: [`${volume}:/lab:ro`], NetworkMode: network },
+        HostConfig: { Binds: [`${volume}:/lab:ro`], NetworkMode: network, ...TOOLS_LIMITS },
       });
       await grader.start();
       return grader;
@@ -155,6 +162,7 @@ export class DockerProvider implements LabProvider {
         HostConfig: {
           Binds: [`${volume}:/lab:ro`],
           NetworkMode: network,
+          ...TOOLS_LIMITS,
           ...(this.config.reach === "host" ? { PortBindings: { [`${TTYD_PORT}/tcp`]: [{ HostIp: "127.0.0.1", HostPort: "" }] } } : {}),
         },
       });

@@ -50,6 +50,23 @@ The images are small on purpose: `web` is the Next.js standalone server, and `se
 single files bundled with esbuild (`pnpm bundle`), each on plain Alpine with only the node binary, running as a
 non-root user. The lab workstation image stays on Ubuntu so the terminal feels like the exam's.
 
+### Back up and restore
+
+The `db-backup` service backs up the database to `backups/` when the stack starts and then once a day, keeping
+the newest 7 (`BACKUP_INTERVAL_HOURS` and `BACKUP_KEEP` in `.env`; on Linux set `BACKUP_UID`/`BACKUP_GID` if
+`id -u` is not 1000). The files hold every account and all progress, so they stay out of git.
+
+```sh
+scripts/db-backup.sh                 # back up now, to backups/lfct-<time>.dump (kept until you delete it)
+scripts/db-restore.sh latest         # replace the database with the newest backup
+scripts/db-restore.sh backups/lfct-20261126-091500.dump
+```
+
+A restore asks first, saves the current database to `backups/pre-restore-<time>.dump` (so it can be undone),
+stops the web app and the lab controller, ends running labs, and starts everything again. Backups are
+`pg_dump` custom-format archives, so `pg_restore` can also read them directly. `docker compose down -v` deletes
+the database volume but not `backups/`.
+
 ## Develop
 
 Needs Node.js 22 and pnpm 10 (`corepack enable`).

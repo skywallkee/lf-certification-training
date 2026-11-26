@@ -15,7 +15,9 @@
     "curriculum:schema": "pnpm --filter @lfct/curriculum schema",
     "curriculum:ingest": "pnpm --filter @lfct/curriculum ingest",
     "mcp:curriculum": "tsx platform/packages/curriculum-mcp/src/index.ts",
-    "bundle": "node scripts/bundle.mjs"
+    "bundle": "node scripts/bundle.mjs",
+    "db:backup": "sh scripts/db-backup.sh",
+    "db:restore": "sh scripts/db-restore.sh"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
