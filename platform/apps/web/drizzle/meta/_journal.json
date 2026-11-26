@@ -50,6 +50,13 @@
       "when": 1795704008493,
       "tag": "0006_quiz_mock_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795704684604,
+      "tag": "0007_discussions",
+      "breakpoints": true
     }
   ]
 }

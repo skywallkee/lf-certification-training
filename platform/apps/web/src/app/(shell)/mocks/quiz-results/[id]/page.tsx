@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { question as questionTable } from "@lfct/curriculum/db";
+import { DiscussLink } from "@/components/discussions/discuss-link";
 import { LocalTime } from "@/components/local-time";
 import { Markdown } from "@/components/markdown";
 import { SampleBadge } from "@/components/status-chip";
@@ -14,6 +15,7 @@ import { getDb } from "@/db";
 import { quiz } from "@/db/schema";
 import { cn } from "@/lib/utils";
 import { getCatalog } from "@/server/catalog";
+import { discussionCounts } from "@/server/discussions";
 import { getQuizMock, getQuizMockHistory, gradeAttempt, GRACE_MS, resultOf } from "@/server/quiz-mocks";
 import { requireUser } from "@/server/session";
 import { startQuizMockAction } from "@/app/actions/quiz-mocks";
@@ -40,6 +42,7 @@ export default async function QuizMockResultsPage({ params }: { params: Promise<
     getQuizMockHistory(user.id),
   ]);
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const talk = await discussionCounts("question", attempt.questionIds);
   const cert = catalog.certs.get(attempt.certCode ?? "");
   const result = resultOf(attempt, byId, cert);
   const series = history.find((h) => h.mock.id === attempt.mockId)?.graded ?? [];
@@ -146,6 +149,7 @@ export default async function QuizMockResultsPage({ params }: { params: Promise<
                     {item.sourceTitle}
                   </a>
                 </p>
+                <DiscussLink type="question" id={qid} count={talk.get(qid) ?? 0} />
               </li>
             );
           })}

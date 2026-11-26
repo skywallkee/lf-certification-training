@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { question as questionTable } from "@lfct/curriculum/db";
+import { DiscussLink } from "@/components/discussions/discuss-link";
 import { FlagButton } from "@/components/item-tools";
 import { Markdown } from "@/components/markdown";
 import { QuestionCard } from "@/components/question-card";
@@ -15,6 +16,7 @@ import { getDb } from "@/db";
 import { answer, quiz } from "@/db/schema";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
+import { discussionCounts } from "@/server/discussions";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Quiz" };
@@ -33,6 +35,7 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
     getCatalog(),
   ]);
   const byId = new Map(questions.map((x) => [x.id, x]));
+  const talk = await discussionCounts("question", q.questionIds);
   const ids = q.questionIds.filter((qid) => byId.has(qid));
   const answered = new Map(answers.map((a) => [a.questionId, a]));
   const currentIndex = ids.findIndex((qid) => !answered.has(qid));
@@ -146,6 +149,7 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
                       {item.sourceTitle}
                     </a>
                   </p>
+                  <DiscussLink type="question" id={qid} count={talk.get(qid) ?? 0} />
                 </article>
               );
             })}
@@ -171,6 +175,7 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
           options={current.options.map((o) => ({ id: o.id, content: <Markdown>{o.text}</Markdown> }))}
           isLast={currentIndex === ids.length - 1}
           flag={<FlagButton targetType="question" targetId={current.id} label={en.quiz.flag} />}
+          discuss={<DiscussLink type="question" id={current.id} count={talk.get(current.id) ?? 0} newTab />}
         />
       </main>
     </>
