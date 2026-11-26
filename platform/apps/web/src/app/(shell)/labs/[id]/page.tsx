@@ -7,7 +7,7 @@ import { Markdown } from "@/components/markdown";
 import { DraftBadge, SampleBadge } from "@/components/status-chip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { competencyPath, getCatalog } from "@/server/catalog";
-import { blockFor, canOpen, getCapacity, getLab, getUsage } from "@/server/labs";
+import { blockFor, canOpen, getBootTimes, getCapacity, getLab, getUsage } from "@/server/labs";
 import { requireUser } from "@/server/session";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -21,7 +21,8 @@ export default async function LabPage({ params, searchParams }: { params: Promis
   const lab = await getLab(id);
   if (!lab || !canOpen(lab, user)) notFound();
   if (lab.kind === "mock") redirect(`/mocks/${lab.id}`);
-  const [usage, capacity, catalog] = await Promise.all([getUsage(user.id), getCapacity(), getCatalog()]);
+  const [usage, capacity, catalog, bootTimes] = await Promise.all([getUsage(user.id), getCapacity(), getCatalog(), getBootTimes()]);
+  const bootSeconds = bootTimes.get(lab.id);
   const block = blockFor(lab, usage, capacity);
   const { blocked } = await searchParams;
 
@@ -68,7 +69,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
               You get {lab.clusters.length > 1 ? `${lab.clusters.length} fresh single-node clusters (${lab.clusters.join(", ")}), one kubectl context each,` : "a fresh single-node cluster,"}{" "}
               a terminal with kubectl, the official docs, and {lab.minutes} minutes. Check your work as often as you like.
             </p>
-            <StartLab lab={lab} usage={usage} block={block} />
+            <StartLab lab={lab} usage={usage} block={block} bootSeconds={bootSeconds} />
           </Card>
           <QuotaMeter usage={usage} capacity={capacity} />
           <Card aria-labelledby="covers">

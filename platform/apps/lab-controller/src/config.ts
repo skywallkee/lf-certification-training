@@ -61,6 +61,11 @@ export function loadConfig() {
         .map((i) => i.trim())
         .filter(Boolean),
       clusterMemoryMb: int("LAB_CLUSTER_MEMORY_MB", 0),
+      /**
+       * Save the preloaded images once into the lfct-image-cache volume and let k3s import them while it boots
+       * (LAB_IMAGE_CACHE=false streams them into each cluster after its API is up, as before).
+       */
+      imageCache: (process.env.LAB_IMAGE_CACHE ?? "true") !== "false",
     },
   };
 }

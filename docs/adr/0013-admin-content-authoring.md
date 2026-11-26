@@ -1,4 +1,4 @@
-# 12. Admins author content in the app; the database copy wins over files
+# 13. Admins author content in the app; the database copy wins over files
 
 Date: 2026-11-26 · Status: Accepted
 
