@@ -5,6 +5,8 @@
 #
 # Behind a TLS-inspecting proxy, pass its CA as a build secret:
 #   docker build --secret id=extra_ca,src=/path/to/ca.crt ...
+# apt and curl retry with backoff when a mirror or download host hiccups (see apt-install.sh). If Ubuntu's
+# main mirror stays broken, pick another: --build-arg APT_MIRROR=http://de.archive.ubuntu.com/ubuntu
 
 ARG UBUNTU_VERSION=24.04
 
@@ -16,13 +18,14 @@ ARG CHAINSAW_VERSION=v0.2.15
 ARG TTYD_VERSION=1.7.7
 ARG HELM_VERSION=v3.19.2
 ARG INSTALL_HELM=true
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
- && rm -rf /var/lib/apt/lists/*
+ARG APT_MIRROR=
+RUN --mount=type=bind,source=apt-install.sh,target=/tmp/apt-install.sh \
+    sh /tmp/apt-install.sh ca-certificates curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /out
 RUN --mount=type=secret,id=extra_ca,required=false <<'SH'
 set -eu
 CA=""; [ -s /run/secrets/extra_ca ] && CA="--cacert /run/secrets/extra_ca"
-get() { curl -fsSL --retry 3 $CA "$@"; }
+get() { curl -fsSL --connect-timeout 20 --retry 5 --retry-delay 3 --retry-all-errors $CA "$@"; }
 case "$TARGETARCH" in amd64) TTYD_ARCH=x86_64 ;; arm64) TTYD_ARCH=aarch64 ;; *) echo "unsupported arch $TARGETARCH"; exit 1 ;; esac
 cd /tmp
 
@@ -50,14 +53,14 @@ SH
 
 # --- Runtime ----------------------------------------------------------------------------------------------------
 FROM ubuntu:${UBUNTU_VERSION}
+ARG APT_MIRROR=
 # Learner tools only; no recommends, no docs/man pages, apt lists removed in the same layer.
-RUN <<'SH'
+RUN --mount=type=bind,source=apt-install.sh,target=/tmp/apt-install.sh <<'SH'
 set -eu
 printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-include=/usr/share/doc/*/copyright' 'path-exclude=/usr/share/man/*' \
   'path-exclude=/usr/share/info/*' 'path-exclude=/usr/share/locale/*' 'path-include=/usr/share/locale/locale.alias' \
   > /etc/dpkg/dpkg.cfg.d/01-slim
-apt-get update
-apt-get install -y --no-install-recommends \
+sh /tmp/apt-install.sh \
   bash-completion ca-certificates curl dnsutils iproute2 iputils-ping jq less nano netcat-openbsd tmux vim
 apt-get clean
 rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt/* /var/log/dpkg.log

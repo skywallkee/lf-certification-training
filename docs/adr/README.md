@@ -22,3 +22,4 @@ in the code. To change a decision, add a new record that supersedes the old one.
 | [0013](0013-admin-content-authoring.md) | Admins author content in the app; the database copy wins over files | Accepted |
 | [0016](0016-readiness-from-all-evidence.md) | Readiness counts labs, mock exams and lessons; review sessions mix certs | Accepted |
 | [0018](0018-mock-exams-per-exam-format.md) | Mock exams follow each exam's format: CKAD and CKS layouts, and multiple-choice mocks | Accepted |
+| [0020](0020-admin-analytics-from-existing-tables.md) | Admin analytics are computed from existing tables, with a seeded sample cohort | Accepted |

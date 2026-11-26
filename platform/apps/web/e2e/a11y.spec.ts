@@ -27,7 +27,7 @@ const LEARNER = [
   "/mocks/history",
   "/account",
 ];
-const ADMIN = ["/admin", "/admin/content", "/admin/labs", "/admin/content/lesson/new", "/admin/content/question/new"];
+const ADMIN = ["/admin", "/admin/content", "/admin/labs", "/admin/analytics", "/admin/content/lesson/new", "/admin/content/question/new"];
 
 async function setTheme(page: Page, theme: "light" | "dark") {
   await page.emulateMedia({ colorScheme: theme });

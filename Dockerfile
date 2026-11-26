@@ -8,6 +8,7 @@
 #   web             the Next.js standalone server
 #
 # Behind a TLS-inspecting proxy, pass its CA as a build secret: --secret id=extra_ca,src=/path/to/ca.crt
+# Registry fetches retry with backoff, and the install step reruns up to 3 times if the registry hiccups.
 # Bump NODE_VERSION and ALPINE_VERSION together (the node image tag must exist for that Alpine release).
 
 ARG NODE_VERSION=22.23.5
@@ -29,7 +30,11 @@ COPY platform/apps/lab-controller/package.json platform/apps/lab-controller/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca npm_config_cafile=/run/secrets/extra_ca; fi; \
-    corepack prepare --activate && pnpm install --frozen-lockfile
+    export npm_config_fetch_retries=5 npm_config_fetch_retry_mintimeout=10000 npm_config_fetch_retry_maxtimeout=120000; \
+    for n in 1 2 3; do \
+      corepack prepare --activate && pnpm install --frozen-lockfile && break; \
+      [ "$n" = 3 ] && exit 1; echo "pnpm install failed (attempt $n/3), retrying in $((n * 15))s" >&2; sleep $((n * 15)); \
+    done
 COPY tsconfig.base.json ./
 COPY scripts scripts
 COPY platform platform
