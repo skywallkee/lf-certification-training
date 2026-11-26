@@ -7,6 +7,11 @@ const LAB = "sample-cka-rbac-pod-reader";
 test("a learner runs a lab: boot, terminal, hint, check, extend, finish and results", async ({
   page,
 }) => {
+  // The page's Content-Security-Policy must allow the terminal socket and the docs frame.
+  const cspViolations: string[] = [];
+  page.on("console", (m) => {
+    if (/Content.Security.Policy/i.test(m.text())) cspViolations.push(m.text());
+  });
   await signIn(page, "mid@example.com");
   await page.goto("/labs");
   await expect(
@@ -68,6 +73,8 @@ test("a learner runs a lab: boot, terminal, hint, check, extend, finish and resu
     "src",
     /^http:\/\/kubernetes\.io\.localhost:\d+\/docs\//,
   );
+  await page.waitForTimeout(500);
+  expect(cspViolations).toEqual([]);
   await page.getByRole("tab", { name: "Exercises" }).click();
 
   await page.getByTestId("terminal").click();

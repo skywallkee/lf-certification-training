@@ -53,6 +53,13 @@ function get(path: string, host: string) {
 }
 
 describe("docs viewer proxy", () => {
+  it("refuses request targets that would point the upstream URL at another host", async () => {
+    for (const path of ["@evil.example/", "//evil.example/"]) {
+      const res = await get(path, `kubernetes.io.localhost:${proxyPort}`);
+      expect(res.status, path).toBe(400);
+    }
+  });
+
   it("serves an allowlisted site framable only by the web app, with its links kept in the viewer", async () => {
     const res = await get("/docs/home/", `kubernetes.io.localhost:${proxyPort}`);
     expect(res.status).toBe(200);

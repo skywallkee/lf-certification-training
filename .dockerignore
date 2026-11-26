@@ -31,3 +31,4 @@ platform/apps/web/e2e
 platform/apps/*/test
 platform/packages/*/test
 **/*.test.ts
+backups

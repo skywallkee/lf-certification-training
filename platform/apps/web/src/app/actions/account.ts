@@ -12,6 +12,7 @@ import { isIsoDate, todayIn } from "@/lib/dates";
 import { getAuth } from "@/lib/auth";
 import { chooseFocus } from "@/lib/path";
 import { getCatalog } from "@/server/catalog";
+import { hit, isBlocked, PASSWORD_ATTEMPTS } from "@/server/rate-limit";
 import { requireUser } from "@/server/session";
 
 function validTimeZone(tz: string): boolean {
@@ -115,9 +116,12 @@ const ChangePassword = z
 
 /** Changes the password and signs out every other device; this one stays signed in. */
 export async function changePasswordAction(_prev: PasswordState, form: FormData): Promise<PasswordState> {
-  await requireUser("/account");
+  const user = await requireUser("/account");
   const parsed = ChangePassword.safeParse({ current: form.get("current"), password: form.get("password"), confirm: form.get("confirm") });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form." };
+  // Someone at an unlocked, signed-in browser should not be able to guess the current password without limit.
+  const key = `password-change:${user.id}`;
+  if (isBlocked(key, PASSWORD_ATTEMPTS)) return { error: "Too many attempts. Wait 15 minutes and try again." };
   try {
     await getAuth().api.changePassword({
       body: { currentPassword: parsed.data.current, newPassword: parsed.data.password, revokeOtherSessions: true },
@@ -125,7 +129,10 @@ export async function changePasswordAction(_prev: PasswordState, form: FormData)
     });
   } catch (err) {
     if (err instanceof APIError) {
-      if (/invalid password|incorrect/i.test(err.message)) return { error: "Your current password is not right." };
+      if (/invalid password|incorrect/i.test(err.message)) {
+        hit(key, PASSWORD_ATTEMPTS);
+        return { error: "Your current password is not right." };
+      }
       return { error: err.message || "Could not change the password." };
     }
     throw err;

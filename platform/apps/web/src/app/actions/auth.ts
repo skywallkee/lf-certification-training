@@ -5,6 +5,17 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import * as z from "zod";
 import { getAuth } from "@/lib/auth";
+import { clear, clientIp, EMAIL_SENDS, EMAIL_SENDS_PER_IP, hit, isBlocked, PASSWORD_ATTEMPTS, PASSWORD_ATTEMPTS_PER_IP } from "@/server/rate-limit";
+
+const TOO_MANY = "Too many attempts. Wait 15 minutes and try again, or reset your password.";
+
+/** Counts one email this client asks the app to send to `email`; false once either limit is used up. */
+async function allowEmailSend(kind: string, email: string): Promise<boolean> {
+  const ip = await clientIp();
+  const byEmail = hit(`${kind}:email:${email.toLowerCase()}`, EMAIL_SENDS);
+  const byIp = hit(`${kind}:ip:${ip}`, EMAIL_SENDS_PER_IP);
+  return byEmail && byIp;
+}
 
 export interface FormState {
   error?: string;
@@ -24,10 +35,17 @@ export async function signInAction(_prev: FormState, form: FormData): Promise<Fo
   const email = String(form.get("email") ?? "");
   if (!parsed.success) return { error: "Enter your email and password.", fields: { email } };
   const next = safeNext(form.get("next"), "/today");
+  // Only failed attempts count, so a learner who signs in often is never locked out.
+  const emailKey = `signin:email:${parsed.data.email.toLowerCase()}`;
+  const ipKey = `signin:ip:${await clientIp()}`;
+  if (isBlocked(emailKey, PASSWORD_ATTEMPTS) || isBlocked(ipKey, PASSWORD_ATTEMPTS_PER_IP)) return { error: TOO_MANY, fields: { email } };
   try {
     await getAuth().api.signInEmail({ body: { ...parsed.data, callbackURL: next }, headers: await headers() });
+    clear(emailKey);
   } catch (err) {
     if (err instanceof APIError) {
+      hit(emailKey, PASSWORD_ATTEMPTS);
+      hit(ipKey, PASSWORD_ATTEMPTS_PER_IP);
       if (err.status === "FORBIDDEN" && /verif/i.test(err.message)) {
         redirect(`/verify-email?email=${encodeURIComponent(email)}`);
       }
@@ -50,6 +68,7 @@ export async function signUpAction(_prev: FormState, form: FormData): Promise<Fo
   const fields = { name: String(raw.name ?? ""), email: String(raw.email ?? "") };
   const parsed = SignUp.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form.", fields };
+  if (!(await allowEmailSend("signup", parsed.data.email))) return { error: "Too many sign-up attempts. Wait an hour and try again.", fields };
   try {
     await getAuth().api.signUpEmail({ body: { ...parsed.data, callbackURL: "/onboarding" }, headers: await headers() });
   } catch (err) {
@@ -74,7 +93,7 @@ export async function signInGithubAction(form: FormData): Promise<void> {
 
 export async function resendVerificationAction(form: FormData): Promise<void> {
   const email = String(form.get("email") ?? "");
-  if (z.email().safeParse(email).success) {
+  if (z.email().safeParse(email).success && (await allowEmailSend("verify", email))) {
     await getAuth()
       .api.sendVerificationEmail({ body: { email, callbackURL: "/onboarding" }, headers: await headers() })
       .catch(() => undefined);
@@ -91,9 +110,12 @@ const ForgotPassword = z.object({ email: z.email() });
 export async function requestPasswordResetAction(_prev: FormState, form: FormData): Promise<FormState> {
   const email = String(form.get("email") ?? "").trim();
   if (!ForgotPassword.safeParse({ email }).success) return { error: "Enter the email you signed up with.", fields: { email } };
-  await getAuth()
-    .api.requestPasswordReset({ body: { email, redirectTo: "/reset-password" }, headers: await headers() })
-    .catch((err: unknown) => console.error("[auth] password reset request failed", err));
+  // Over the limit, nothing is sent but the answer stays the same, so it reveals nothing about the account.
+  if (await allowEmailSend("reset", email)) {
+    await getAuth()
+      .api.requestPasswordReset({ body: { email, redirectTo: "/reset-password" }, headers: await headers() })
+      .catch((err: unknown) => console.error("[auth] password reset request failed", err));
+  }
   redirect(`/forgot-password?sent=1&email=${encodeURIComponent(email)}`);
 }
 
