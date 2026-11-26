@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { question } from "@lfct/curriculum/db";
+import { lab, question } from "@lfct/curriculum/db";
 import { hashPassword } from "better-auth/crypto";
 import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -121,9 +121,62 @@ export async function seed(databaseUrl: string, opts: { today?: string } = {}): 
         else if (next) review.set(q.id, next);
       }
     }
+    // A first look at CKNE three days ago: a few answers, some missed, so the progress dashboard shows a second
+    // cert without enough evidence yet and the review page offers a session per cert.
+    const ckneQuestions = (await db.select({ id: question.id, options: question.options, knownIssue: question.knownIssue }).from(question).where(eq(question.certCode, "CKNE"))).filter(
+      (q) => !q.knownIssue,
+    );
+    if (ckneQuestions.length > 0) {
+      const date = addDays(today, -3);
+      const at = new Date(`${date}T19:00:00Z`);
+      const picked = ckneQuestions.slice(0, 6);
+      const quizId = randomUUID();
+      await db.insert(schema.quiz).values({ id: quizId, userId: ids.mid, kind: "practice", feedback: "instant", certCode: "CKNE", questionIds: picked.map((q) => q.id), createdAt: at, finishedAt: at });
+      for (const [i, q] of picked.entries()) {
+        const correct = i % 2 === 0;
+        const right = q.options.filter((o) => o.correct).map((o) => o.id);
+        const wrong = q.options.find((o) => !o.correct)?.id ?? "a";
+        await db.insert(schema.answer).values({ userId: ids.mid, quizId, questionId: q.id, certCode: "CKNE", selected: correct ? right : [wrong], correct, answeredAt: new Date(at.getTime() + i * 60_000) });
+        const next = nextReviewState(review.get(q.id), correct, date);
+        if (next) review.set(q.id, next);
+      }
+    }
     if (review.size > 0) {
       await db.insert(schema.reviewItem).values([...review].map(([questionId, s]) => ({ userId: ids.mid, questionId, ...s })));
     }
+
+    // Hands-on history for CKA, dated in the previous calendar month so this month's lab minutes and mock exam
+    // attempts stay untouched: one lab solved (every check green), and one timed mock exam just under the pass mark.
+    const lastMonth = addDays(`${today.slice(0, 8)}01`, -2);
+    const [rbacLab] = await db.select().from(lab).where(eq(lab.id, "sample-cka-rbac-pod-reader"));
+    const [fullMock] = await db.select().from(lab).where(eq(lab.id, "sample-cka-mock-full"));
+    const graded = async (row: typeof lab.$inferSelect, mode: "lab" | "exam", day: string, passTask: (i: number) => boolean) => {
+      const start = new Date(`${day}T17:00:00Z`);
+      const end = new Date(start.getTime() + row.minutes * 60_000);
+      const results = row.tasks.flatMap((t, i) => t.checks.map((c) => ({ taskId: t.id, checkId: c.id, passed: passTask(i), message: c.description })));
+      const total = row.tasks.reduce((n, t) => n + t.weight, 0) || 1;
+      const score = Math.round((row.tasks.filter((_, i) => passTask(i)).reduce((n, t) => n + t.weight, 0) * 100) / total);
+      const sessionId = randomUUID();
+      await db.insert(schema.labSession).values({
+        id: sessionId,
+        userId: ids.mid,
+        labId: row.id,
+        certCode: row.certCode,
+        status: "finished",
+        provider: "local-docker",
+        minutes: row.minutes,
+        createdAt: start,
+        readyAt: start,
+        startedAt: mode === "exam" ? start : null,
+        expiresAt: end,
+        endedAt: end,
+        score,
+        mode,
+      });
+      await db.insert(schema.labCheckRun).values({ sessionId, kind: "final", results, score, createdAt: end });
+    };
+    if (rbacLab) await graded(rbacLab, "lab", addDays(lastMonth, -4), () => true);
+    if (fullMock) await graded(fullMock, "exam", lastMonth, (i) => i % 3 !== 2 && i < fullMock.tasks.length - 2);
     console.log(`Seeded ${Object.keys(SAMPLE_USERS).length} sample learners (password: ${SAMPLE_PASSWORD}).`);
   } finally {
     await pool.end();

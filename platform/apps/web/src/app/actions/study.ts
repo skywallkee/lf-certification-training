@@ -10,6 +10,7 @@ import { answer, bookmark, certStatus, flag, lessonProgress, note, profile, quiz
 import { isIsoDate } from "@/lib/dates";
 import { nextReviewState } from "@/lib/review";
 import { getCatalog } from "@/server/catalog";
+import { getReviewDue } from "@/server/progress";
 import { getProfile, requireUser } from "@/server/session";
 import { learnerToday } from "@/server/today";
 
@@ -198,21 +199,17 @@ export async function startQuizAction(form: FormData): Promise<void> {
   redirect(`/quiz/${row!.id}`);
 }
 
-export async function startReviewAction(): Promise<void> {
+/** Starts a review session of up to 20 due questions, across certs or for the cert in the form's "cert" field. */
+export async function startReviewAction(formData?: FormData): Promise<void> {
   const user = await requireUser("/review");
   const today = learnerToday(await getProfile(user.id));
-  const db = getDb();
-  const due = await db
-    .select({ id: reviewItem.questionId })
-    .from(reviewItem)
-    .innerJoin(question, eq(question.id, reviewItem.questionId))
-    .where(and(eq(reviewItem.userId, user.id), sql`${reviewItem.dueOn} <= ${today}`))
-    .orderBy(reviewItem.dueOn, reviewItem.box)
-    .limit(20);
-  if (due.length === 0) redirect("/review");
-  const [row] = await db
+  const rawCert = formData?.get("cert");
+  const certCode = typeof rawCert === "string" && /^[A-Z0-9-]{2,12}$/.test(rawCert) ? rawCert : undefined;
+  const due = await getReviewDue(user.id, today, certCode);
+  if (due.count === 0) redirect("/review");
+  const [row] = await getDb()
     .insert(quiz)
-    .values({ userId: user.id, kind: "review", feedback: "instant", certCode: null, questionIds: due.map((d) => d.id) })
+    .values({ userId: user.id, kind: "review", feedback: "instant", certCode: certCode ?? null, questionIds: due.ids.slice(0, 20) })
     .returning({ id: quiz.id });
   redirect(`/quiz/${row!.id}`);
 }

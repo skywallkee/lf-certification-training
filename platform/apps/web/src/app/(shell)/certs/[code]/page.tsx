@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { formatLong } from "@/lib/dates";
-import { pct } from "@/lib/readiness";
+import { pct, evidenceSummary } from "@/lib/readiness";
 import { VALIDITY_SOURCE, validityMonths } from "@/lib/validity";
 import { en } from "@/messages/en";
 import { certRefs, competencyPath, coverageOf, lessonsFor } from "@/server/catalog";
@@ -89,7 +89,7 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
               <>
                 <p className="mt-1 text-[26px] font-bold">{pct(readiness.score)}%</p>
                 <p className="text-[13px] text-muted-foreground">
-                  {pct(readiness.low)} to {pct(readiness.high)}%, {readiness.answers} answers ·{" "}
+                  {pct(readiness.low)} to {pct(readiness.high)}%, {evidenceSummary(readiness.bySource)} ·{" "}
                   <Link href={`/certs/${lower}/readiness`}>Details</Link>
                 </p>
               </>

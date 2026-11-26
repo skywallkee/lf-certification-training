@@ -2,13 +2,15 @@ import "server-only";
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { cache } from "react";
 import { getDb } from "@/db";
-import { answer, certStatus, lessonProgress, quiz, reviewItem } from "@/db/schema";
-import { question } from "@lfct/curriculum/db";
+import { answer, certStatus, labCheckRun, labSession, lessonProgress, quiz, reviewItem } from "@/db/schema";
+import { lab, question } from "@lfct/curriculum/db";
 import { certStatusView, isHeld, type CertStatusView, type ReportedStatus } from "@/lib/cert-status";
-import { addDays, daysBetween, dateIn, type IsoDate } from "@/lib/dates";
+import { addDays, dateIn, type IsoDate } from "@/lib/dates";
+import { domainOf, evidenceAsOf, sessionSource, taskEvidence, type DatedEvidence } from "@/lib/evidence";
 import { computeReadiness, type Readiness } from "@/lib/readiness";
+import { pickSession, type QueueItem } from "@/lib/review";
 import { currentStreak } from "@/lib/streak";
-import type { Catalog, CatalogCert } from "./catalog";
+import { getCatalog, type Catalog, type CatalogCert } from "./catalog";
 
 export const getReported = cache(async (userId: string): Promise<Map<string, ReportedStatus>> => {
   const rows = await getDb().select().from(certStatus).where(eq(certStatus.userId, userId));
@@ -45,30 +47,113 @@ export function heldCerts(views: Map<string, CertStatusView>): Set<string> {
   return new Set([...views].filter(([, v]) => isHeld(v)).map(([c]) => c));
 }
 
-/** Readiness for one cert from every answer to questions tagged with its competencies. */
-export const getReadiness = cache(async (userId: string, cert: CatalogCert, today: IsoDate): Promise<Readiness> => {
-  const rows = await getDb()
-    .select({ correct: answer.correct, answeredAt: answer.answeredAt, refs: question.competencyRefs })
-    .from(answer)
-    .innerJoin(question, eq(question.id, answer.questionId))
-    .where(and(eq(answer.userId, userId), eq(answer.certCode, cert.code)));
-  const prefix = `${cert.code.toLowerCase()}/`;
-  const evidence = rows.flatMap((r) => {
-    const ref = r.refs.find((x) => x.startsWith(prefix));
-    if (!ref) return [];
-    return [{ domainKey: ref.split("/")[1]!, correct: r.correct, ageDays: daysBetween(r.answeredAt.toISOString().slice(0, 10), today) }];
-  });
-  return computeReadiness(cert.domains.map((d) => ({ key: d.key, name: d.name, weight: d.weight })), evidence);
+/**
+ * Every piece of readiness evidence for one cert, dated: answers to questions tagged with its competencies, the
+ * final grading of each lab and mock exam session for the cert (one piece per task), and finished lessons.
+ */
+export const getEvidence = cache(async (userId: string, certCode: string): Promise<DatedEvidence[]> => {
+  const db = getDb();
+  const [answers, sessions, lessons, catalog] = await Promise.all([
+    db
+      .select({ correct: answer.correct, answeredAt: answer.answeredAt, refs: question.competencyRefs })
+      .from(answer)
+      .innerJoin(question, eq(question.id, answer.questionId))
+      .where(and(eq(answer.userId, userId), eq(answer.certCode, certCode))),
+    db
+      .select({
+        id: labSession.id,
+        mode: labSession.mode,
+        endedAt: labSession.endedAt,
+        tasks: lab.tasks,
+        refs: lab.competencyRefs,
+        results: labCheckRun.results,
+        gradedAt: labCheckRun.createdAt,
+      })
+      .from(labSession)
+      .innerJoin(lab, eq(lab.id, labSession.labId))
+      .innerJoin(labCheckRun, and(eq(labCheckRun.sessionId, labSession.id), eq(labCheckRun.kind, "final")))
+      .where(and(eq(labSession.userId, userId), eq(labSession.certCode, certCode)))
+      .orderBy(desc(labCheckRun.id)),
+    db.select({ id: lessonProgress.lessonId, at: lessonProgress.completedAt }).from(lessonProgress).where(eq(lessonProgress.userId, userId)),
+    getCatalog(),
+  ]);
+  const out: DatedEvidence[] = [];
+  for (const r of answers) {
+    const domainKey = domainOf(r.refs, certCode);
+    if (domainKey) out.push({ domainKey, correct: r.correct, source: "question", day: utcDay(r.answeredAt) });
+  }
+  const seen = new Set<string>();
+  for (const s of sessions) {
+    if (seen.has(s.id)) continue; // newest final grading per session only
+    seen.add(s.id);
+    out.push(...taskEvidence(s.tasks, s.refs, certCode, s.results, sessionSource(s.mode), utcDay(s.endedAt ?? s.gradedAt)));
+  }
+  for (const l of lessons) {
+    const meta = catalog.lessonsById.get(l.id);
+    const domainKey = meta ? domainOf(meta.competencyRefs, certCode) : undefined;
+    if (domainKey) out.push({ domainKey, correct: true, source: "lesson", day: utcDay(l.at) });
+  }
+  return out;
 });
 
-export async function getReviewDue(userId: string, today: IsoDate): Promise<{ count: number; ids: string[] }> {
+function utcDay(at: Date): IsoDate {
+  return at.toISOString().slice(0, 10);
+}
+
+function domainInputs(cert: CatalogCert) {
+  return cert.domains.map((d) => ({ key: d.key, name: d.name, weight: d.weight }));
+}
+
+/** Readiness for one cert from questions, labs, mock exams and lessons (see lib/readiness.ts for the weights). */
+export const getReadiness = cache(async (userId: string, cert: CatalogCert, today: IsoDate): Promise<Readiness> => {
+  const rows = await getEvidence(userId, cert.code);
+  return computeReadiness(domainInputs(cert), evidenceAsOf(rows, today));
+});
+
+export interface ReviewQueueRow extends QueueItem {
+  stem: string;
+  competencyRefs: string[];
+}
+
+/** The learner's whole review queue, soonest first, with each question's stem and cert. */
+export async function getReviewQueue(userId: string): Promise<ReviewQueueRow[]> {
   const rows = await getDb()
-    .select({ id: reviewItem.questionId })
+    .select({
+      questionId: reviewItem.questionId,
+      box: reviewItem.box,
+      dueOn: reviewItem.dueOn,
+      lapses: reviewItem.lapses,
+      certCode: question.certCode,
+      stem: question.stem,
+      competencyRefs: question.competencyRefs,
+    })
     .from(reviewItem)
     .innerJoin(question, eq(question.id, reviewItem.questionId))
-    .where(and(eq(reviewItem.userId, userId), lte(reviewItem.dueOn, today)))
-    .orderBy(reviewItem.dueOn, reviewItem.box);
-  return { count: rows.length, ids: rows.map((r) => r.id) };
+    .where(eq(reviewItem.userId, userId))
+    .orderBy(reviewItem.dueOn, reviewItem.box, reviewItem.questionId);
+  return rows;
+}
+
+/** Questions due today or earlier, optionally for one cert, in session order (see pickSession). */
+export async function getReviewDue(userId: string, today: IsoDate, certCode?: string): Promise<{ count: number; ids: string[] }> {
+  const rows = await getDb()
+    .select({ questionId: reviewItem.questionId, box: reviewItem.box, dueOn: reviewItem.dueOn, lapses: reviewItem.lapses, certCode: question.certCode })
+    .from(reviewItem)
+    .innerJoin(question, eq(question.id, reviewItem.questionId))
+    .where(and(eq(reviewItem.userId, userId), lte(reviewItem.dueOn, today), certCode ? eq(question.certCode, certCode) : undefined));
+  return { count: rows.length, ids: pickSession(rows, rows.length).map((r) => r.questionId) };
+}
+
+/**
+ * Questions the learner once missed that have since left the queue (answered right at every interval). Counted
+ * from the answers, so nothing extra is stored.
+ */
+export async function getReviewCleared(userId: string): Promise<number> {
+  const res = await getDb().execute<{ n: number }>(sql`
+    select count(distinct a.question_id)::int as n from answer a
+    where a.user_id = ${userId} and not a.correct
+      and not exists (select 1 from review_item r where r.user_id = a.user_id and r.question_id = a.question_id)`);
+  return res.rows[0]?.n ?? 0;
 }
 
 export async function getReviewUpcoming(userId: string, today: IsoDate): Promise<{ dueOn: string; count: number }[]> {
@@ -135,7 +220,7 @@ export async function getRecentActivity(userId: string, catalog: Catalog, limit 
       .map((q) => ({
         kind: "quiz" as const,
         at: q.finishedAt ?? q.createdAt,
-        label: q.kind === "review" ? "Review session" : `${q.cert ?? ""} practice quiz`.trim(),
+        label: q.kind === "review" ? (q.cert ? `${q.cert} review session` : "Review session") : `${q.cert ?? ""} practice quiz`.trim(),
         href: `/quiz/${q.id}`,
         detail: `${q.right} of ${q.total} right`,
       })),
@@ -150,25 +235,14 @@ export async function getRecentActivity(userId: string, catalog: Catalog, limit 
   return items.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
 }
 
-/** Readiness at the end of each of the last `weeks` weeks, from the answers given up to then. */
+/** Readiness at the end of each of the last `weeks` weeks, from the evidence up to then. */
 export async function getReadinessHistory(userId: string, cert: CatalogCert, today: IsoDate, weeks = 8) {
-  const rows = await getDb()
-    .select({ correct: answer.correct, answeredAt: answer.answeredAt, refs: question.competencyRefs })
-    .from(answer)
-    .innerJoin(question, eq(question.id, answer.questionId))
-    .where(and(eq(answer.userId, userId), eq(answer.certCode, cert.code)));
-  const prefix = `${cert.code.toLowerCase()}/`;
-  const domains = cert.domains.map((d) => ({ key: d.key, name: d.name, weight: d.weight }));
+  const rows = await getEvidence(userId, cert.code);
+  const domains = domainInputs(cert);
   const points: { week: IsoDate; score: number | null; answers: number }[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
     const end = addDays(today, -7 * i);
-    const evidence = rows.flatMap((r) => {
-      const day = r.answeredAt.toISOString().slice(0, 10);
-      const ref = r.refs.find((x) => x.startsWith(prefix));
-      if (!ref || day > end) return [];
-      return [{ domainKey: ref.split("/")[1]!, correct: r.correct, ageDays: daysBetween(day, end) }];
-    });
-    const r = computeReadiness(domains, evidence);
+    const r = computeReadiness(domains, evidenceAsOf(rows, end));
     points.push({ week: end, score: r.sufficient ? r.score : null, answers: r.answers });
   }
   return points;

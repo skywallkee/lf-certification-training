@@ -87,7 +87,13 @@ test("the mid learner runs a review session from the queue", async ({ page }) =>
   await signIn(page, "mid@example.com");
   await page.goto("/review");
   await expect(page.getByRole("heading", { name: "Due today" })).toBeVisible();
-  await page.getByRole("button", { name: "Start review" }).click();
+  await expect(page.getByRole("heading", { name: "Your queue" })).toBeVisible();
+  // The mid learner has missed CKA and CKNE questions due, so there is a session per cert too.
+  await page.getByRole("button", { name: /^Review CKNE, \d+ questions? due$/ }).click();
+  await expect(page).toHaveURL(/\/quiz\//);
+  await expect(page.getByText(/^CKNE review/)).toBeVisible();
+  await page.goto("/review");
+  await page.getByRole("button", { name: "Review all certs" }).click();
   await expect(page).toHaveURL(/\/quiz\//);
   await expect(page.getByRole("button", { name: /Check answer/ })).toBeVisible();
   await page.keyboard.press("?");
@@ -133,7 +139,7 @@ test("signed-in pages pass the accessibility checks in light and dark", async ({
   await signIn(page, "mid@example.com");
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
-    for (const url of ["/today", "/path", "/certs/cka", "/certs/cka/readiness", "/practice", "/review", "/saved", "/account"]) {
+    for (const url of ["/today", "/path", "/progress", "/certs/cka", "/certs/cka/readiness", "/practice", "/review", "/saved", "/account"]) {
       await page.goto(url);
       await expectAccessible(page, `${url} (${theme})`);
     }
@@ -143,9 +149,37 @@ test("signed-in pages pass the accessibility checks in light and dark", async ({
 test("Today holds at 320px wide without sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   await signIn(page, "mid@example.com");
-  for (const url of ["/today", "/path", "/review"]) {
+  for (const url of ["/today", "/path", "/progress", "/review"]) {
     await page.goto(url);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `${url} scrolls sideways`).toBeLessThanOrEqual(0);
   }
+});
+
+test("the progress dashboard shows readiness per cert from questions, lessons, labs and mock exams", async ({ page }) => {
+  await signIn(page, "mid@example.com");
+  await page.getByRole("link", { name: "Progress" }).first().click();
+  await expect(page).toHaveURL("/progress");
+  await expect(page.getByRole("heading", { name: "Progress", level: 1 })).toBeVisible();
+
+  const cka = page.getByRole("region", { name: /^CKA / });
+  await expect(cka.getByText("Booked")).toBeVisible();
+  await expect(cka.getByRole("img", { name: /Readiness \d+ percent/ })).toBeVisible();
+  await expect(cka.getByText(/lab tasks? and \d+ mock exam tasks?/)).toBeVisible();
+  await expect(cka.getByText("3 of 5")).toBeVisible();
+  await expect(cka.getByText(/1 of 2 solved/)).toBeVisible();
+  await expect(cka.getByText(/^Best \d+%$/)).toBeVisible();
+  await expect(cka.getByRole("heading", { name: "Before you book" })).toBeVisible();
+  await expect(cka.getByText(/Pass a timed mock exam/)).toBeVisible();
+
+  // CKNE was only started: not enough evidence for a score yet.
+  const ckne = page.getByRole("region", { name: /^CKNE / });
+  await expect(ckne.getByText(/Not enough answers yet to estimate readiness/)).toBeVisible();
+
+  await expect(page.getByRole("region", { name: "Passed" }).getByRole("link", { name: "CKAD" })).toBeVisible();
+  await expectAccessible(page, "Progress dashboard");
+
+  await cka.getByRole("link", { name: "Readiness by domain" }).click();
+  await expect(page.getByRole("heading", { name: "CKA readiness", level: 1 })).toBeVisible();
+  await expect(page.getByText(/lesson read|lessons read/).first()).toBeVisible();
 });

@@ -11,6 +11,7 @@ export const en = {
     main: "Main",
     today: "Today",
     path: "Path",
+    progress: "Progress",
     certs: "Certs",
     review: "Review",
     practice: "Practice",
@@ -42,7 +43,7 @@ export const en = {
     little: (answers: number, domains: number) =>
       `Not enough answers yet to estimate readiness. Answer ${answers} more question${answers === 1 ? "" : "s"}${
         domains > 0 ? ` across at least ${domains} more domain${domains === 1 ? "" : "s"}` : ""
-      }.`,
+      }. A graded lab task counts as 2, a mock exam task as 3.`,
     bookReady: "Book-ready at 80%",
   },
   review: {
