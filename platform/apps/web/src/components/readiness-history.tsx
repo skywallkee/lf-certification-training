@@ -30,7 +30,7 @@ export function ReadinessHistory({ points }: { points: Point[] }) {
     <figure className="flex flex-col gap-3">
       <figcaption className="text-sm text-muted-foreground">{summary}</figcaption>
       {scored.length > 0 ? (
-        <div className="relative w-full overflow-x-auto">
+        <div className="relative w-full overflow-x-auto" tabIndex={0} role="region" aria-label="Chart, scrolls sideways on small screens">
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[480px]" role="img" aria-label={summary}>
             {[0, 0.5, 0.8, 1].map((g) => (
               <g key={g}>

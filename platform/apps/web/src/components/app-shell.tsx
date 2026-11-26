@@ -8,7 +8,9 @@ import { getReviewDue } from "@/server/progress";
 import { getProfile, getUser } from "@/server/session";
 import { ActiveSessionBanner } from "./labs/active-session-banner";
 import { BottomNav, SidebarNav, type NavItem } from "./nav-links";
+import { QuickSearch } from "./quick-search";
 import { ThemeToggle } from "./theme-toggle";
+import { cn } from "@/lib/utils";
 import { buttonVariants } from "./ui/button";
 
 /** Page shell: sidebar on large screens, top bar with focus cert and account, bottom bar on phones. */
@@ -40,15 +42,16 @@ export async function AppShell({ children }: { children: ReactNode }) {
         ...(user.role === "admin" ? [{ key: "admin" as const, href: "/admin", label: en.nav.admin }] : []),
       ]
     : [];
+  // Phones: four tabs and a More sheet with the rest. Search is the header button.
   const mobile: NavItem[] = user
-    ? items.filter((i) => ["today", "path", "certs", "review", "search"].includes(i.key))
+    ? items.filter((i) => ["today", "path", "certs", "review"].includes(i.key))
     : [
+        { key: "home", href: "/", label: en.nav.home },
         { key: "certs", href: "/certs", label: en.nav.certs },
-        { key: "search", href: "/search", label: en.nav.search },
-        { key: "today", href: "/sign-in", label: en.nav.signIn },
-        { key: "path", href: "/", label: "Home" },
-        { key: "review", href: "/sign-up", label: "Sign up" },
+        { key: "signIn", href: "/sign-in", label: en.nav.signIn },
+        { key: "signUp", href: "/sign-up", label: en.nav.signUp },
       ];
+  const more: NavItem[] = user ? [...items.filter((i) => !mobile.includes(i)), ...secondary] : [{ key: "search", href: "/search", label: en.nav.search }];
 
   return (
     <div className="flex min-h-dvh">
@@ -65,28 +68,29 @@ export async function AppShell({ children }: { children: ReactNode }) {
         <SidebarNav items={items} secondary={secondary} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex min-h-14 flex-wrap items-center justify-between gap-2 border-b bg-card/95 px-4 backdrop-blur sm:px-6">
-          <Link href={user ? "/today" : "/"} className="font-bold text-foreground no-underline hover:text-foreground lg:invisible">
+        <header className="sticky top-0 z-30 flex min-h-14 items-center gap-1 border-b bg-card/95 px-4 backdrop-blur sm:gap-2 sm:px-6">
+          <Link href={user ? "/today" : "/"} className="mr-auto truncate font-bold text-foreground no-underline hover:text-foreground lg:hidden">
             {en.appName}
           </Link>
-          <div className="flex flex-wrap items-center gap-1">
+          <QuickSearch className="lg:mr-auto" />
+          <div className="flex shrink-0 items-center gap-1">
             {profile?.focusCert ? (
               <Link
                 href={`/certs/${profile.focusCert.toLowerCase()}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "hidden sm:inline-flex")}
               >
                 Focus: {profile.focusCert}
               </Link>
             ) : null}
             <ThemeToggle />
             {user ? (
-              <form action={signOutAction}>
+              <form action={signOutAction} className="hidden lg:block">
                 <button type="submit" className="min-h-10 rounded-md px-3 text-sm text-foreground hover:bg-muted">
                   {en.nav.signOut}
                 </button>
               </form>
             ) : (
-              <Link href="/sign-in" className={buttonVariants({ size: "sm" })}>
+              <Link href="/sign-in" className={cn(buttonVariants({ size: "sm" }), "hidden sm:inline-flex")}>
                 {en.nav.signIn}
               </Link>
             )}
@@ -97,7 +101,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
-      <BottomNav items={mobile} />
+      <BottomNav items={mobile} more={more} signedIn={Boolean(user)} />
     </div>
   );
 }

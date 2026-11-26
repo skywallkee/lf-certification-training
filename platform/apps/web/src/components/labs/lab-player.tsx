@@ -8,6 +8,7 @@ import type { PlayerState } from "@lfct/labs/player";
 import { taskStates, type CheckResult } from "@lfct/labs/status";
 import { checkLabAction, extendLabAction, finishLabAction, revealHintAction } from "@/app/actions/labs";
 import { SampleBadge } from "@/components/status-chip";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -177,6 +178,7 @@ export function LabPlayer(props: PlayerProps) {
           {props.mock ? <SampleBadge /> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ThemeToggle showLabel={false} />
           <SessionTimer expiresAt={poll.expiresAt} skewMs={skewMs} />
           <Button type="button" size="sm" variant="outline" disabled={!ready || poll.extended} onClick={extend}>
             {poll.extended ? en.labs.extended : en.labs.extend(props.extendMinutes)}
@@ -219,7 +221,7 @@ export function LabPlayer(props: PlayerProps) {
       <div
         ref={mainRef}
         className={cn(
-          "grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:overflow-hidden",
+          "grid min-h-0 flex-1 auto-rows-max grid-cols-[minmax(0,1fr)] gap-4 overflow-auto p-4 xl:auto-rows-auto xl:overflow-hidden",
           tab === "docs" ? "xl:grid-cols-[minmax(420px,1fr)_minmax(0,1fr)]" : "xl:grid-cols-[minmax(340px,460px)_1fr]",
         )}
       >

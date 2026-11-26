@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { notFound } from "next/navigation";
 import * as z from "zod";
 import { question as questionTable } from "@lfct/curriculum/db";
@@ -41,21 +42,24 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
       : undefined;
 
   const header = (progress: number, label: string) => (
-    <header className="flex flex-wrap items-center justify-between gap-4 border-b bg-card px-4 py-4 sm:px-8">
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b bg-card px-4 py-3 sm:px-8 sm:py-4">
       <div className="flex items-center gap-4">
         <span className="font-bold">{en.appName}</span>
         <Link href={q.kind === "review" ? "/review" : "/today"} className="text-sm font-medium">
           Exit quiz
         </Link>
       </div>
-      <div className="flex max-w-md flex-[1_1_280px] flex-col items-center gap-1.5">
+      <div className="order-last flex w-full max-w-md flex-col items-center gap-1.5 md:order-none md:w-auto md:flex-[1_1_280px]">
         <span className="flex flex-wrap items-center justify-center gap-2 text-[13px] text-muted-foreground">
           {title}
           {domainLabel ? ` · ${domainLabel}` : ""} · {label} <SampleBadge />
         </span>
         <Progress value={progress} label={label} className="h-1.5" />
       </div>
-      <span className="text-[13px] text-muted-foreground">No timer · press ? for keys</span>
+      <div className="flex items-center gap-2">
+        <span className="hidden text-[13px] text-muted-foreground md:inline">No timer · press ? for keys</span>
+        <ThemeToggle showLabel={false} />
+      </div>
     </header>
   );
 

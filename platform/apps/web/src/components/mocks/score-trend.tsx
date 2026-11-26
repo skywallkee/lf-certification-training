@@ -58,7 +58,7 @@ export function ScoreTrend({ points, passMark, title }: { points: TrendPoint[]; 
         </ul>
       ) : null}
       {points.length > 0 ? (
-        <div className="relative w-full overflow-x-auto">
+        <div className="relative w-full overflow-x-auto" tabIndex={0} role="region" aria-label="Chart, scrolls sideways on small screens">
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[420px]" role="img" aria-label={summary} onMouseLeave={() => setActive(null)}>
             {[0, 50, 100].map((g) => (
               <g key={g}>

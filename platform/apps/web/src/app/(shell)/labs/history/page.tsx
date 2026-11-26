@@ -23,7 +23,7 @@ export default async function LabHistoryPage() {
           </p>
         </Card>
       ) : (
-        <Card className="overflow-x-auto p-0">
+        <Card className="relative overflow-x-auto p-0">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-muted-foreground">
               <tr>
