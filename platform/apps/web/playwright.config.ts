@@ -6,11 +6,11 @@ import { defineConfig, devices } from "@playwright/test";
  * which runs in the webServer command before the server starts. The lab controller starts second (Playwright starts
  * web servers in order) with LAB_PROVIDER=fake.
  */
-const port = Number(process.env.E2E_PORT ?? 3100);
+const port = Number(process.env.E2E_PORT ?? 4100);
 const databaseUrl =
   process.env.E2E_DATABASE_URL ??
-  "postgres://postgres@localhost:5432/lfct_test";
-const controllerPort = Number(process.env.E2E_CONTROLLER_PORT ?? 3101);
+  "postgres://postgres@localhost:4432/lfct_test";
+const controllerPort = Number(process.env.E2E_CONTROLLER_PORT ?? 4101);
 /** The web app and the lab controller share these; the controller uses the fake provider, so no Docker is needed. */
 const labEnv = {
   LAB_CONTROLLER_SECRET: "e2e-controller-secret",

@@ -34,7 +34,7 @@ variable "web_image" {
 }
 
 variable "web_target_port" {
-  description = "Port the web container listens on: 80 for the quickstart image, 3000 for the Next.js app from Phase 1."
+  description = "Port the web container listens on: 80 for the quickstart image, 4000 for the Next.js app from Phase 1."
   type        = number
   default     = 80
 }

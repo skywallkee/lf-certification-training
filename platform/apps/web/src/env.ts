@@ -13,7 +13,7 @@ export const env = {
   },
   /** Public base URL, used for links in emails and OAuth callbacks. */
   get baseUrl() {
-    return process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
+    return process.env.BETTER_AUTH_URL ?? "http://localhost:4000";
   },
   githubClientId: process.env.GITHUB_CLIENT_ID,
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET,
@@ -53,7 +53,7 @@ export const env = {
   labs: {
     /** Internal URL the server uses to call the controller. */
     get controllerUrl() {
-      return process.env.LAB_CONTROLLER_URL ?? "http://localhost:3001";
+      return process.env.LAB_CONTROLLER_URL ?? "http://localhost:4001";
     },
     get controllerSecret() {
       return process.env.LAB_CONTROLLER_SECRET ?? "";
@@ -63,7 +63,7 @@ export const env = {
     },
     /** Public WebSocket base the browser uses for the terminal. */
     get terminalUrl() {
-      return process.env.LAB_TERMINAL_URL ?? "ws://localhost:3001";
+      return process.env.LAB_TERMINAL_URL ?? "ws://localhost:4001";
     },
     /** Name of the provider new sessions run on: "local-docker" in Phase 2. */
     get provider() {
@@ -81,7 +81,7 @@ export const env = {
      * the lab player can show them in a frame. `*.localhost` resolves to this machine in every major browser.
      */
     get docsUrl() {
-      return process.env.LAB_DOCS_URL ?? "http://{host}.localhost:3001";
+      return process.env.LAB_DOCS_URL ?? "http://{host}.localhost:4001";
     },
     /** Docs sites the viewer serves; keep it the same as the controller's LAB_DOCS_HOSTS. */
     get docsHosts() {

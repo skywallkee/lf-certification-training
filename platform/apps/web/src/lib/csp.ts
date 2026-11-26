@@ -13,7 +13,7 @@ export interface CspOptions {
   github: boolean;
 }
 
-/** "ws://localhost:3001/x" -> "ws://localhost:3001"; null when it is not a URL. */
+/** "ws://localhost:4001/x" -> "ws://localhost:4001"; null when it is not a URL. */
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
   try {
@@ -23,7 +23,7 @@ function originOf(url: string | undefined): string | null {
   }
 }
 
-/** "http://{host}.localhost:3001" -> "http://*.localhost:3001", a CSP source that matches every docs site. */
+/** "http://{host}.localhost:4001" -> "http://*.localhost:4001", a CSP source that matches every docs site. */
 export function docsSource(template: string | undefined): string | null {
   if (!template?.includes("{host}")) return originOf(template);
   const sample = originOf(template.replace("{host}", "docs-site"));

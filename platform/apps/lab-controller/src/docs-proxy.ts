@@ -2,7 +2,7 @@ import type http from "node:http";
 
 /**
  * Serves allowlisted documentation sites for the lab player's docs pane. A request to
- * `http://kubernetes.io.localhost:3001/docs/home/` is fetched from `https://kubernetes.io/docs/home/`; the
+ * `http://kubernetes.io.localhost:4001/docs/home/` is fetched from `https://kubernetes.io/docs/home/`; the
  * answer loses the headers that forbid framing (X-Frame-Options, CSP) and gains a CSP that lets only the web
  * app frame it. Links in HTML pages to an allowlisted site are rewritten to stay in the viewer. Read-only:
  * GET and HEAD, no cookies either way.

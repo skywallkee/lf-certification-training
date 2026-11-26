@@ -60,7 +60,7 @@ terraform apply tfplan
 ## Notes
 
 - The first web revision is Microsoft's quickstart image on port 80. From Phase 1 GitHub Actions deploys
-  the Next.js image as new revisions; set `web_target_port = 3000` then. Terraform ignores image changes.
+  the Next.js image as new revisions; set `web_target_port = 4000` then. Terraform ignores image changes.
 - `enable_sweeper` stays `false` until the sweeper image exists (Phase 2).
 - The web app gets a system-assigned identity, later granted rights in the Azure lab subscription.
 - `web_outbound_ip_addresses` is the allow-list for lab VM terminal and grader ports.

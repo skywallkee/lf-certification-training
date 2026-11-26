@@ -6,7 +6,7 @@ import { ingestContent, ingestCurriculum, migrateAndIngest, removeSampleContent 
 import * as schema from "../src/db/schema.ts";
 import { loadContent, loadCurriculum, type Curriculum } from "../src/index.ts";
 
-/** Runs against a disposable database: TEST_DATABASE_URL=postgres://postgres@localhost:5432/lfct_test */
+/** Runs against a disposable database: TEST_DATABASE_URL=postgres://postgres@localhost:4432/lfct_test */
 const url = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!url)("ingest into Postgres", () => {

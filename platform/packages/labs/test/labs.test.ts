@@ -179,21 +179,21 @@ describe("docs viewer links", () => {
     expect(
       docsViewerUrl(
         "https://kubernetes.io/docs/home/#x",
-        "http://{host}.localhost:3001",
+        "http://{host}.localhost:4001",
         hosts,
       ),
-    ).toBe("http://kubernetes.io.localhost:3001/docs/home/#x");
+    ).toBe("http://kubernetes.io.localhost:4001/docs/home/#x");
     expect(
       docsViewerUrl(
         "https://example.com/docs",
-        "http://{host}.localhost:3001",
+        "http://{host}.localhost:4001",
         hosts,
       ),
     ).toBeNull();
     expect(
       docsViewerUrl(
         "http://kubernetes.io/docs",
-        "http://{host}.localhost:3001",
+        "http://{host}.localhost:4001",
         hosts,
       ),
     ).toBeNull();

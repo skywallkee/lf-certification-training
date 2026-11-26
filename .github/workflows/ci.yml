@@ -120,8 +120,8 @@ jobs:
         run: docker compose up --build --detach --wait --wait-timeout 300
       - name: Web and lab controller answer
         run: |
-          curl -fsS -o /dev/null http://localhost:3000/sign-in
-          curl -fsS http://localhost:3001/health
+          curl -fsS -o /dev/null http://localhost:4000/sign-in
+          curl -fsS http://localhost:4001/health
       - name: Image sizes
         if: always()
         run: docker image ls --filter reference='lfct-*'

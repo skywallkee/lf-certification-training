@@ -30,14 +30,14 @@ export function loadConfig() {
   const controllerSecret = required("LAB_CONTROLLER_SECRET");
   return {
     databaseUrl: required("DATABASE_URL"),
-    port: int("LAB_CONTROLLER_PORT", 3001),
+    port: int("LAB_CONTROLLER_PORT", 4001),
     provider,
     /** Shared secret for the web app's calls to the internal API. */
     controllerSecret,
     /** Verifies the terminal tokens the web app signs. */
     tokenSecret,
     /** Origins allowed to open the terminal WebSocket (the web app's public URL). */
-    allowedOrigins: (process.env.LAB_ALLOWED_ORIGINS ?? "http://localhost:3000")
+    allowedOrigins: (process.env.LAB_ALLOWED_ORIGINS ?? "http://localhost:4000")
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean),
