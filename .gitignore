@@ -26,3 +26,7 @@ playwright-report/
 # Local database backups (learner data)
 backups/*
 !backups/README.md
+# Lesson video narration cache (pnpm dev)
+.narration-cache/
+# Python
+__pycache__/

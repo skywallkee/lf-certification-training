@@ -2,8 +2,8 @@
 #
 #   docker compose up --build        then open http://localhost:3000 (sample logins in the README)
 #
-# Services: Postgres and its backups, a local mail inbox (Mailpit), a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
-# lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
+# Services: Postgres and its backups, a local mail inbox (Mailpit), a one-shot setup job (migrations, content ingest, sample learners), the web app, the
+# lesson video narrator (local text to speech), and the lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
 # Settings come from .env when present (see .env.example); the defaults below are for local use only.
 name: lfct
 
@@ -132,6 +132,20 @@ services:
     # Healthcheck: defined in the Dockerfile (GET /health).
     restart: unless-stopped
 
+  # Narrates lesson videos: Kokoro text to speech on the CPU (platform/narrator). The web app asks it once per sentence
+  # and keeps the MP3s in the narration volume. Without it, the video player uses the browser's own voice.
+  narrator:
+    build:
+      context: platform/narrator
+      secrets: [extra_ca]
+    image: lfct-narrator:local
+    init: true
+    ports:
+      # For `pnpm dev` on the host (NARRATOR_URL=http://localhost:8880).
+      - "127.0.0.1:${NARRATOR_PORT:-8880}:8880"
+    # Healthcheck: defined in the Dockerfile (GET /health once the model is loaded).
+    restart: unless-stopped
+
   web:
     build:
       context: .
@@ -166,6 +180,11 @@ services:
       MOCK_PRACTICE_PER_MONTH: ${MOCK_PRACTICE_PER_MONTH:-2}
       # Study reminder emails: minutes between checks for due reminders (0 turns them off).
       REMINDERS_INTERVAL_MINUTES: ${REMINDERS_INTERVAL_MINUTES:-10}
+      # Lesson video narration. Set NARRATOR_URL= (empty) in .env to use the browser's voice instead.
+      NARRATOR_URL: ${NARRATOR_URL-http://narrator:8880}
+      NARRATION_CACHE_DIR: /data/narration
+    volumes:
+      - narration:/data/narration
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
     depends_on:
@@ -175,6 +194,9 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_healthy
+      # Started, not awaited: the model takes a few seconds to load and the web app copes without it.
+      narrator:
+        condition: service_started
     restart: unless-stopped
 
 networks:
@@ -184,6 +206,8 @@ networks:
 
 volumes:
   pgdata:
+  # Narrated sentences of lesson videos, so each is synthesised once.
+  narration:
 
 secrets:
   # Optional: a CA bundle for builds behind a TLS-inspecting proxy. Point EXTRA_CA_FILE at it; the default is

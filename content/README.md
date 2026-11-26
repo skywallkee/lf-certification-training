@@ -59,8 +59,88 @@ Markdown body. GitHub tables and fenced code blocks work.
 ```
 
 Lessons are trusted content written in this repository and reviewed in pull requests: the app evaluates the
-MDX on the server ([ADR 0009](../docs/adr/0009-phase-1-study-app.md)). Only `Callout`, `Flow` and plain
+MDX on the server ([ADR 0009](../docs/adr/0009-phase-1-study-app.md)). Only the lesson components below and plain
 Markdown are available. Keep imports and expressions out.
+
+### Rich lessons
+
+A lesson should teach more than the documentation does: what the thing is, how and why it works, how to use it,
+and the tricks that save time in the exam. [`lessons/sample/cka/services.mdx`](lessons/sample/cka/services.mdx) is
+the template ([ADR 0023](../docs/adr/0023-rich-lessons-and-lesson-videos.md)). Its sections, in order:
+
+| Section | What goes in it | Components |
+|---------|-----------------|------------|
+| Why it exists | The problem it solves, in plain words | `<KeyIdea>` with the one sentence to remember |
+| What it is | The parts and how they relate | `<Diagram>`, a table for fields or options |
+| How it works | What happens underneath, and why it was built that way | `<Diagram>`, `<DeepDive>` for the details |
+| Types or variants | When to use which | Table, `<Diagram>`, `<Callout kind="warning">` for traps |
+| Using it | Realistic tasks solved step by step | `<Example>` with commands and manifests |
+| Tricks | Shortcuts for the terminal and the exam | `<Trick>` |
+| Common mistakes | What goes wrong and how to spot it | List |
+| Recap | Five lines at most | List |
+
+The components:
+
+```mdx
+<KeyIdea>One or two sentences: the idea to remember.</KeyIdea>
+<DeepDive title="What happens to each connection">Folded by default: details for the curious.</DeepDive>
+<Example title="Expose a Deployment">A task, then the steps and code that solve it.</Example>
+<Trick title="Let kubectl write the YAML">A shortcut.</Trick>
+<Diagram id="service-routing" />      draws diagrams.service-routing from the front matter
+<Callout kind="tip" title="On the exam">Short aside: kind is note, tip or warning.</Callout>
+<Flow label="From claim to mounted volume" steps={["PVC created", "Provisioner makes a PV", "Pod mounts it"]} />
+```
+
+**Diagrams** are data in the front matter, drawn by the app in the lesson's colours (light and dark), with a text
+version for screen readers. Nodes sit on a grid (`col`, `row` from 0, up to 8 by 8); about 18 characters fit a label
+and 20 the second line (`sub`). Edges get the id `<from>-<to>` unless they set one.
+
+```yaml
+diagrams:
+  service-routing:
+    title: "How a client reaches the Pods behind a Service"
+    caption: "Optional sentence under the diagram."
+    nodes:                         # icon: pod, service, deployment, replicaset, node, control-plane, user, container,
+                                   # volume, config, secret, ingress, gateway, dns, proxy, policy, database,
+                                   # internet, cluster, file, process, generic
+      - { id: client, label: "Client Pod", sub: "frontend-7d9", icon: pod, col: 0, row: 1 }
+      - { id: svc, label: "Service web", sub: "10.96.0.20:80", icon: service, col: 1, row: 1, tone: primary }
+                                   # tone: default, primary, success, warning, muted
+    edges:
+      - { from: client, to: svc, label: "web:80" }   # also: dashed: true, both: true (arrow at both ends), id
+    groups:                        # a dashed box around nodes, labelled top right
+      - { id: node-a, label: "Node A", nodes: [svc] }
+```
+
+**The lesson video** is an animated, narrated walk through the lesson, built from a script in the front matter.
+The app draws it from the same diagrams and data, so it never goes out of date, and the narration is spoken by a
+local text-to-speech service (see the README); captions and a transcript come with it. Each scene has a narration
+and a visual, and **each sentence of the narration moves the visual one step**:
+
+```yaml
+video:
+  voice: af_heart                  # af_heart, af_bella, am_michael, am_fenrir, bf_emma, bm_george
+  speed: 1                         # 0.7 to 1.3
+  scenes:
+    - id: what-it-is
+      title: "What a Service is"   # shown in the player and its scene list
+      narration: >-               # write it to be heard: short sentences, no code read aloud
+        Here is a client Pod. It calls the Service by name. The Service forwards to the Pods.
+      visual:                      # one of the five kinds below
+        kind: diagram              # one of the lesson's diagrams
+        diagram: service-routing
+        steps:                     # optional: step N reveals and highlights these ids during sentence N;
+          - [client]               # anything never named is visible from the start
+          - [svc, client-svc]
+    # kind: title     heading, subheading
+    # kind: points    heading (optional), items: one point appears per sentence (up to 8)
+    # kind: code      heading, lang, code, steps: ["3", "5-7"] (lines lit per sentence)
+    # kind: terminal  lines: [{ cmd, out }] (one command typed per sentence)
+```
+
+`pnpm curriculum:validate` checks that every `<Diagram id>` and video scene names a real diagram, that steps name
+real nodes, edges and groups, and that no scene has more steps than sentences. In the admin editor, **Draft from the
+lesson** writes a first script from the lesson's sections; rewrite the narration so it sounds spoken.
 
 ## Questions
 
@@ -200,14 +280,15 @@ file format described above, and it validates with the same schemas as the inges
 - Every save is recorded in a history with the item as it was; any earlier version can be restored.
 - **Download file** exports the item in its file format and names the path to commit it at, so content
   written in the app can move into this repository.
-- Lesson MDX written in the app is held to a safe subset before it is saved or rendered: Markdown plus
-  `<Callout>` and `<Flow>` with plain values as props (no imports, `{expressions}` or other tags).
+- Lesson MDX written in the app is held to a safe subset before it is saved or rendered: Markdown plus the lesson
+  components above with plain values as props (no imports, `{expressions}` or other tags). Diagrams are edited as
+  YAML and the video scene by scene; the Preview tab shows the video and the lesson as learners see them.
 - Items that learners have already used cannot be deleted, only unpublished; ingested items cannot be deleted
   in the app (remove the file instead).
 
 ## The sample set
 
-The app ships with **mock content only**: 12 lessons, 74 questions, 4 labs, 4 practical mock exams (CKA full and
+The app ships with **mock content only**: 13 lessons (one of them, CKA Services, the template for the rich lesson format), 74 questions, 4 labs, 4 practical mock exams (CKA full and
 half, CKAD, CKS) and 3 multiple-choice mock exams (KCNA full and quick, KCSA) across KCNA, KCSA, CKA, CKAD, CKS and
 CKNE, written to
 exercise the app (a long lesson, two very short ones, a lesson tagged for two certs, competencies with no

@@ -19,6 +19,7 @@ See the [plan](https://claude.ai/artifact/99Eiqhkj36HSbaKaLF61Ye) and the
 | [`platform/apps/web`](platform/apps/web) | LF Cert Trainer, the Next.js study app |
 | [`platform/apps/lab-controller`](platform/apps/lab-controller) | Starts, grades and deletes lab clusters (k3s in Docker locally) and relays the terminal |
 | [`platform/lab-image`](platform/lab-image) | The lab tools image: workstation terminal (ttyd, tmux, kubectl, helm) and the grader (Chainsaw) |
+| [`platform/narrator`](platform/narrator) | Local text to speech (Kokoro) that narrates lesson videos |
 | [`infra/`](infra/README.md) | Terraform for the always-on Azure platform and the budgets on both clouds |
 | [`docs/adr/`](docs/adr/README.md) | Architecture decision records |
 
@@ -32,9 +33,15 @@ docker compose up --build
 ```
 
 Then open http://localhost:3000 and sign in as one of the sample learners below. The first start builds
-three images and pulls k3s, so give it a few minutes; later starts take seconds. A lab boots in about
+the images (including the narrator's 120 MB voice model) and pulls k3s, so give it a few minutes; later starts take seconds. A lab boots in about
 10 to 30 seconds. Data is kept in the `pgdata` volume across restarts (`docker compose down -v` wipes it).
 Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
+
+Lessons can have a narrated, animated video (see [content/README.md](content/README.md#rich-lessons)). The `narrator`
+service speaks the narration with [Kokoro](https://github.com/thewh1teagle/kokoro-onnx), a small open text-to-speech
+model that runs on the CPU, so nothing goes to an outside service. Each sentence is synthesised once and kept in the
+`narration` volume; published lessons are narrated in the background a few seconds after the stack starts. Set
+`NARRATOR_URL=` (empty) in `.env` to skip it: the player then uses your browser's own voice.
 
 Emails the app sends (sign-up verification, password reset links and study reminders) go to a local test inbox, [Mailpit](https://mailpit.axllent.org),
 at http://localhost:8025. Study reminders are off until a learner turns them on under Account; the web app checks for due

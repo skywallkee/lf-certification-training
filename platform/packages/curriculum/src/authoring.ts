@@ -12,6 +12,7 @@ import {
   type QuestionInput,
   type QuizMockInput,
 } from "./content.ts";
+import { lessonMediaProblems } from "./lesson-media.ts";
 
 /**
  * Content authoring in the app (admin editor). An item is edited as the same JSON the content files hold, and
@@ -54,7 +55,7 @@ function refProblems(ctx: AuthoringContext, where: string, refs: readonly string
 export function validateLesson(input: unknown, ctx: AuthoringContext): Validated<LessonEdit> {
   const parsed = LessonEditSchema.safeParse(input);
   if (!parsed.success) return { ok: false, problems: issues(parsed.error) };
-  const problems = refProblems(ctx, "competencies", parsed.data.competencies);
+  const problems = [...refProblems(ctx, "competencies", parsed.data.competencies), ...lessonMediaProblems(parsed.data)];
   return problems.length ? { ok: false, problems } : { ok: true, value: parsed.data };
 }
 
@@ -117,6 +118,7 @@ function tidy<T extends Record<string, unknown>>(obj: T, dropEmpty: readonly str
   for (const [k, v] of Object.entries(obj)) {
     if (v === undefined || v === null) continue;
     if (dropEmpty.includes(k) && Array.isArray(v) && v.length === 0) continue;
+    if (dropEmpty.includes(k) && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
     out[k] = v;
   }
   return out as Partial<T>;
@@ -127,7 +129,7 @@ const yamlOptions = { lineWidth: 0 } as const;
 /** A lesson as an MDX file: YAML front matter, then the body. */
 export function lessonToSource(lesson: LessonEdit): string {
   const { body, ...meta } = lesson;
-  return `---\n${stringify(tidy(meta, ["docs"]), yamlOptions)}---\n\n${body.trim()}\n`;
+  return `---\n${stringify(tidy(meta, ["docs", "diagrams"]), yamlOptions)}---\n\n${body.trim()}\n`;
 }
 
 /** Parses an MDX lesson file back into editor JSON (not validated). */

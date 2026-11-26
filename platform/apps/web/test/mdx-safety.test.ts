@@ -12,6 +12,14 @@ describe("lesson MDX written in the admin editor", () => {
     ).toEqual([]);
   });
 
+  it("accepts the rich lesson components", () => {
+    expect(
+      mdxProblems(
+        '<KeyIdea>One idea.</KeyIdea>\n\n<DeepDive title="Under it">Details.</DeepDive>\n\n<Example title="Do it">\n\n```bash\nkubectl get svc\n```\n\n</Example>\n\n<Trick title="Fast">Use `-o yaml`.</Trick>\n\n<Diagram id="flow" />\n',
+      ),
+    ).toEqual([]);
+  });
+
   it("accepts every sample lesson body in the repository", async () => {
     const dir = path.resolve(import.meta.dirname, "../../../../content/lessons/sample");
     for (const cert of await readdir(dir)) {
