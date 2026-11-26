@@ -71,6 +71,7 @@ services:
       LAB_TOOLS_IMAGE: lfct-lab-tools:local
       LAB_K3S_IMAGE: ${LAB_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1}
       LAB_DOCS_HOSTS: ${LAB_DOCS_HOSTS:-kubernetes.io,helm.sh}
+      LAB_IMAGE_CACHE: ${LAB_IMAGE_CACHE:-true}
       LAB_ALLOWED_ORIGINS: ${APP_URL:-http://localhost:3000}
     volumes:
       # Starts and removes lab containers on this machine's Docker.

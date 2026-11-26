@@ -41,6 +41,11 @@ test("a learner takes a mock exam in practice mode: prepare, start, check a task
   await expect(page.getByText("Pass", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Score per domain" })).toBeVisible();
   await expectAccessible(page, "Mock results");
+
+  await page.goto("/mocks/history");
+  await expect(page.getByRole("heading", { name: "Mock exam history", level: 1 })).toBeVisible();
+  await expect(page.getByText("By domain, first attempt to latest")).toBeVisible();
+  await expectAccessible(page, "Mock history");
 });
 
 test("exam mode shows no checks, and leaving before Start costs nothing", async ({ page }) => {
@@ -59,8 +64,19 @@ test("exam mode shows no checks, and leaving before Start costs nothing", async 
   await expect(page.getByText("Task 1 of 8")).toBeVisible();
   await expect(page.getByRole("button", { name: "Check this task" })).toHaveCount(0);
   await expect(page.getByText(/no feedback until you submit/)).toBeVisible();
+
+  // A refresh mid-exam resumes on the same task with the clock still running.
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText("Task 2 of 8")).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.reload();
+  await expect(page.getByText("Task 2 of 8")).toBeVisible();
+  await page.locator("[data-region=terminal][data-state=connected]").waitFor({ timeout: 30_000 });
+
   await page.getByRole("button", { name: "Submit", exact: true }).click();
   await page.getByRole("button", { name: "Submit and grade" }).click();
   await expect(page).toHaveURL(/\/mocks\/results\//, { timeout: 30_000 });
   await expect(page.getByText("0%", { exact: true })).toBeVisible();
+  // Compared with the practice attempt of the first test, which scored 100%.
+  await expect(page.getByText(/from your previous attempt/)).toBeVisible();
 });

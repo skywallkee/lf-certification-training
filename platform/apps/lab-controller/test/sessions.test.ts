@@ -92,6 +92,8 @@ describe.skipIf(!base)("session lifecycle with the fake provider", () => {
     expect(await sessions.end(s.id, "finished")).toEqual({ score: 100 });
     const [row] = await db.select().from(schema.labSession).where(eq(schema.labSession.id, s.id));
     expect(row).toMatchObject({ status: "finished", score: 100 });
+    // Marked as ending before grading started, so a player opened meanwhile shows the grading screen.
+    expect(row!.endingAt).toBeInstanceOf(Date);
     const runs = await db.select().from(schema.labCheckRun).where(eq(schema.labCheckRun.sessionId, s.id));
     expect(runs.map((r) => r.kind).sort()).toEqual(["check", "check", "final"]);
     expect(await provider.listSessions()).toEqual([]);

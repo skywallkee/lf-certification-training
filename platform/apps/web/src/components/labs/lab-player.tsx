@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { BookOpen, ListChecks, Loader2 } from "lucide-react";
+import type { PlayerState } from "@lfct/labs/player";
 import { taskStates, type CheckResult } from "@lfct/labs/status";
 import { checkLabAction, extendLabAction, finishLabAction, revealHintAction } from "@/app/actions/labs";
 import { SampleBadge } from "@/components/status-chip";
@@ -16,6 +17,8 @@ import { DocsPanel, type DocsLink } from "./docs-panel";
 import { ExercisePanel } from "./exercise-panel";
 import { SessionTimer } from "./session-timer";
 import { TerminalPane } from "./terminal-pane";
+import { usePlayerState } from "./use-player-state";
+import { TabTitle } from "./tab-title";
 
 export interface PlayerTask {
   id: string;
@@ -36,7 +39,19 @@ export interface PlayerProps {
   tasks: PlayerTask[];
   /** Task bodies rendered on the server. */
   bodies: Record<string, ReactNode>;
-  initial: { status: string; bootStep: number; statusMessage: string | null; expiresAt: string | null; extended: boolean; now: string; createdAt: string };
+  initial: {
+    status: string;
+    bootStep: number;
+    statusMessage: string | null;
+    expiresAt: string | null;
+    extended: boolean;
+    /** The controller is grading and deleting the lab. */
+    ending: boolean;
+    now: string;
+    createdAt: string;
+  };
+  /** Where the learner was (exercise, flags, panel), saved on the server for resuming after a refresh. */
+  playerState: PlayerState;
   lastCheck: { results: CheckResult[]; score: number; at: string } | null;
   extendMinutes: number;
   /** More than one cluster: each exercise names its kubectl context. */
@@ -62,13 +77,17 @@ export function LabPlayer(props: PlayerProps) {
   const [hints, setHints] = useState<Record<string, string[]>>(() => Object.fromEntries(props.tasks.map((t) => [t.id, t.hints])));
   const [notice, setNotice] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [tab, setTab] = useState<"exercises" | "docs">("exercises");
+  const [saved, save] = usePlayerState(props.sessionId, props.playerState);
+  const tab = saved.tab === "docs" ? "docs" : "exercises";
+  const setTab = (t: "exercises" | "docs") => save({ tab: t === "docs" ? "docs" : "tasks" });
+  const [finishing, setFinishing] = useState(false);
   const toolbar = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
   const ended = !["requested", "booting", "ready"].includes(poll.status);
-  const ready = poll.status === "ready";
+  const ending = !ended && (poll.ending || finishing);
+  const ready = poll.status === "ready" && !ending;
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/labs/sessions/${props.sessionId}`, { cache: "no-store" }).catch(() => null);
@@ -80,9 +99,9 @@ export function LabPlayer(props: PlayerProps) {
 
   useEffect(() => {
     if (ended) return;
-    const t = setInterval(refresh, ready ? 10_000 : 1500);
+    const t = setInterval(refresh, ready ? 10_000 : ending ? 2000 : 1500);
     return () => clearInterval(t);
-  }, [ended, ready, refresh]);
+  }, [ended, ready, ending, refresh]);
 
   useEffect(() => {
     if (poll.status === "finished" || poll.status === "expired" || poll.status === "killed") {
@@ -141,6 +160,7 @@ export function LabPlayer(props: PlayerProps) {
 
   return (
     <div className="flex h-dvh min-h-[600px] flex-col">
+      <TabTitle label={ending ? "Grading" : poll.status === "failed" ? "Did not start" : ended ? null : ready ? null : "Starting"} expiresAt={ready ? poll.expiresAt : null} skewMs={skewMs} />
       <div
         ref={toolbar}
         tabIndex={-1}
@@ -167,7 +187,7 @@ export function LabPlayer(props: PlayerProps) {
           </Button>
           <Dialog>
             <DialogTrigger asChild>
-              <Button type="button" size="sm" variant="outline" disabled={ended}>
+              <Button type="button" size="sm" variant="outline" disabled={ended || ending}>
                 Finish
               </Button>
             </DialogTrigger>
@@ -180,7 +200,7 @@ export function LabPlayer(props: PlayerProps) {
                     {en.labs.keepWorking}
                   </Button>
                 </DialogClose>
-                <form action={finishLabAction}>
+                <form action={finishLabAction} onSubmit={() => setFinishing(true)}>
                   <input type="hidden" name="session" value={props.sessionId} />
                   <FinishSubmit />
                 </form>
@@ -252,16 +272,26 @@ export function LabPlayer(props: PlayerProps) {
               multiCluster={props.multiCluster}
               canAct={ready}
               onShowHint={showHint}
+              current={saved.current}
+              flags={saved.flags}
+              onCurrentChange={(current) => save({ current })}
+              onFlagsChange={(flags) => save({ flags })}
             />
           </div>
           {/* Kept mounted while hidden so the page the learner was reading stays put. */}
           <div id="panel-docs" role="tabpanel" aria-labelledby="tab-docs" hidden={tab !== "docs"} className="flex min-h-0 flex-1 flex-col">
-            <DocsPanel links={props.docs} />
+            <DocsPanel links={props.docs} selected={saved.doc} onSelect={(doc) => save({ doc })} />
           </div>
         </div>
 
         <div className="flex min-h-[420px] flex-col">
-          {ready ? (
+          {ending ? (
+            <section aria-live="polite" className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border bg-card p-8 text-center">
+              <Loader2 aria-hidden="true" className="size-8 animate-spin text-primary motion-reduce:animate-none" />
+              <h2 className="text-lg font-semibold">Grading and deleting your lab…</h2>
+              <p className="text-sm text-muted-foreground">Your results open here when it is done.</p>
+            </section>
+          ) : ready ? (
             <TerminalPane sessionId={props.sessionId} onEnded={refresh} />
           ) : poll.status === "failed" ? (
             <div className="flex flex-1 flex-col gap-4">

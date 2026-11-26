@@ -42,13 +42,12 @@ export function SessionTimer({
     }
   }, [minutes, what]);
 
+  const label = left === null ? null : formatLeft(left);
+
   if (left === null) {
     return <span className="text-sm text-muted-foreground">{waitingLabel}</span>;
   }
   const state = left === 0 ? "expired" : left < 2 * 60_000 ? "critical" : left < 10 * 60_000 ? "warning" : "normal";
-  const hours = Math.floor(left / 3_600_000);
-  const mm = String(Math.floor((left % 3_600_000) / 60_000)).padStart(2, "0");
-  const ss = String(Math.floor((left % 60_000) / 1000)).padStart(2, "0");
   return (
     <>
       <span
@@ -61,11 +60,20 @@ export function SessionTimer({
       >
         <Clock aria-hidden="true" className="size-4" />
         <span className="sr-only">Time left: </span>
-        {state === "expired" ? "Time is up" : hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`}
+        {label}
       </span>
       <span className="sr-only" aria-live="polite">
         {announcement}
       </span>
     </>
   );
+}
+
+/** "1:05:09", "04:59", or "Time is up". */
+export function formatLeft(left: number): string {
+  if (left <= 0) return "Time is up";
+  const hours = Math.floor(left / 3_600_000);
+  const mm = String(Math.floor((left % 3_600_000) / 60_000)).padStart(2, "0");
+  const ss = String(Math.floor((left % 60_000) / 1000)).padStart(2, "0");
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }

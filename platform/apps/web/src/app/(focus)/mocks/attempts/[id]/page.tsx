@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
-import { START_WINDOW_MINUTES, docsViewerUrl, isActive, parseDocsHosts } from "@lfct/labs";
+import { START_WINDOW_MINUTES, docsViewerUrl, isActive, parseDocsHosts, parsePlayerState } from "@lfct/labs";
 import { MockPlayer } from "@/components/mocks/mock-player";
 import { Markdown } from "@/components/markdown";
 import { env } from "@/env";
@@ -61,10 +61,12 @@ export default async function MockAttemptPage({ params }: { params: Promise<{ id
         statusMessage: session.statusMessage,
         expiresAt: session.expiresAt?.toISOString() ?? null,
         startedAt: session.startedAt?.toISOString() ?? null,
+        ending: session.endingAt !== null,
         now: new Date().toISOString(),
         createdAt: session.createdAt.toISOString(),
       }}
       lastResults={last}
+      playerState={parsePlayerState(session.playerState, lab.tasks.map((t) => t.id))}
     />
   );
 }

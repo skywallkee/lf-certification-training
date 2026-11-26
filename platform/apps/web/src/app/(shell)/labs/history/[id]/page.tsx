@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LocalTime } from "@/components/local-time";
 import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { isActive } from "@lfct/labs";
-import { SessionStatus, dateTime, durationLabel } from "@/components/labs/session-status";
+import { SessionStatus, durationLabel } from "@/components/labs/session-status";
 import { Markdown } from "@/components/markdown";
 import { SampleBadge } from "@/components/status-chip";
 import { buttonVariants } from "@/components/ui/button";
@@ -37,7 +38,7 @@ export default async function LabResultPage({ params }: { params: Promise<{ id: 
           <SessionStatus status={session.status} />
         </div>
         <p className="text-sm text-muted-foreground">
-          Started {dateTime.format(session.createdAt)} UTC · time used {durationLabel(session.readyAt, session.endedAt)} · {hintUses.length} hint
+          Started <LocalTime value={session.createdAt} /> · time used {durationLabel(session.readyAt, session.endedAt)} · {hintUses.length} hint
           {hintUses.length === 1 ? "" : "s"} used
         </p>
         {session.statusMessage ? <p className="text-[15px]">{session.statusMessage}</p> : null}

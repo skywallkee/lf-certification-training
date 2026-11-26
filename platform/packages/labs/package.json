@@ -9,7 +9,9 @@
     "./protocol": "./src/protocol.ts",
     "./status": "./src/status.ts",
     "./docs": "./src/docs.ts",
-    "./mock": "./src/mock.ts"
+    "./mock": "./src/mock.ts",
+    "./player": "./src/player.ts",
+    "./trends": "./src/trends.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

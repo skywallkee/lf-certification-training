@@ -54,7 +54,7 @@ export class TerminalRelay {
       ws.close(CLOSE_CODES.unauthorized, "not your session");
       return;
     }
-    if (found.session.status !== "ready" || !found.session.resources) {
+    if (found.session.status !== "ready" || !found.session.resources || found.session.endingAt) {
       ws.close(CLOSE_CODES.notReady, "lab not running");
       return;
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, CircleDashed, Copy, Flag, Lightbulb, Loader2, XCircle } from "lucide-react";
 import type { CheckResult } from "@lfct/labs/status";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,8 @@ type TaskState = "passed" | "failed" | "unchecked" | "checking";
 
 /**
  * One exercise at a time, as in the exams: a numbered navigator with each exercise's state and flag, the
- * current exercise with its cluster context, checks and hints, and Previous/Next. Flags and the current
- * exercise are remembered in this browser for the session.
+ * current exercise with its cluster context, checks and hints, and Previous/Next. The player owns the
+ * current exercise and the flags and saves them on the server, so a refresh resumes at the same place.
  */
 export function ExercisePanel(props: {
   sessionId: string;
@@ -24,8 +24,11 @@ export function ExercisePanel(props: {
   multiCluster: boolean;
   canAct: boolean;
   onShowHint: (taskId: string) => void;
-  /** Called whenever the flags change (the mock player lists flagged tasks before Submit). */
-  onFlagsChange?: (taskIds: string[]) => void;
+  /** The exercise on screen and the flagged ones: the player owns them and saves them for resuming. */
+  current: number;
+  flags: string[];
+  onCurrentChange: (index: number) => void;
+  onFlagsChange: (taskIds: string[]) => void;
   /** Extra controls under the current exercise, such as practice mode's Check button. */
   renderActions?: (task: PlayerTask) => ReactNode;
   /** Exam mode: no pass/fail states anywhere (there is no feedback until the end). */
@@ -33,33 +36,11 @@ export function ExercisePanel(props: {
   /** Word for one task in the navigator and headings: "Exercise" (labs) or "Task" (mock exams). */
   noun?: string;
 }) {
-  const { tasks, onFlagsChange } = props;
+  const { tasks, current: rawCurrent, flags } = props;
   const noun = props.noun ?? "Exercise";
-  const storageKey = `lfct-lab:${props.sessionId}`;
-  const [current, setCurrent] = useState(0);
-  const [flags, setFlags] = useState<string[]>([]);
+  const current = Math.min(Math.max(0, rawCurrent), tasks.length - 1);
+  const setCurrent = (next: number | ((c: number) => number)) => props.onCurrentChange(typeof next === "function" ? next(current) : next);
   const [copied, setCopied] = useState(false);
-
-  // Restore after mount (localStorage is per browser and may be unavailable).
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) ?? "{}") as { current?: number; flags?: string[] };
-      if (typeof saved.current === "number" && saved.current >= 0 && saved.current < tasks.length) setCurrent(saved.current);
-      if (Array.isArray(saved.flags)) setFlags(saved.flags.filter((f) => tasks.some((t) => t.id === f)));
-    } catch {
-      // Nothing saved, or storage is blocked: start at the first exercise with no flags.
-    }
-  }, [storageKey, tasks]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify({ current, flags }));
-    } catch {
-      // Storage is blocked: flags last until the page is reloaded.
-    }
-  }, [storageKey, current, flags]);
-
-  useEffect(() => onFlagsChange?.(flags), [flags, onFlagsChange]);
 
   const task = tasks[current]!;
   const flagged = flags.includes(task.id);
@@ -68,7 +49,7 @@ export function ExercisePanel(props: {
   const contextCommand = `kubectl config use-context ${task.cluster}`;
   const unsolved = tasks.filter((t) => props.states[t.id] !== "passed").length;
 
-  const toggleFlag = () => setFlags((f) => (f.includes(task.id) ? f.filter((x) => x !== task.id) : [...f, task.id]));
+  const toggleFlag = () => props.onFlagsChange(flags.includes(task.id) ? flags.filter((x) => x !== task.id) : [...flags, task.id]);
   const copyContext = async () => {
     await navigator.clipboard.writeText(contextCommand).catch(() => undefined);
     setCopied(true);

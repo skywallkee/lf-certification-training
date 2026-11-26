@@ -193,6 +193,13 @@ export interface LabCheckResultJson {
   detail?: string;
 }
 
+export interface PlayerStateJson {
+  current: number;
+  flags: string[];
+  tab: "tasks" | "docs";
+  doc: number;
+}
+
 export const labSession = pgTable(
   "lab_session",
   {
@@ -231,6 +238,13 @@ export const labSession = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     /** Mock exams: how often the learner left the exam window (page hidden). Shown in the results only. */
     windowLeaves: integer("window_leaves").notNull().default(0),
+    /** Where the learner was in the player (exercise, flags, panel), so a refresh or another browser resumes there. */
+    playerState: jsonb("player_state").$type<PlayerStateJson>(),
+    /**
+     * Set by the controller when it starts ending the session (final grading, then deletion), so a player opened
+     * meanwhile shows the grading screen instead of a terminal that is about to close.
+     */
+    endingAt: timestamp("ending_at", { withTimezone: true }),
   },
   (t) => [
     index("lab_session_user_idx").on(t.userId, t.createdAt),

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
-import { EXTEND_MINUTES, docsViewerUrl, isActive, parseDocsHosts } from "@lfct/labs";
+import { EXTEND_MINUTES, docsViewerUrl, isActive, parseDocsHosts, parsePlayerState } from "@lfct/labs";
 import { LabPlayer } from "@/components/labs/lab-player";
 import { Markdown } from "@/components/markdown";
 import { env } from "@/env";
@@ -59,9 +59,11 @@ export default async function LabSessionPage({ params }: { params: Promise<{ id:
         statusMessage: session.statusMessage,
         expiresAt: session.expiresAt?.toISOString() ?? null,
         extended: session.extended,
+        ending: session.endingAt !== null,
         now: new Date().toISOString(),
         createdAt: session.createdAt.toISOString(),
       }}
+      playerState={parsePlayerState(session.playerState, lab.tasks.map((t) => t.id))}
       lastCheck={
         last ? { results: last.results.map(({ detail: _d, ...r }) => r), score: last.score, at: last.createdAt.toISOString() } : null
       }

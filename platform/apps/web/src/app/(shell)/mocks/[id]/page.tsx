@@ -7,7 +7,7 @@ import { SampleBadge } from "@/components/status-chip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
-import { getCapacity, getUsage } from "@/server/labs";
+import { bootEstimate, getBootTimes, getCapacity, getUsage } from "@/server/labs";
 import { domainName, getMock, getMockAttemptsUsed, mockAllowance, mockBlockFor, usedFor } from "@/server/mocks";
 import { requireUser } from "@/server/session";
 
@@ -27,7 +27,7 @@ export default async function MockPage({
   const user = await requireUser(`/mocks/${id}`);
   const mock = await getMock(id);
   if (!mock) notFound();
-  const [used, usage, capacity, catalog] = await Promise.all([getMockAttemptsUsed(user.id), getUsage(user.id), getCapacity(), getCatalog()]);
+  const [used, usage, capacity, catalog, bootTimes] = await Promise.all([getMockAttemptsUsed(user.id), getUsage(user.id), getCapacity(), getCatalog(), getBootTimes()]);
   const { blocked, mode: modeParam } = await searchParams;
   const initialMode: MockMode = modeParam === "practice" ? "practice" : "exam";
   const modes = MOCK_MODES.map((mode) => ({
@@ -105,7 +105,8 @@ export default async function MockPage({
           <Card aria-labelledby="start">
             <CardTitle id="start">Take it</CardTitle>
             <p className="mb-3 mt-1 text-sm text-muted-foreground">
-              You get {mock.clusters.length} fresh single-node clusters, one kubectl context each, a terminal, the official docs, and {mock.minutes} minutes.
+              You get {mock.clusters.length} fresh single-node clusters, one kubectl context each, a terminal, the official docs, and {mock.minutes} minutes.{" "}
+              {bootEstimate(mock.tier, bootTimes.get(mock.id))}; the clock starts only when you press Start.
             </p>
             <StartMock mockId={mock.id} modes={modes} initialMode={initialMode} />
           </Card>

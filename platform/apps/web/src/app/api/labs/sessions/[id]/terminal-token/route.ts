@@ -16,7 +16,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "sign in" }, { status: 401 });
   const s = await getSession(id, user.id);
   if (!s) return NextResponse.json({ error: "not found" }, { status: 404 });
-  if (s.status !== "ready") return NextResponse.json({ error: "not running", status: s.status }, { status: 409 });
+  if (s.status !== "ready" || s.endingAt) return NextResponse.json({ error: "not running", status: s.status }, { status: 409 });
   if (s.mode !== "lab" && !s.startedAt) return NextResponse.json({ error: "not started", status: s.status }, { status: 409 });
   const token = signTerminalToken({ sid: s.id, uid: user.id }, env.labs.tokenSecret);
   const url = `${env.labs.terminalUrl.replace(/\/$/, "")}/terminal/${s.id}?token=${encodeURIComponent(token)}`;

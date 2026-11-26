@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import { signOutAction } from "@/app/actions/auth";
 import { todayIn } from "@/lib/dates";
 import { en } from "@/messages/en";
+import { getActiveSession } from "@/server/labs";
 import { getReviewDue } from "@/server/progress";
 import { getProfile, getUser } from "@/server/session";
+import { ActiveSessionBanner } from "./labs/active-session-banner";
 import { BottomNav, SidebarNav, type NavItem } from "./nav-links";
 import { ThemeToggle } from "./theme-toggle";
 import { buttonVariants } from "./ui/button";
@@ -14,7 +16,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
   const user = await getUser();
   const profile = user ? await getProfile(user.id) : null;
   const today = todayIn(profile?.timeZone ?? "UTC");
-  const due = user ? (await getReviewDue(user.id, today)).count : 0;
+  const [due, active] = user ? await Promise.all([getReviewDue(user.id, today).then((r) => r.count), getActiveSession(user.id)]) : [0, null];
 
   const items: NavItem[] = user
     ? [
@@ -89,6 +91,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
             )}
           </div>
         </header>
+        {active ? <ActiveSessionBanner session={active} /> : null}
         <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1200px] flex-1 px-4 pb-24 pt-6 sm:px-8 lg:pb-12 lg:pt-8">
           {children}
         </main>

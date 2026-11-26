@@ -44,6 +44,21 @@ test("a learner runs a lab: boot, terminal, hint, check, extend, finish and resu
   await expect(
     page.getByRole("button", { name: /^Exercise 2: .*flagged$/ }),
   ).toBeVisible();
+  // A refresh resumes where the learner was: same exercise, same flag, terminal back.
+  await page.waitForTimeout(800);
+  await page.reload();
+  await expect(page.getByText("Exercise 2 of 3")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Flag for later" })).toHaveAttribute("aria-pressed", "true");
+  await page.locator("[data-region=terminal][data-state=connected]").waitFor({ timeout: 30_000 });
+  await expect(page.getByText("0 of 4 checks passed")).toBeVisible();
+  await expect(page).toHaveTitle(/left · Lab/);
+
+  // The banner on every other page leads back to the running lab.
+  await page.goto("/today");
+  await expect(page.getByText("Your lab is running:")).toBeVisible();
+  await page.getByRole("link", { name: "Back to the lab" }).click();
+  await expect(page.getByText("Exercise 2 of 3")).toBeVisible();
+
   await page.getByRole("button", { name: "Previous" }).click();
   await expect(page.getByText("Exercise 1 of 3")).toBeVisible();
 
