@@ -16,11 +16,32 @@ test("a new learner signs up, verifies their email, onboards and lands on Today"
   expect(link).toBeTruthy();
   await page.goto(link!);
 
+  // Guided setup: goal, certs held, study time, then a summary with the first focus cert.
   await expect(page).toHaveURL(/\/onboarding/);
-  await page.getByLabel("All 17: Golden Kubestronaut").check();
-  await page.getByRole("button", { name: "Show my first step" }).click();
-  await expect(page).toHaveURL("/today");
+  await expect(page.getByRole("heading", { name: "What are you aiming for?" })).toBeVisible();
+  await expectAccessible(page, "onboarding step 1");
+  await page.getByLabel(/The Kubestronaut 5/).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Which certs do you already hold?" })).toBeFocused();
+  await page.getByLabel(/^KCNA/).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Enter the date you passed KCNA, roughly is fine.")).toBeVisible();
+  await page.getByLabel("Date passed").fill(new Date().toISOString().slice(0, 10));
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Hours a week").selectOption("6");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Your plan" })).toBeVisible();
+  await expect(page.getByText("KCSA: Kubernetes and Cloud Native Security Associate")).toBeVisible();
+  await expectAccessible(page, "onboarding summary");
+  await page.getByRole("button", { name: "Start studying" }).click();
+  await expect(page).toHaveURL("/today?welcome=1");
   await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "You are set up: first up is KCSA" })).toBeVisible();
+  const [prof] = await query<{ focus_cert: string; hours_per_week: number }>(
+    "select p.focus_cert, p.hours_per_week from profile p join \"user\" u on u.id = p.user_id where u.email = $1",
+    [email],
+  );
+  expect(prof).toEqual({ focus_cert: "KCSA", hours_per_week: 6 });
 });
 
 test("signing in before verifying the email is refused", async ({ page }) => {

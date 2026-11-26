@@ -31,7 +31,8 @@ session, all in Docker. You need Docker with Compose v2 and about 4 GB of free m
 docker compose up --build
 ```
 
-Then open http://localhost:3000 and sign in as one of the sample learners below. The first start builds
+Then open http://localhost:3000 and sign in as one of the sample learners below, or create your own account:
+verification and password reset emails land in the local Mailpit inbox at http://localhost:8025. The first start builds
 three images and pulls k3s, so give it a few minutes; later starts take seconds. A lab boots in about
 10 to 30 seconds. Data is kept in the `pgdata` volume across restarts (`docker compose down -v` wipes it).
 Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
@@ -106,8 +107,10 @@ Sample learners all use the password `sample-password-123`:
 | `golden@example.com` | All 17 certs held, KCSA expiring |
 | `admin@example.com` | Admin: ingest runs, flag queue, coverage, users |
 
-Sign-up works without a mail provider: in development the verify page shows the link that would have been
-emailed. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
+Sign-up and password reset work without a mail provider. The Docker stack sends every email to Mailpit
+(http://localhost:8025); with `pnpm dev`, emails go to the `outbox_email` table and the log, and
+`SHOW_DEV_EMAILS=true` puts the emailed link on the check-your-email pages. Set `SMTP_URL` to send through any
+SMTP server. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
 database:
 
 ```sh

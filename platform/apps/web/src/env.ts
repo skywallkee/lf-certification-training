@@ -25,6 +25,19 @@ export const env = {
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
+  /** Outgoing email. Without SMTP_URL, messages only go to the outbox table and the server log. */
+  mail: {
+    get smtpUrl() {
+      return process.env.SMTP_URL || undefined;
+    },
+    get from() {
+      return process.env.MAIL_FROM || "LF Cert Trainer <no-reply@lfct.localhost>";
+    },
+    /** Local only: the web inbox of the mail catcher (Mailpit), linked from the check-your-email pages. */
+    get inboxUrl() {
+      return process.env.MAIL_INBOX_URL || undefined;
+    },
+  },
   /**
    * Development only: show the last emails (verification links) on the verify page, since Phase 1 has no
    * mail provider. Never set in production; APP_ENV=local allows it in the local Docker stack, which runs a

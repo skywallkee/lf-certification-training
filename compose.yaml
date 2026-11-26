@@ -2,8 +2,9 @@
 #
 #   docker compose up --build        then open http://localhost:3000 (sample logins in the README)
 #
-# Services: Postgres, a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
-# lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
+# Services: Postgres, a one-shot setup job (migrations, content ingest, sample learners), the web app, the
+# lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket),
+# and Mailpit, which catches every email the app sends (inbox at http://localhost:8025).
 # Settings come from .env when present (see .env.example); the defaults below are for local use only.
 name: lfct
 
@@ -29,6 +30,23 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # Local mail catcher: sign-up verification and password reset emails land here, never in a real inbox.
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      # Web inbox. SMTP (1025) stays on the compose network.
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
   # Builds the lab workstation image (ttyd, kubectl, helm, Chainsaw) that the controller starts per lab.
   lab-tools:
@@ -102,9 +120,13 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.com}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      # A production build running on a laptop: show verification links instead of sending email.
+      # A production build running on a laptop. Emails go to Mailpit; the check-your-email pages link its inbox.
       APP_ENV: local
-      SHOW_DEV_EMAILS: "true"
+      SMTP_URL: smtp://mailpit:1025
+      MAIL_FROM: ${MAIL_FROM:-LF Cert Trainer <no-reply@lfct.localhost>}
+      MAIL_INBOX_URL: http://localhost:${MAILPIT_PORT:-8025}
+      # "true" also shows the emailed link right on those pages (a shortcut that skips the inbox).
+      SHOW_DEV_EMAILS: ${SHOW_DEV_EMAILS:-false}
       LAB_CONTROLLER_URL: http://lab-controller:3001
       LAB_TERMINAL_URL: ws://localhost:${LAB_CONTROLLER_PORT:-3001}
       # The docs pane: the controller serves these sites at <site>.localhost (resolves to this machine).
@@ -121,6 +143,8 @@ services:
       setup:
         condition: service_completed_successfully
       lab-controller:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     restart: unless-stopped
 
