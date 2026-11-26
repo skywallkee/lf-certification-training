@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { ChangePasswordForm, DeleteAccount, ProfileForm } from "@/components/forms/account-forms";
+import { RemindersForm } from "@/components/forms/plan-forms";
 import { PageHeader } from "@/components/page-header";
 import { ThemeChoice } from "@/components/theme-toggle";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getDb } from "@/db";
-import { account } from "@/db/schema";
+import { account, user as userTable } from "@/db/schema";
 import { getProfile, requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Account" };
@@ -15,6 +16,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const { password } = await searchParams;
   const user = await requireUser("/account");
   const profile = await getProfile(user.id);
+  const [verified] = await getDb().select({ v: userTable.emailVerified }).from(userTable).where(eq(userTable.id, user.id));
   const [credential] = await getDb()
     .select({ id: account.id })
     .from(account)
@@ -43,6 +45,21 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               You sign in with GitHub. To sign in with your email too, <Link href={`/forgot-password?email=${encodeURIComponent(user.email)}`}>set a password</Link>.
             </p>
           )}
+        </Card>
+        <Card aria-labelledby="reminders" id="reminders-card">
+          <CardTitle id="reminders">Study reminders</CardTitle>
+          <p className="mb-4 mt-2 text-[15px] text-muted-foreground">
+            Emails that keep your <Link href="/plan">study plan</Link> on track. All off until you turn them on.
+          </p>
+          <RemindersForm
+            weekly={profile?.remindWeekly ?? false}
+            nudge={profile?.remindNudge ?? false}
+            exam={profile?.remindExam ?? false}
+            day={profile?.remindDay ?? 1}
+            hour={profile?.remindHour ?? 8}
+            timeZone={tz}
+            verified={verified?.v ?? false}
+          />
         </Card>
         <Card aria-labelledby="goal">
           <CardTitle id="goal">Goal and focus cert</CardTitle>
