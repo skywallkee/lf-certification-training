@@ -89,7 +89,15 @@ export const lessonProgress = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.lessonId] })],
 );
 
-export const quizKind = pgEnum("quiz_kind", ["practice", "review"]);
+/** "mock": a multiple-choice mock exam attempt (timed, answers kept in `draft` until the learner submits). */
+export const quizKind = pgEnum("quiz_kind", ["practice", "review", "mock"]);
+
+/** Answers and flags of a mock exam attempt before it is submitted. */
+export interface QuizDraftJson {
+  answers: Record<string, string[]>;
+  flags: string[];
+  current: number;
+}
 export const feedbackMode = pgEnum("feedback_mode", ["instant", "end"]);
 
 export const quiz = pgTable(
@@ -105,8 +113,18 @@ export const quiz = pgTable(
     questionIds: text("question_ids").array().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** Mock exams: the quiz_mock id. */
+    mockId: text("mock_id"),
+    /** Mock exams: when time is up; answers saved by then are graded. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** Mock exams: answers and flags while the attempt runs. */
+    draft: jsonb("draft").$type<QuizDraftJson>(),
+    /** Mock exams: percent of questions right, set when graded. */
+    score: integer("score"),
+    /** Mock exams: the pass mark at the time of the attempt. */
+    passPercent: integer("pass_percent"),
   },
-  (t) => [index("quiz_user_idx").on(t.userId, t.createdAt)],
+  (t) => [index("quiz_user_idx").on(t.userId, t.createdAt), index("quiz_mock_idx").on(t.userId, t.mockId)],
 );
 
 /** Every answer a learner gives: the evidence behind mastery, readiness and the review schedule. */
@@ -331,7 +349,7 @@ export const contentRevision = pgTable(
   "content_revision",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-    itemType: text("item_type").$type<"lesson" | "question" | "lab" | "mock">().notNull(),
+    itemType: text("item_type").$type<"lesson" | "question" | "lab" | "mock" | "quiz-mock">().notNull(),
     itemId: text("item_id").notNull(),
     /** created, updated, published, unpublished, deleted, restored, reverted (back to the file version). */
     action: text("action").notNull(),

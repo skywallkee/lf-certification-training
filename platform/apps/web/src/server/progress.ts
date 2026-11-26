@@ -220,8 +220,9 @@ export async function getRecentActivity(userId: string, catalog: Catalog, limit 
       .map((q) => ({
         kind: "quiz" as const,
         at: q.finishedAt ?? q.createdAt,
-        label: q.kind === "review" ? (q.cert ? `${q.cert} review session` : "Review session") : `${q.cert ?? ""} practice quiz`.trim(),
-        href: `/quiz/${q.id}`,
+        label:
+          q.kind === "review" ? (q.cert ? `${q.cert} review session` : "Review session") : q.kind === "mock" ? `${q.cert ?? ""} mock exam`.trim() : `${q.cert ?? ""} practice quiz`.trim(),
+        href: q.kind === "mock" ? `/mocks/quiz-results/${q.id}` : `/quiz/${q.id}`,
         detail: `${q.right} of ${q.total} right`,
       })),
     ...lessons.flatMap((l) => {

@@ -1,15 +1,15 @@
 "use server";
 
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import * as z from "zod";
-import { itemFromSource, itemToSource, validateItem, type ItemType, type LabEdit, type LessonEdit, type QuestionEdit } from "@lfct/curriculum";
-import { lab as labTable, lesson as lessonTable, question as questionTable } from "@lfct/curriculum/db";
+import { itemFromSource, itemToSource, validateItem, type ItemType, type LabEdit, type LessonEdit, type QuestionEdit, type QuizMockEdit } from "@lfct/curriculum";
+import { lab as labTable, lesson as lessonTable, question as questionTable, quizMock as quizMockTable } from "@lfct/curriculum/db";
 import { LessonBody } from "@/components/lesson-body";
 import { getDb } from "@/db";
-import { answer, contentRevision, labSession, lessonProgress } from "@/db/schema";
+import { answer, contentRevision, labSession, lessonProgress, quiz } from "@/db/schema";
 import { mdxProblems } from "@/lib/mdx-safety";
 import { invalidateCatalog } from "@/server/catalog";
 import {
@@ -21,6 +21,7 @@ import {
   labValues,
   lessonValues,
   questionValues,
+  quizMockValues,
   type ItemEdit,
 } from "@/server/content";
 import { requireAdmin } from "@/server/session";
@@ -65,6 +66,10 @@ async function writeRow(type: ItemType, edit: ItemEdit, opts: { create: boolean;
     const values = { ...questionValues(edit as QuestionEdit), ...common };
     if (opts.create) await db.insert(questionTable).values({ id: edit.id, ...values, published: false, file: opts.file ?? "app" });
     else await db.update(questionTable).set(values).where(eq(questionTable.id, edit.id));
+  } else if (type === "quiz-mock") {
+    const values = { ...quizMockValues(edit as QuizMockEdit), ...common };
+    if (opts.create) await db.insert(quizMockTable).values({ id: edit.id, ...values, published: false, file: opts.file ?? "app" });
+    else await db.update(quizMockTable).set(values).where(eq(quizMockTable.id, edit.id));
   } else {
     const values = { ...labValues(edit as LabEdit, type), ...common };
     if (opts.create) await db.insert(labTable).values({ id: edit.id, ...values, published: false, file: opts.file ?? "app" });
@@ -78,6 +83,17 @@ async function check(type: ItemType, input: unknown): Promise<{ ok: true; value:
   if (type === "lesson") {
     const problems = mdxProblems((result.value as LessonEdit).body);
     if (problems.length) return { ok: false, problems };
+  }
+  if (type === "quiz-mock") {
+    const m = result.value as QuizMockEdit;
+    if (m.questions) {
+      const rows = await getDb().select({ id: questionTable.id, certCode: questionTable.certCode }).from(questionTable).where(inArray(questionTable.id, m.questions));
+      const certOf = new Map(rows.map((r) => [r.id, r.certCode]));
+      const problems = m.questions.flatMap((id, i) =>
+        !certOf.has(id) ? [`questions.${i}: unknown question "${id}"`] : certOf.get(id) !== m.cert ? [`questions.${i}: "${id}" is a ${certOf.get(id)} question, not ${m.cert}`] : [],
+      );
+      if (problems.length) return { ok: false, problems };
+    }
   }
   return result;
 }
@@ -110,7 +126,7 @@ export async function saveItemAction(_prev: SaveState, form: FormData): Promise<
   }
   if (!existing && edit.id === "new") return { problems: [`id: "new" is reserved`] };
   if (!existing && (await idTaken(type, edit.id))) {
-    return { problems: [`id: "${edit.id}" is already used by another ${type === "lab" || type === "mock" ? "lab or mock exam" : type}`] };
+    return { problems: [`id: "${edit.id}" is already used by another ${type === "lab" || type === "mock" || type === "quiz-mock" ? "lab or mock exam" : type}`] };
   }
 
   if (existing?.meta.origin === "file") {
@@ -157,7 +173,7 @@ function hashString(s: string): string {
 const ItemRef = z.object({ type: TypeSchema, id: IdSchema });
 
 function table(type: ItemType) {
-  return type === "lesson" ? lessonTable : type === "question" ? questionTable : labTable;
+  return type === "lesson" ? lessonTable : type === "question" ? questionTable : type === "quiz-mock" ? quizMockTable : labTable;
 }
 
 export async function setPublishedAction(form: FormData): Promise<void> {
@@ -179,6 +195,7 @@ async function usage(type: ItemType, id: string): Promise<number> {
   const db = getDb();
   if (type === "lesson") return (await db.select({ n: count() }).from(lessonProgress).where(eq(lessonProgress.lessonId, id)))[0]?.n ?? 0;
   if (type === "question") return (await db.select({ n: count() }).from(answer).where(eq(answer.questionId, id)))[0]?.n ?? 0;
+  if (type === "quiz-mock") return (await db.select({ n: count() }).from(quiz).where(eq(quiz.mockId, id)))[0]?.n ?? 0;
   return (await db.select({ n: count() }).from(labSession).where(eq(labSession.labId, id)))[0]?.n ?? 0;
 }
 

@@ -1,0 +1,509 @@
+# Sample practical mock exam (mock content for building and testing the app, not study material).
+# CKS layout: two hours, two clusters, tasks weighted by the CKS domains (cluster setup 15, cluster hardening 15,
+# system hardening 10, minimize microservice vulnerabilities 20, supply chain security 20, monitoring, logging and
+# runtime security 20). Pass mark 67%, as in the real exam.
+id: sample-cks-mock-full
+mock: true
+title: Sample CKS mock exam (full, 2 hours)
+summary: 'Twelve mock tasks across two clusters in two hours, weighted like the CKS domains: network policies, TLS,
+  RBAC, seccomp, Pod Security, sandboxing, workload hardening and runtime threats.'
+tier: 1
+minutes: 120
+passPercent: 67
+clusters:
+  - c1
+  - c2
+competencies:
+  - cks/cluster-setup/network-security-policies-restrict-cluster
+  - cks/cluster-hardening/role-based-access-controls-minimize
+  - cks/system-hardening/appropriately-kernel-hardening-tools-such
+  - cks/minimize-microservice-vulnerabilities/appropriate-pod-security-standards
+  - cks/supply-chain-security/perform-static-analysis-user-workloads
+  - cks/monitoring-logging-runtime-security/ensure-immutability-containers-at-runtime
+docs:
+  - title: "Kubernetes docs: kubectl Quick Reference"
+    url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+  - title: "Kubernetes docs: Security"
+    url: https://kubernetes.io/docs/concepts/security/
+images:
+  - nginx:1.28-alpine
+  - nginx:1.29-alpine
+setup: |
+  # c1: network policies, TLS, RBAC, service accounts and runtime threats.
+  for ns in payments edge ci apps ops; do kubectl --context c1 create namespace $ns; done
+  kubectl --context c1 -n payments create deployment api --image=nginx:1.29-alpine
+  kubectl --context c1 -n edge create deployment portal --image=nginx:1.29-alpine
+  kubectl --context c1 -n edge expose deployment portal --port=80
+  kubectl --context c1 apply -f - <<'YAML'
+  apiVersion: v1
+  kind: Secret
+  metadata: { name: portal-tls, namespace: edge }
+  type: kubernetes.io/tls
+  stringData: { tls.crt: "sample certificate", tls.key: "sample key" }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata: { name: deployer, namespace: ci }
+  rules: [{ apiGroups: ["*"], resources: ["*"], verbs: ["*"] }]
+  YAML
+  kubectl --context c1 -n ci create serviceaccount deployer
+  kubectl --context c1 -n ci create rolebinding deployer --role=deployer --serviceaccount=ci:deployer
+  kubectl --context c1 -n ops create deployment frontend --image=nginx:1.29-alpine
+  kubectl --context c1 -n ops create deployment metrics --image=nginx:1.29-alpine
+  kubectl --context c1 -n ops create deployment cache --image=nginx:1.28-alpine
+  kubectl --context c1 apply -f - <<'YAML'
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata: { name: miner, namespace: ops }
+  spec:
+    replicas: 1
+    selector: { matchLabels: { app: miner } }
+    template:
+      metadata: { labels: { app: miner } }
+      spec:
+        containers:
+          - name: worker
+            image: nginx:1.29-alpine
+            command: ["sh", "-c", "while true; do cat /etc/shadow > /dev/null; sleep 10; done"]
+            securityContext: { privileged: true }
+  YAML
+  # c2: seccomp, Pod Security, secrets, sandboxing and supply chain.
+  for ns in prod restricted-apps supply; do kubectl --context c2 create namespace $ns; done
+  kubectl --context c2 -n prod create deployment hardened --image=nginx:1.29-alpine
+  kubectl --context c2 -n prod create secret generic api-token --from-literal=token=sample-token
+  kubectl --context c2 -n supply create deployment legacy --image=nginx:1.29
+  kubectl --context c2 apply -f - <<'YAML'
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata: { name: payments-api, namespace: supply }
+  spec:
+    replicas: 1
+    selector: { matchLabels: { app: payments-api } }
+    template:
+      metadata: { labels: { app: payments-api } }
+      spec:
+        containers:
+          - name: api
+            image: nginx:1.29-alpine
+            securityContext: { privileged: true }
+  YAML
+solution: |
+  kubectl config use-context c1
+  kubectl apply -f - <<'YAML'
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata: { name: deny-all, namespace: payments }
+  spec:
+    podSelector: {}
+    policyTypes: [Ingress, Egress]
+  ---
+  apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata: { name: portal, namespace: edge }
+  spec:
+    tls: [{ hosts: [portal.example.com], secretName: portal-tls }]
+    rules:
+      - host: portal.example.com
+        http:
+          paths:
+            - path: /
+              pathType: Prefix
+              backend: { service: { name: portal, port: { number: 80 } } }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata: { name: deployer, namespace: ci }
+  rules: [{ apiGroups: ["apps"], resources: ["deployments"], verbs: ["get", "list", "update"] }]
+  YAML
+  kubectl -n apps patch serviceaccount default -p '{"automountServiceAccountToken":false}'
+  kubectl -n ops patch deployment frontend --type=json -p '[
+    {"op":"add","path":"/spec/template/spec/volumes","value":[{"name":"cache","emptyDir":{}},{"name":"run","emptyDir":{}}]},
+    {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts","value":[{"name":"cache","mountPath":"/var/cache/nginx"},{"name":"run","mountPath":"/run"}]},
+    {"op":"add","path":"/spec/template/spec/containers/0/securityContext","value":{"readOnlyRootFilesystem":true}}]'
+  kubectl -n ops scale deployment miner --replicas=0
+  mkdir -p /opt/answers && echo miner > /opt/answers/attacker.txt
+  kubectl -n ops rollout status deployment/frontend --timeout=120s
+  kubectl config use-context c2
+  kubectl -n prod patch deployment hardened --type=json -p '[{"op":"add","path":"/spec/template/spec/securityContext","value":{"seccompProfile":{"type":"RuntimeDefault"}}}]'
+  kubectl label namespace restricted-apps pod-security.kubernetes.io/enforce=restricted
+  kubectl -n prod patch secret api-token -p '{"immutable":true}'
+  kubectl apply -f - <<'YAML'
+  apiVersion: node.k8s.io/v1
+  kind: RuntimeClass
+  metadata: { name: gvisor }
+  handler: runsc
+  ---
+  apiVersion: v1
+  kind: Pod
+  metadata: { name: sandboxed, namespace: prod }
+  spec:
+    runtimeClassName: gvisor
+    containers: [{ name: app, image: nginx:1.29-alpine }]
+  YAML
+  kubectl -n supply patch deployment payments-api --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/securityContext","value":{"privileged":false,"runAsNonRoot":true,"readOnlyRootFilesystem":true}}]'
+  kubectl -n supply set image deployment/legacy nginx=nginx:1.29-alpine
+tasks:
+  - id: deny-all
+    title: Isolate the payments namespace
+    cluster: c1
+    weight: 8
+    competency: cks/cluster-setup/network-security-policies-restrict-cluster
+    doc:
+      title: "Network Policies: default deny all"
+      url: https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-deny-all-ingress-and-all-egress-traffic
+    body: |
+      Create a NetworkPolicy `deny-all` in `payments` that selects every pod and denies all ingress **and**
+      all egress traffic.
+    checks:
+      - id: deny-all-spec
+        description: deny-all selects every pod and allows no ingress or egress
+        failMessage: NetworkPolicy deny-all in payments is missing, does not select every pod, does not cover both directions, or still allows traffic.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: deny-all
+            namespace: payments
+          spec:
+            podSelector:
+              (matchLabels == null && matchExpressions == null): true
+            (contains(policyTypes, 'Ingress') && contains(policyTypes, 'Egress')): true
+            (ingress == null || length(ingress) == `0`): true
+            (egress == null || length(egress) == `0`): true
+  - id: ingress-tls
+    title: Serve the portal over TLS
+    cluster: c1
+    weight: 7
+    competency: cks/cluster-setup/properly-set-up-ingress-objects
+    doc:
+      title: "Ingress: TLS"
+      url: https://kubernetes.io/docs/concepts/services-networking/ingress/#tls
+    body: |
+      In `edge`, create an Ingress `portal` for the host `portal.example.com` that sends path `/` (type
+      `Prefix`) to the Service `portal` on port `80`, and terminates TLS with the existing Secret
+      `portal-tls`.
+    checks:
+      - id: ingress-tls-secret
+        description: Ingress portal uses the Secret portal-tls for portal.example.com
+        failMessage: Ingress portal in edge is missing, or does not use portal-tls for portal.example.com.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: portal
+            namespace: edge
+          spec:
+            tls:
+              - secretName: portal-tls
+                hosts:
+                  - portal.example.com
+      - id: ingress-tls-rule
+        description: Ingress portal routes portal.example.com/ to portal:80
+        failMessage: The rule of Ingress portal has another host, path or backend.
+        assert:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: portal
+            namespace: edge
+          spec:
+            rules:
+              - host: portal.example.com
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: portal
+                          port:
+                            number: 80
+  - id: least-privilege
+    title: Cut the deployer's permissions
+    cluster: c1
+    weight: 8
+    competency: cks/cluster-hardening/role-based-access-controls-minimize
+    doc:
+      title: Using RBAC Authorization
+      url: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+    body: |
+      The service account `deployer` in `ci` is bound to the Role `deployer`, which allows everything in the
+      namespace. Change the Role so it allows only `get`, `list` and `update` on `deployments`.
+    checks:
+      - id: rbac-can-update
+        description: deployer can update deployments in ci
+        failMessage: The service account ci:deployer can no longer update deployments.
+        script: kubectl auth can-i update deployments.apps -n ci --as=system:serviceaccount:ci:deployer
+      - id: rbac-no-delete
+        description: deployer cannot delete deployments in ci
+        failMessage: The service account ci:deployer can still delete deployments.
+        script: '! kubectl auth can-i delete deployments.apps -n ci --as=system:serviceaccount:ci:deployer'
+      - id: rbac-no-secrets
+        description: deployer cannot read secrets in ci
+        failMessage: The service account ci:deployer can still read secrets.
+        script: '! kubectl auth can-i get secrets -n ci --as=system:serviceaccount:ci:deployer'
+  - id: automount
+    title: Stop mounting the default token
+    cluster: c1
+    weight: 7
+    competency: cks/cluster-hardening/exercise-caution-service-accounts-disable
+    doc:
+      title: "Kubernetes docs: Configure Service Accounts for Pods"
+      url: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#opt-out-of-api-credential-automounting
+    body: |
+      Pods in `apps` must not get an API token unless they ask for one. Change the `default` service account
+      of `apps` so its token is not mounted automatically.
+    checks:
+      - id: automount-off
+        description: The default service account of apps does not automount its token
+        failMessage: The default service account in apps still mounts its token automatically.
+        assert:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: default
+            namespace: apps
+          automountServiceAccountToken: false
+  - id: read-only-root
+    title: Make the frontend immutable
+    cluster: c1
+    weight: 10
+    competency: cks/monitoring-logging-runtime-security/ensure-immutability-containers-at-runtime
+    doc:
+      title: "Kubernetes docs: Configure a Security Context"
+      url: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    body: |
+      Give the container of the Deployment `frontend` in `ops` a read-only root filesystem. nginx still needs
+      to write to `/var/cache/nginx` and `/run`: mount an `emptyDir` at each, so the Deployment stays
+      available.
+    checks:
+      - id: read-only-spec
+        description: frontend has a read-only root filesystem
+        failMessage: The container of frontend in ops does not set readOnlyRootFilesystem to true.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+            namespace: ops
+          spec:
+            template:
+              spec:
+                (containers[0].securityContext.readOnlyRootFilesystem): true
+      - id: read-only-running
+        description: frontend is available with the new settings
+        failMessage: frontend in ops has no ready pod with the read-only settings. Check that nginx can write where it needs to.
+        script: kubectl -n ops rollout status deployment/frontend --timeout=5s
+  - id: attacker
+    title: Stop the suspicious workload
+    cluster: c1
+    weight: 10
+    competency: cks/monitoring-logging-runtime-security/investigate-identify-phases-attack-bad
+    doc:
+      title: "Kubernetes docs: Security Checklist"
+      url: https://kubernetes.io/docs/concepts/security/security-checklist/
+    body: |
+      One Deployment in `ops` runs a privileged container that keeps reading `/etc/shadow`. Write its name,
+      and nothing else, to `/opt/answers/attacker.txt`, then scale it to 0 replicas. Leave the other
+      Deployments running.
+    checks:
+      - id: attacker-answer
+        description: /opt/answers/attacker.txt names the suspicious Deployment
+        failMessage: /opt/answers/attacker.txt is missing or does not name just the suspicious Deployment.
+        runIn: workstation
+        script: grep -qx miner /opt/answers/attacker.txt
+      - id: attacker-stopped
+        description: Deployment miner is scaled to 0
+        failMessage: Deployment miner in ops still runs.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: miner
+            namespace: ops
+          spec:
+            replicas: 0
+      - id: others-running
+        description: metrics and cache still run one replica each
+        failMessage: Another Deployment in ops was scaled down too.
+        script: test "$(kubectl -n ops get deployment metrics cache -o jsonpath='{.items[*].spec.replicas}')" = "1 1"
+  - id: seccomp
+    title: Apply the default seccomp profile
+    cluster: c2
+    weight: 10
+    competency: cks/system-hardening/appropriately-kernel-hardening-tools-such
+    doc:
+      title: "Kubernetes docs: Restrict a Container's Syscalls with seccomp"
+      url: https://kubernetes.io/docs/tutorials/security/seccomp/
+    body: |
+      Make the pods of the Deployment `hardened` in `prod` run with the container runtime's default seccomp
+      profile (`RuntimeDefault`).
+    checks:
+      - id: seccomp-profile
+        description: hardened runs with the RuntimeDefault seccomp profile
+        failMessage: Deployment hardened sets no RuntimeDefault seccomp profile for its pod or container.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: hardened
+            namespace: prod
+          spec:
+            template:
+              spec:
+                (securityContext.seccompProfile.type || containers[0].securityContext.seccompProfile.type): RuntimeDefault
+  - id: pod-security
+    title: Enforce the restricted standard
+    cluster: c2
+    weight: 7
+    competency: cks/minimize-microservice-vulnerabilities/appropriate-pod-security-standards
+    doc:
+      title: "Kubernetes docs: Pod Security Admission"
+      url: https://kubernetes.io/docs/concepts/security/pod-security-admission/
+    body: |
+      Make Pod Security Admission reject any pod in the namespace `restricted-apps` that breaks the
+      `restricted` Pod Security Standard.
+    checks:
+      - id: psa-label
+        description: restricted-apps enforces the restricted standard
+        failMessage: The namespace restricted-apps does not enforce the restricted Pod Security Standard.
+        assert:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: restricted-apps
+            labels:
+              pod-security.kubernetes.io/enforce: restricted
+  - id: immutable-secret
+    title: Lock the API token
+    cluster: c2
+    weight: 6
+    competency: cks/minimize-microservice-vulnerabilities/manage-kubernetes-secrets
+    doc:
+      title: "Secrets: immutable Secrets"
+      url: https://kubernetes.io/docs/concepts/configuration/secret/#secret-immutable
+    body: |
+      Make the Secret `api-token` in `prod` immutable, keeping its current value.
+    checks:
+      - id: secret-immutable
+        description: Secret api-token is immutable and keeps its value
+        failMessage: Secret api-token in prod is missing, not immutable, or its token changed.
+        assert:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: api-token
+            namespace: prod
+          immutable: true
+          data:
+            token: c2FtcGxlLXRva2Vu
+  - id: sandbox
+    title: Run a pod in a sandbox
+    cluster: c2
+    weight: 7
+    competency: cks/minimize-microservice-vulnerabilities/implement-isolation-techniques-multi-tenancy
+    doc:
+      title: "Kubernetes docs: Runtime Class"
+      url: https://kubernetes.io/docs/concepts/containers/runtime-class/
+    body: |
+      Create a RuntimeClass `gvisor` with the handler `runsc`. Then create a Pod `sandboxed` in `prod` from
+      `nginx:1.29-alpine` that uses it. (This cluster has no gVisor installed, so the pod will not start:
+      that is expected here.)
+    checks:
+      - id: runtimeclass
+        description: RuntimeClass gvisor uses the runsc handler
+        failMessage: RuntimeClass gvisor is missing or has another handler.
+        assert:
+          apiVersion: node.k8s.io/v1
+          kind: RuntimeClass
+          metadata:
+            name: gvisor
+          handler: runsc
+      - id: sandboxed-pod
+        description: Pod sandboxed uses the gvisor RuntimeClass
+        failMessage: Pod sandboxed in prod is missing or does not use the gvisor RuntimeClass.
+        assert:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: sandboxed
+            namespace: prod
+          spec:
+            runtimeClassName: gvisor
+  - id: static-analysis
+    title: Fix what the scanner found
+    cluster: c2
+    weight: 10
+    competency: cks/supply-chain-security/perform-static-analysis-user-workloads
+    doc:
+      title: "Kubernetes docs: Pod Security Standards (restricted)"
+      url: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
+    body: |
+      A static analysis of the Deployment `payments-api` in `supply` found three problems in its container.
+      Fix them all: it must not be privileged, it must run as a non-root user (`runAsNonRoot: true`), and
+      its root filesystem must be read-only.
+    checks:
+      - id: not-privileged
+        description: payments-api is not privileged
+        failMessage: The container of payments-api is still privileged.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: payments-api
+            namespace: supply
+          spec:
+            template:
+              spec:
+                (containers[0].securityContext.privileged || `false`): false
+      - id: non-root
+        description: payments-api must run as non-root
+        failMessage: payments-api does not set runAsNonRoot to true for its pod or container.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: payments-api
+            namespace: supply
+          spec:
+            template:
+              spec:
+                (containers[0].securityContext.runAsNonRoot || securityContext.runAsNonRoot): true
+      - id: read-only
+        description: payments-api has a read-only root filesystem
+        failMessage: The container of payments-api does not set readOnlyRootFilesystem to true.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: payments-api
+            namespace: supply
+          spec:
+            template:
+              spec:
+                (containers[0].securityContext.readOnlyRootFilesystem): true
+  - id: base-image
+    title: Shrink the base image
+    cluster: c2
+    weight: 10
+    competency: cks/supply-chain-security/minimize-base-image-footprint
+    doc:
+      title: "Kubernetes docs: Images"
+      url: https://kubernetes.io/docs/concepts/containers/images/
+    body: |
+      The Deployment `legacy` in `supply` runs the full Debian-based `nginx:1.29` image. Switch it to the
+      smaller Alpine-based `nginx:1.29-alpine`.
+    checks:
+      - id: alpine-image
+        description: Deployment legacy runs nginx:1.29-alpine
+        failMessage: Deployment legacy in supply does not use nginx:1.29-alpine yet.
+        assert:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: legacy
+            namespace: supply
+          spec:
+            template:
+              spec:
+                (containers[0].image): nginx:1.29-alpine

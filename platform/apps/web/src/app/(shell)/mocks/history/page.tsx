@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { getCatalog } from "@/server/catalog";
 import { getHistory } from "@/server/labs";
 import { domainName, getMockHistory, listMocks } from "@/server/mocks";
+import { getQuizMockHistory, listQuizAttempts } from "@/server/quiz-mocks";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Mock exam history" };
@@ -22,8 +23,40 @@ export const metadata: Metadata = { title: "Mock exam history" };
  */
 export default async function MockHistoryPage() {
   const user = await requireUser("/mocks/history");
-  const [history, attempts, mocks, catalog] = await Promise.all([getMockHistory(user.id), getHistory(user.id, "mock"), listMocks(), getCatalog()]);
+  const [practicalHistory, sessions, mocks, catalog, quizHistory, quizAttempts] = await Promise.all([
+    getMockHistory(user.id),
+    getHistory(user.id, "mock"),
+    listMocks(),
+    getCatalog(),
+    getQuizMockHistory(user.id),
+    listQuizAttempts(user.id, 100),
+  ]);
   const titles = new Map(mocks.map((m) => [m.id, m.title]));
+  // Practical and multiple-choice mocks side by side, by cert.
+  const history = [
+    ...practicalHistory.map(({ mock, graded }) => ({ mock: { ...mock, passPercent: mock.passPercent ?? 66 }, graded, href: `/mocks/${mock.id}`, practical: true })),
+    ...quizHistory.map(({ mock, graded }) => ({ mock, graded, href: "/mocks", practical: false })),
+  ].sort((a, b) => a.mock.certCode.localeCompare(b.mock.certCode) || a.mock.title.localeCompare(b.mock.title));
+  const attempts = [
+    ...sessions.map((a) => ({
+      id: a.id,
+      href: `/mocks/results/${a.id}`,
+      title: titles.get(a.labId) ?? a.labId,
+      mode: a.mode === "exam" ? "Exam" : "Practice",
+      at: a.startedAt ?? a.createdAt,
+      status: <SessionStatus status={a.status} />,
+      score: a.score,
+    })),
+    ...quizAttempts.map((a) => ({
+      id: a.id,
+      href: a.finished ? `/mocks/quiz-results/${a.id}` : `/mocks/quiz/${a.id}`,
+      title: a.title,
+      mode: "Multiple choice",
+      at: a.startedAt,
+      status: <span className="text-sm">{a.finished ? "Graded" : "Running"}</span>,
+      score: a.score,
+    })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
   return (
     <>
@@ -36,17 +69,17 @@ export default async function MockHistoryPage() {
             </p>
           </Card>
         ) : (
-          history.map(({ mock, graded }) => {
+          history.map(({ mock, graded, href, practical }) => {
             const summary = trendSummary(graded);
             const domains = domainTrends(graded);
-            const passMark = mock.passPercent ?? 66;
+            const passMark = mock.passPercent;
             const cert = catalog.certs.get(mock.certCode);
             const weakest = domains[0];
             return (
               <Card key={mock.id} aria-labelledby={`trend-${mock.id}`} className="flex flex-col gap-5">
                 <div className="flex flex-wrap items-center gap-2">
                   <CardTitle id={`trend-${mock.id}`}>
-                    <Link href={`/mocks/${mock.id}`}>{mock.title}</Link>
+                    <Link href={href}>{mock.title}</Link>
                   </CardTitle>
                   {mock.mock ? <SampleBadge /> : null}
                 </div>
@@ -99,7 +132,7 @@ export default async function MockHistoryPage() {
                       <p className="mt-3 text-sm">
                         Weakest now: <strong>{domainName(cert, weakest.domain)}</strong>.{" "}
                         <Link href={`/certs/${mock.certCode.toLowerCase()}/domains/${weakest.domain}`}>Study this domain</Link> or{" "}
-                        <Link href="/labs">practise it in a lab</Link>.
+                        {practical ? <Link href="/labs">practise it in a lab</Link> : <Link href={`/practice?cert=${mock.certCode}&domains=${weakest.domain}`}>practise its questions</Link>}.
                       </p>
                     ) : null}
                   </div>
@@ -130,15 +163,13 @@ export default async function MockHistoryPage() {
                 {attempts.map((a) => (
                   <tr key={a.id} className="border-t">
                     <td className="px-5 py-3">
-                      <Link href={`/mocks/results/${a.id}`}>{titles.get(a.labId) ?? a.labId}</Link>
+                      <Link href={a.href}>{a.title}</Link>
                     </td>
-                    <td className="px-5 py-3">{a.mode === "exam" ? "Exam" : "Practice"}</td>
+                    <td className="px-5 py-3">{a.mode}</td>
                     <td className="px-5 py-3">
-                      <LocalTime value={a.startedAt ?? a.createdAt} />
+                      <LocalTime value={a.at} />
                     </td>
-                    <td className="px-5 py-3">
-                      <SessionStatus status={a.status} />
-                    </td>
+                    <td className="px-5 py-3">{a.status}</td>
                     <td className="px-5 py-3">{a.score === null ? "–" : `${a.score}%`}</td>
                   </tr>
                 ))}

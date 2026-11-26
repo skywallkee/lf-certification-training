@@ -23,3 +23,4 @@ in the code. To change a decision, add a new record that supersedes the old one.
 | [0016](0016-readiness-from-all-evidence.md) | Readiness counts labs, mock exams and lessons; review sessions mix certs | Accepted |
 | [0019](0019-study-plans-and-reminders.md) | Weekly study plans from the exam date, and opt-in reminder emails | Accepted |
 | [0020](0020-admin-analytics-from-existing-tables.md) | Admin analytics are computed from existing tables, with a seeded sample cohort | Accepted |
+| [0021](0021-mock-exams-per-exam-format.md) | Mock exams follow each exam's format: CKAD and CKS layouts, and multiple-choice mocks | Accepted |

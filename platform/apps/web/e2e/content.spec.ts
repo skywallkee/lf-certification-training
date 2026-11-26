@@ -16,7 +16,7 @@ test("the admin lists content and filters it", async ({ page }) => {
   await page.goto("/admin");
   await page.getByRole("link", { name: "Content: create and edit" }).click();
   await expect(page.getByRole("heading", { name: "Content", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: /^Mock exams \(\d+\)$/ }).click();
+  await page.getByRole("link", { name: /^Practical mocks \(\d+\)$/ }).click();
   await expect(page.getByRole("link", { name: /CKA mock exam/i }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "lesson" })).toHaveCount(0);
   await expectAccessible(page, "/admin/content");
@@ -129,4 +129,30 @@ test("a new mock exam needs a pass mark, four tasks and a competency per task", 
   await page.getByRole("tab", { name: "Source (YAML)" }).click();
   await expect(page.getByRole("textbox", { name: "Source", exact: true })).toHaveValue(/passPercent: 66/);
   await expectAccessible(page, "/admin/content/mock/new (source)");
+});
+
+test("the admin edits a multiple-choice mock: the cert must be a multiple-choice one, and fixed questions must exist", async ({ page }) => {
+  await signIn(page, "admin@example.com");
+  await page.goto("/admin/content?type=quiz-mock");
+  await page.getByRole("link", { name: "Sample KCNA quick check (10 questions)" }).click();
+  await expect(page).toHaveURL(/\/admin\/content\/quiz-mock\/sample-kcna-mock-quick/);
+  await expect(page.getByText("A fixed list of questions, asked in a new order each time")).toBeVisible();
+  await expectAccessible(page, "/admin/content/quiz-mock/[id]");
+
+  await page.getByRole("tab", { name: "Source (YAML)" }).click();
+  const source = page.getByRole("textbox", { name: "Source", exact: true });
+  await expect(source).toHaveValue(/^format: multiple-choice\n/);
+  await source.fill((await source.inputValue()).replace("- sample-kcna-024", "- sample-cka-001"));
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Not saved" })).toContainText('"sample-cka-001" is a CKA question, not KCNA');
+
+  await page.goto("/admin/content/quiz-mock/new");
+  await page.getByRole("textbox", { name: "Id", exact: true }).fill("e2e-kcsa-short");
+  await page.getByLabel("Cert").selectOption("KCSA");
+  await page.getByRole("textbox", { name: "Title", exact: true }).fill("KCSA short mock");
+  await page.getByLabel("Summary").fill("Five KCSA questions.");
+  await page.getByLabel("Questions", { exact: true }).fill("5");
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page).toHaveURL(/\/admin\/content\/quiz-mock\/e2e-kcsa-short\?saved=new/);
+  expect(await query("SELECT published, origin, question_count FROM quiz_mock WHERE id = $1", ["e2e-kcsa-short"])).toEqual([{ published: false, origin: "app", question_count: 5 }]);
 });

@@ -1,0 +1,158 @@
+# Sample question bank for KCSA. Mock items for building and testing the app (the KCSA multiple-choice mock
+# exam draws from it), not study material.
+mock: true
+questions:
+  - id: sample-kcsa-001
+    kind: single
+    competencies: [kcsa/overview-cloud-native-security/4cs-cloud-native-security]
+    stem: "In the 4C's of cloud native security, which layer is the outermost?"
+    options:
+      - { id: a, text: "Code" }
+      - { id: b, text: "Container" }
+      - { id: c, text: "Cluster" }
+      - { id: d, text: "Cloud", correct: true }
+    explanation: "The layers nest as Cloud, Cluster, Container, Code. Each inner layer relies on the security of the layers around it."
+    source: { title: "Kubernetes docs: Cloud Native Security", url: "https://kubernetes.io/docs/concepts/security/cloud-native-security/" }
+  - id: sample-kcsa-002
+    kind: single
+    competencies: [kcsa/overview-cloud-native-security/artifact-repository-image-security]
+    stem: "What does pinning an image by digest (`image@sha256:...`) protect against?"
+    options:
+      - { id: a, text: "A tag being moved to different image content", correct: true }
+      - { id: b, text: "Vulnerabilities in the image" }
+      - { id: c, text: "Running the container as root" }
+      - { id: d, text: "Pulling from a private registry" }
+    explanation: "A digest names exact content. A tag can be pushed again to point at something else; a digest cannot."
+    source: { title: "Kubernetes docs: Images", url: "https://kubernetes.io/docs/concepts/containers/images/#image-names" }
+  - id: sample-kcsa-003
+    kind: single
+    competencies: [kcsa/kubernetes-cluster-component-security/api-server]
+    stem: "In which order does the API server handle a request?"
+    options:
+      - { id: a, text: "Admission control, authentication, authorization" }
+      - { id: b, text: "Authentication, authorization, admission control", correct: true }
+      - { id: c, text: "Authorization, authentication, admission control" }
+      - { id: d, text: "Authentication, admission control, authorization" }
+    explanation: "A request is first authenticated (who), then authorized (may they), then passed through admission controllers (is the object acceptable)."
+    source: { title: "Kubernetes docs: Controlling Access to the Kubernetes API", url: "https://kubernetes.io/docs/concepts/security/controlling-access/" }
+  - id: sample-kcsa-004
+    kind: single
+    competencies: [kcsa/kubernetes-cluster-component-security/etcd]
+    stem: "Why should Secrets be encrypted at rest in etcd?"
+    options:
+      - { id: a, text: "Secrets are stored base64-encoded, which anyone with etcd access can decode", correct: true }
+      - { id: b, text: "etcd refuses to store unencrypted data" }
+      - { id: c, text: "It makes Secrets load faster" }
+      - { id: d, text: "Pods cannot read unencrypted Secrets" }
+    explanation: "Base64 is an encoding, not encryption. An EncryptionConfiguration on the API server encrypts Secret data before it reaches etcd."
+    source: { title: "Kubernetes docs: Encrypting Confidential Data at Rest", url: "https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/" }
+  - id: sample-kcsa-005
+    kind: multiple
+    competencies: [kcsa/kubernetes-cluster-component-security/kubelet]
+    stem: "Which kubelet settings reduce the risk of its API being misused? Choose two."
+    options:
+      - { id: a, text: "`--anonymous-auth=false`", correct: true }
+      - { id: b, text: "`--authorization-mode=Webhook`", correct: true }
+      - { id: c, text: "`--read-only-port=10255`" }
+      - { id: d, text: "`--authorization-mode=AlwaysAllow`" }
+    explanation: "Turning off anonymous access and delegating authorization to the API server (Webhook) protect the kubelet API. The read-only port should be 0 (off)."
+    source: { title: "Kubernetes docs: Kubelet authentication/authorization", url: "https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/" }
+  - id: sample-kcsa-006
+    kind: single
+    competencies: [kcsa/kubernetes-security-fundamentals/pod-security-standards]
+    stem: "Which Pod Security Standard is the most restrictive?"
+    options:
+      - { id: a, text: "Privileged" }
+      - { id: b, text: "Baseline" }
+      - { id: c, text: "Restricted", correct: true }
+      - { id: d, text: "Hardened" }
+    explanation: "The three standards are Privileged (unrestricted), Baseline (blocks known escalations) and Restricted (current hardening best practice)."
+    source: { title: "Kubernetes docs: Pod Security Standards", url: "https://kubernetes.io/docs/concepts/security/pod-security-standards/" }
+  - id: sample-kcsa-007
+    kind: single
+    competencies: [kcsa/kubernetes-security-fundamentals/pod-security-admissions]
+    stem: "How do you make Pod Security Admission reject pods in a namespace that break the baseline standard?"
+    options:
+      - { id: a, text: "Label the namespace `pod-security.kubernetes.io/enforce: baseline`", correct: true }
+      - { id: b, text: "Create a PodSecurityPolicy named baseline" }
+      - { id: c, text: "Annotate each pod with `security: baseline`" }
+      - { id: d, text: "Set `--pod-security=baseline` on the kubelet" }
+    explanation: "Pod Security Admission reads namespace labels. The enforce mode rejects violating pods; audit and warn only record or warn."
+    source: { title: "Kubernetes docs: Pod Security Admission", url: "https://kubernetes.io/docs/concepts/security/pod-security-admission/" }
+  - id: sample-kcsa-008
+    kind: single
+    competencies: [kcsa/kubernetes-security-fundamentals/network-policy]
+    stem: "A namespace has no NetworkPolicies. What traffic may reach its pods?"
+    options:
+      - { id: a, text: "None" }
+      - { id: b, text: "Only traffic from the same namespace" }
+      - { id: c, text: "All traffic", correct: true }
+      - { id: d, text: "Only traffic from the kube-system namespace" }
+    explanation: "Pods are non-isolated by default. A pod becomes isolated for ingress or egress only once a NetworkPolicy selects it."
+    source: { title: "Kubernetes docs: Network Policies", url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/" }
+  - id: sample-kcsa-009
+    kind: single
+    competencies: [kcsa/kubernetes-security-fundamentals/audit-logging]
+    stem: "Which audit level records request metadata and the request body, but not the response body?"
+    options:
+      - { id: a, text: "None" }
+      - { id: b, text: "Metadata" }
+      - { id: c, text: "Request", correct: true }
+      - { id: d, text: "RequestResponse" }
+    explanation: "Metadata logs who, what and when; Request adds the request body; RequestResponse adds the response body too."
+    source: { title: "Kubernetes docs: Auditing", url: "https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/" }
+  - id: sample-kcsa-010
+    kind: single
+    competencies: [kcsa/kubernetes-threat-model/privilege-escalation]
+    stem: "Which pod setting most directly lets a container gain the host's privileges?"
+    options:
+      - { id: a, text: "`readOnlyRootFilesystem: true`" }
+      - { id: b, text: "`privileged: true`", correct: true }
+      - { id: c, text: "`runAsNonRoot: true`" }
+      - { id: d, text: "`automountServiceAccountToken: false`" }
+    explanation: "A privileged container gets nearly all host capabilities and device access, which makes escaping to the node easy."
+    source: { title: "Kubernetes docs: Security Context", url: "https://kubernetes.io/docs/tasks/configure-pod-container/security-context/" }
+  - id: sample-kcsa-011
+    kind: single
+    competencies: [kcsa/kubernetes-threat-model/access-sensitive-data]
+    stem: "A pod's service account token is mounted by default. Which change limits what an attacker gains from a compromised pod that does not call the API?"
+    options:
+      - { id: a, text: "Set `automountServiceAccountToken: false`", correct: true }
+      - { id: b, text: "Add more replicas" }
+      - { id: c, text: "Use a NodePort Service" }
+      - { id: d, text: "Raise the pod's memory limit" }
+    explanation: "Without a mounted token, code in the pod has no credentials for the API server."
+    source: { title: "Kubernetes docs: Configure Service Accounts for Pods", url: "https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/" }
+  - id: sample-kcsa-012
+    kind: single
+    competencies: [kcsa/platform-security/admission-control]
+    stem: "What can a validating admission webhook do with a request?"
+    options:
+      - { id: a, text: "Change the object" }
+      - { id: b, text: "Accept or reject it", correct: true }
+      - { id: c, text: "Authenticate the user" }
+      - { id: d, text: "Schedule the pod" }
+    explanation: "Mutating webhooks may change objects; validating webhooks only allow or deny them, after mutation."
+    source: { title: "Kubernetes docs: Dynamic Admission Control", url: "https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/" }
+  - id: sample-kcsa-013
+    kind: single
+    competencies: [kcsa/platform-security/supply-chain-security]
+    stem: "What is a Software Bill of Materials (SBOM)?"
+    options:
+      - { id: a, text: "An invoice for software licences" }
+      - { id: b, text: "A list of the components and dependencies inside an artifact", correct: true }
+      - { id: c, text: "A signature on a container image" }
+      - { id: d, text: "A Kubernetes resource quota" }
+    explanation: "An SBOM lists what an artifact contains, so you can find affected images when a component has a vulnerability."
+    source: { title: "CNCF TAG Security: Software Supply Chain Best Practices", url: "https://github.com/cncf/tag-security/blob/main/community/working-groups/supply-chain-security/supply-chain-security-paper/sscsp.md" }
+  - id: sample-kcsa-014
+    kind: single
+    competencies: [kcsa/compliance-security-frameworks/threat-modeling-frameworks]
+    stem: "In the STRIDE threat model, what does the T stand for?"
+    options:
+      - { id: a, text: "Tampering", correct: true }
+      - { id: b, text: "Tracing" }
+      - { id: c, text: "Trust" }
+      - { id: d, text: "Throttling" }
+    explanation: "STRIDE is Spoofing, Tampering, Repudiation, Information disclosure, Denial of service and Elevation of privilege."
+    source: { title: "Kubernetes docs: Security Checklist", url: "https://kubernetes.io/docs/concepts/security/security-checklist/" }

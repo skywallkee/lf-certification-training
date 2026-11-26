@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { exportPath, itemToSource } from "@lfct/curriculum";
 import { deleteItemAction, restoreRevisionAction, revertToFileAction, setPublishedAction } from "@/app/actions/content";
+import { startQuizMockAction } from "@/app/actions/quiz-mocks";
 import { ContentEditor } from "@/components/admin/content-editor";
 import { PageHeader } from "@/components/page-header";
 import { DraftBadge, SampleBadge } from "@/components/status-chip";
@@ -61,7 +62,7 @@ export default async function EditItemPage({ params, searchParams }: { params: P
   const { meta, edit } = item;
   const path = exportPath(type, edit);
   const learnerHref =
-    type === "lab" ? `/labs/${id}` : type === "mock" ? `/mocks/${id}` : type === "lesson" && meta.published ? competencyPath(edit.competencies[0]!) : null;
+    type === "lab" ? `/labs/${id}` : type === "mock" ? `/mocks/${id}` : type === "lesson" && meta.published && "competencies" in edit ? competencyPath(edit.competencies[0]!) : null;
   const current = revisions.findIndex((r) => r.hasSnapshot && r.action !== "file-version");
   const hidden = (
     <>
@@ -111,6 +112,14 @@ export default async function EditItemPage({ params, searchParams }: { params: P
                 {meta.published ? "Unpublish" : "Publish"}
               </Button>
             </form>
+            {type === "quiz-mock" ? (
+              <form action={startQuizMockAction}>
+                <input type="hidden" name="mock" value={id} />
+                <Button type="submit" size="sm" variant="ghost" className="w-full">
+                  Try it as a learner
+                </Button>
+              </form>
+            ) : null}
             {learnerHref ? (
               <Link href={learnerHref} className="text-sm">
                 {type === "lab" || type === "mock" ? "Open as a learner (try it)" : "Open the learner page"}

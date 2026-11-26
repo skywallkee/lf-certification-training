@@ -1,0 +1,11 @@
+# Sample multiple-choice mock exam (mock content for building and testing the app, not study material).
+format: multiple-choice
+id: sample-kcsa-mock-full
+mock: true
+title: Sample KCSA mock exam (full, 90 minutes)
+summary: 'A timed KCSA-style exam: questions drawn from the bank by domain weight, no feedback until you submit,
+  then your score per domain against the 75% pass mark.'
+cert: KCSA
+minutes: 90
+questionCount: 60
+passPercent: 75

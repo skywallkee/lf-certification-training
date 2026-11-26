@@ -15,6 +15,7 @@ export interface CompetencyOption {
 export interface CertOption {
   code: string;
   name: string;
+  examStyle?: "performance" | "multiple-choice";
   domains: { key: string; name: string; competencies: CompetencyOption[] }[];
 }
 

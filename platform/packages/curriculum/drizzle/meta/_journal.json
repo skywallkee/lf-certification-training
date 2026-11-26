@@ -43,6 +43,13 @@
       "when": 1795677813234,
       "tag": "0005_authoring",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795683657920,
+      "tag": "0006_quiz_mocks",
+      "breakpoints": true
     }
   ]
 }

@@ -239,6 +239,36 @@ export const lab = pgTable(
   (t) => [index("lab_cert_idx").on(t.certCode), index("lab_refs_idx").using("gin", t.competencyRefs)],
 );
 
+/**
+ * Multiple-choice mock exams (content/mocks files with `format: multiple-choice`): a timed exam over the cert's
+ * question bank. The questions are drawn per attempt (by domain weight) unless the mock lists them.
+ */
+export const quizMock = pgTable(
+  "quiz_mock",
+  {
+    id: text("id").primaryKey(),
+    certCode: text("cert_code")
+      .notNull()
+      .references(() => certification.code),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    minutes: integer("minutes").notNull(),
+    questionCount: integer("question_count").notNull(),
+    passPercent: integer("pass_percent").notNull(),
+    /** A fixed list of question ids, or null to draw from the bank. */
+    questionIds: text("question_ids").array(),
+    mock: boolean("mock").notNull().default(false),
+    /** "file": loaded from content/ by the ingest. "app": created or edited in the admin editor; the ingest leaves it alone. */
+    origin: text("origin").$type<"file" | "app">().notNull().default("file"),
+    /** Drafts are hidden from learners until an admin publishes them. Ingested items are always published. */
+    published: boolean("published").notNull().default(true),
+    file: text("file").notNull(),
+    contentHash: text("content_hash").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("quiz_mock_cert_idx").on(t.certCode)],
+);
+
 /** One row per ingest run, for the admin page. */
 export const ingestRun = pgTable("ingest_run", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

@@ -10,7 +10,7 @@ import { requireAdmin } from "@/server/session";
 
 export const metadata: Metadata = { title: "Admin: content" };
 
-const TYPES = ["lesson", "question", "lab", "mock"] as const;
+const TYPES = ["lesson", "question", "lab", "mock", "quiz-mock"] as const;
 const STATUS: Record<string, { label: string; test: (i: ItemMeta) => boolean }> = {
   all: { label: "Any status", test: () => true },
   draft: { label: "Drafts", test: (i) => !i.published },

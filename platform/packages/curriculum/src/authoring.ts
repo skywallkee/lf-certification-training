@@ -5,9 +5,12 @@ import {
   LabSchema,
   LessonFrontMatterSchema,
   QuestionSchema,
+  QuizMockSchema,
   mockProblems,
+  quizMockProblems,
   type LabInput,
   type QuestionInput,
+  type QuizMockInput,
 } from "./content.ts";
 
 /**
@@ -17,8 +20,9 @@ import {
  * (MDX with front matter, or YAML) and committed under content/.
  */
 
-export type ItemType = "lesson" | "question" | "lab" | "mock";
-export const ITEM_TYPES: readonly ItemType[] = ["lesson", "question", "lab", "mock"];
+/** "mock" is a practical (hands-on) mock exam; "quiz-mock" a multiple-choice one. */
+export type ItemType = "lesson" | "question" | "lab" | "mock" | "quiz-mock";
+export const ITEM_TYPES: readonly ItemType[] = ["lesson", "question", "lab", "mock", "quiz-mock"];
 
 export const LessonEditSchema = LessonFrontMatterSchema.extend({
   /** MDX body without front matter. */
@@ -28,12 +32,15 @@ export type LessonEdit = z.infer<typeof LessonEditSchema>;
 
 export type QuestionEdit = QuestionInput & { mock: boolean };
 export type LabEdit = LabInput;
+export type QuizMockEdit = QuizMockInput;
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; problems: string[] };
 
 export interface AuthoringContext {
   /** Competency refs of the current curricula: lessons, questions and labs must reference these. */
   competencies: ReadonlySet<string>;
+  /** Exam style per cert code, for multiple-choice mocks (which only fit multiple-choice certs). */
+  certs?: ReadonlyMap<string, { examStyle: string }>;
 }
 
 function issues(error: z.ZodError): string[] {
@@ -75,14 +82,24 @@ export function validateLab(input: unknown, kind: "lab" | "mock", ctx: Authoring
   return problems.length ? { ok: false, problems } : { ok: true, value: lab };
 }
 
-export function validateItem(type: ItemType, input: unknown, ctx: AuthoringContext): Validated<LessonEdit | QuestionEdit | LabEdit> {
+/** A multiple-choice mock. Whether its fixed questions exist is checked by the caller, which has the bank. */
+export function validateQuizMock(input: unknown, ctx: AuthoringContext): Validated<QuizMockEdit> {
+  const parsed = QuizMockSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, problems: issues(parsed.error) };
+  const problems = ctx.certs ? quizMockProblems(parsed.data, { certs: ctx.certs }) : [];
+  return problems.length ? { ok: false, problems } : { ok: true, value: parsed.data };
+}
+
+export function validateItem(type: ItemType, input: unknown, ctx: AuthoringContext): Validated<LessonEdit | QuestionEdit | LabEdit | QuizMockEdit> {
   if (type === "lesson") return validateLesson(input, ctx);
   if (type === "question") return validateQuestion(input, ctx);
+  if (type === "quiz-mock") return validateQuizMock(input, ctx);
   return validateLab(input, type, ctx);
 }
 
 /** The cert an item belongs to: the cert of its first competency, upper case. */
-export function certOfItem(item: { competencies: readonly string[] }): string {
+export function certOfItem(item: { competencies: readonly string[] } | { cert: string }): string {
+  if ("cert" in item) return item.cert;
   return (item.competencies[0]?.split("/")[0] ?? "").toUpperCase();
 }
 
@@ -151,9 +168,16 @@ export function labFromSource(source: string): unknown {
   return raw;
 }
 
+/** A multiple-choice mock as its YAML file, `format` first so the file says what it is. */
+export function quizMockToSource(m: QuizMockEdit): string {
+  const { format, ...rest } = m;
+  return stringify({ format, ...tidy(rest) }, yamlOptions);
+}
+
 export function itemToSource(type: ItemType, item: unknown): string {
   if (type === "lesson") return lessonToSource(item as LessonEdit);
   if (type === "question") return questionToSource(item as QuestionEdit);
+  if (type === "quiz-mock") return quizMockToSource(item as QuizMockEdit);
   return labToSource(item as LabEdit);
 }
 
@@ -164,10 +188,10 @@ export function itemFromSource(type: ItemType, source: string): unknown {
 }
 
 /** Where the exported file goes in the repository, so it can be committed as is. */
-export function exportPath(type: ItemType, item: { id: string; mock: boolean; competencies: readonly string[] }): string {
+export function exportPath(type: ItemType, item: { id: string; mock: boolean } & ({ competencies: readonly string[] } | { cert: string })): string {
   const cert = certOfItem(item).toLowerCase();
   const sample = item.mock ? "sample/" : "";
   if (type === "lesson") return `content/lessons/${sample}${cert}/${item.id}.mdx`;
   if (type === "question") return `content/questions/${sample}${cert}-${item.id}.yaml`;
-  return `content/${type === "mock" ? "mocks" : "labs"}/${sample}${cert}/${item.id}.yaml`;
+  return `content/${type === "mock" || type === "quiz-mock" ? "mocks" : "labs"}/${sample}${cert}/${item.id}.yaml`;
 }
