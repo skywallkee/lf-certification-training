@@ -26,6 +26,14 @@ export const profile = pgTable("profile", {
   hoursPerWeek: integer("hours_per_week"),
   focusCert: text("focus_cert"),
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+  /** Study reminder emails, all opt-in (lib/reminders.ts): this week's plan, a nudge after a quiet spell, exam countdown. */
+  remindWeekly: boolean("remind_weekly").notNull().default(false),
+  remindNudge: boolean("remind_nudge").notNull().default(false),
+  remindExam: boolean("remind_exam").notNull().default(false),
+  /** Weekday for the weekly plan email, 0 Sunday to 6 Saturday. */
+  remindDay: integer("remind_day").notNull().default(1),
+  /** Local hour from which reminder emails go out. */
+  remindHour: integer("remind_hour").notNull().default(8),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -43,6 +51,32 @@ export const certStatus = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.certCode] })],
+);
+
+/**
+ * A target exam date for a cert the learner has not booked yet. The study plan uses the booked date (cert_status)
+ * when there is one, and this date otherwise. Booking the exam removes the target.
+ */
+export const studyTarget = pgTable(
+  "study_target",
+  {
+    userId: userRef(),
+    certCode: text("cert_code").notNull(),
+    examOn: date("exam_on").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.certCode] })],
+);
+
+/** Reminder emails already sent, by key (lib/reminders.ts), so none goes out twice. */
+export const reminderSent = pgTable(
+  "reminder_sent",
+  {
+    userId: userRef(),
+    key: text("key").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
 );
 
 export const lessonProgress = pgTable(

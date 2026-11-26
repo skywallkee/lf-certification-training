@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import * as z from "zod";
 import { question } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
-import { answer, bookmark, certStatus, flag, lessonProgress, note, profile, quiz, reviewItem } from "@/db/schema";
+import { answer, bookmark, certStatus, flag, lessonProgress, note, profile, quiz, reviewItem, studyTarget } from "@/db/schema";
 import { isIsoDate } from "@/lib/dates";
 import { nextReviewState } from "@/lib/review";
 import { getCatalog } from "@/server/catalog";
@@ -66,6 +66,8 @@ export async function setExamStatusAction(_prev: StatusFormState, form: FormData
     .insert(certStatus)
     .values({ userId: user.id, certCode: code, ...values })
     .onConflictDoUpdate({ target: [certStatus.userId, certStatus.certCode], set: { ...values, updatedAt: new Date() } });
+  // A booked date replaces the study plan's target date, and a passed cert needs no plan.
+  await db.delete(studyTarget).where(and(eq(studyTarget.userId, user.id), eq(studyTarget.certCode, code)));
 
   // Passing the focus cert moves the focus to the next cert on the path.
   if (state === "passed") {

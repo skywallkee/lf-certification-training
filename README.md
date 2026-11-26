@@ -36,8 +36,9 @@ three images and pulls k3s, so give it a few minutes; later starts take seconds.
 10 to 30 seconds. Data is kept in the `pgdata` volume across restarts (`docker compose down -v` wipes it).
 Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
 
-Emails the app sends (sign-up verification and password reset links) go to a local test inbox, [Mailpit](https://mailpit.axllent.org),
-at http://localhost:8025. Nothing reaches real addresses unless you set `SMTP_URL` in `.env` to a real provider.
+Emails the app sends (sign-up verification, password reset links and study reminders) go to a local test inbox, [Mailpit](https://mailpit.axllent.org),
+at http://localhost:8025. Study reminders are off until a learner turns them on under Account; the web app checks for due
+reminders every 10 minutes (`REMINDERS_INTERVAL_MINUTES`), and "Email me this week's plan" on the Plan page sends one at once. Nothing reaches real addresses unless you set `SMTP_URL` in `.env` to a real provider.
 
 Lab containers run privileged (k3s needs it), are labelled `lfct.managed=true`, and are deleted when the
 lab ends. A lab can boot up to three clusters (one k3s container each, about 600 MB of memory apiece). The

@@ -7,10 +7,11 @@ import { expectAccessible, signIn } from "./helpers";
  * pixels (1.4.10 Reflow), and a "Skip to content" link as the first Tab stop on pages with navigation.
  */
 
-const PUBLIC = ["/", "/sign-in", "/sign-up", "/forgot-password", "/verify-email?email=someone%40example.com", "/reset-password?token=x"];
+const PUBLIC = ["/", "/sign-in", "/sign-up", "/forgot-password", "/verify-email?email=someone%40example.com", "/reset-password?token=x", "/unsubscribe?u=x&t=y"];
 const LEARNER = [
   "/today",
   "/path",
+  "/plan",
   "/certs",
   "/certs/kcna",
   "/certs/kcna/readiness",

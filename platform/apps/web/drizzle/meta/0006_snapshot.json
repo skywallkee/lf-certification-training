@@ -1,6 +1,6 @@
 {
-  "id": "82e06e9f-fd64-4463-913f-9fa3dda70a0e",
-  "prevId": "e6593015-8b12-4001-b088-563149c5badf",
+  "id": "0501e792-a19a-4721-af60-927f1ffc2d84",
+  "prevId": "c8af26be-cc42-444e-bf23-4e93f30cbd23",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1533,6 +1533,41 @@
           "primaryKey": false,
           "notNull": false
         },
+        "remind_weekly": {
+          "name": "remind_weekly",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "remind_nudge": {
+          "name": "remind_nudge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "remind_exam": {
+          "name": "remind_exam",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "remind_day": {
+          "name": "remind_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "remind_hour": {
+          "name": "remind_hour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 8
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -1723,6 +1758,60 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.reminder_sent": {
+      "name": "reminder_sent",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "reminder_sent_user_id_user_id_fk": {
+          "name": "reminder_sent_user_id_user_id_fk",
+          "tableFrom": "reminder_sent",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "reminder_sent_user_id_key_pk": {
+          "name": "reminder_sent_user_id_key_pk",
+          "columns": [
+            "user_id",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.review_item": {
       "name": "review_item",
       "schema": "",
@@ -1811,6 +1900,66 @@
           "columns": [
             "user_id",
             "question_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.study_target": {
+      "name": "study_target",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cert_code": {
+          "name": "cert_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exam_on": {
+          "name": "exam_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "study_target_user_id_user_id_fk": {
+          "name": "study_target_user_id_user_id_fk",
+          "tableFrom": "study_target",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "study_target_user_id_cert_code_pk": {
+          "name": "study_target_user_id_cert_code_pk",
+          "columns": [
+            "user_id",
+            "cert_code"
           ]
         }
       },

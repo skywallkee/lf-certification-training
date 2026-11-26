@@ -8,6 +8,8 @@ export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  /** Extra headers, such as List-Unsubscribe on reminder emails. Not kept in the outbox. */
+  headers?: Record<string, string>;
 }
 
 let transport: Transporter | undefined;
@@ -27,14 +29,14 @@ function getTransport(): Transporter | undefined {
  * learner can ask for the link again.
  */
 export async function sendEmail(message: EmailMessage): Promise<{ delivered: boolean }> {
-  await getDb().insert(outboxEmail).values(message);
+  await getDb().insert(outboxEmail).values({ to: message.to, subject: message.subject, text: message.text });
   const smtp = getTransport();
   if (!smtp) {
     console.info(`[email] no SMTP_URL, outbox only: to=${message.to} subject="${message.subject}"\n${message.text}`);
     return { delivered: false };
   }
   try {
-    await smtp.sendMail({ from: env.mail.from, to: message.to, subject: message.subject, text: message.text });
+    await smtp.sendMail({ from: env.mail.from, to: message.to, subject: message.subject, text: message.text, headers: message.headers });
     console.info(`[email] sent to=${message.to} subject="${message.subject}"`);
     return { delivered: true };
   } catch (error) {

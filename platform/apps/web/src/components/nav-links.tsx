@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { BookMarked, CalendarCheck, FlaskConical, GraduationCap, Home, LogIn, LogOut, Map, Menu, RotateCcw, Search, Settings, Shield, Timer, TrendingUp, UserPlus, X } from "lucide-react";
+import { BookMarked, CalendarCheck, CalendarRange, FlaskConical, GraduationCap, Home, LogIn, LogOut, Map, Menu, RotateCcw, Search, Settings, Shield, Timer, TrendingUp, UserPlus, X } from "lucide-react";
 import { signOutAction } from "@/app/actions/auth";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import { ThemeChoice } from "./theme-toggle";
 const ICONS = {
   today: CalendarCheck,
   path: Map,
+  plan: CalendarRange,
   progress: TrendingUp,
   certs: GraduationCap,
   review: RotateCcw,
