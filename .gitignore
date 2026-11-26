@@ -23,3 +23,6 @@ next-env.d.ts
 # Playwright
 test-results/
 playwright-report/
+# Local database backups (learner data)
+backups/*
+!backups/README.md

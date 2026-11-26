@@ -2,7 +2,7 @@
 #
 #   docker compose up --build        then open http://localhost:3000 (sample logins in the README)
 #
-# Services: Postgres, a local mail inbox (Mailpit), a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
+# Services: Postgres and its backups, a local mail inbox (Mailpit), a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
 # lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
 # Settings come from .env when present (see .env.example); the defaults below are for local use only.
 name: lfct
@@ -29,6 +29,30 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # Backs up the database to ./backups when the stack starts and every BACKUP_INTERVAL_HOURS after that, keeping the
+  # newest BACKUP_KEEP. Back up now with scripts/db-backup.sh; restore with scripts/db-restore.sh (see the README).
+  db-backup:
+    image: postgres:17.12-trixie
+    # Writes the files as your user, so you can read, copy and delete them. Set BACKUP_UID/BACKUP_GID in .env if
+    # `id -u` / `id -g` print something other than 1000.
+    user: "${BACKUP_UID:-1000}:${BACKUP_GID:-1000}"
+    entrypoint: ["/bin/sh", "/db-backup-loop.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: lfct
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/db-backup-loop.sh:/db-backup-loop.sh:ro
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    init: true
+    restart: unless-stopped
 
   # A local test inbox: the web app sends every email here over SMTP, and nothing reaches real addresses.
   # Open http://localhost:8025 to read verification emails.

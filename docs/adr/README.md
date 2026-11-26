@@ -20,3 +20,4 @@ in the code. To change a decision, add a new record that supersedes the old one.
 | [0011](0011-practical-mock-exam.md) | The practical mock exam is a long lab session with a mode | Accepted |
 | [0012](0012-resumable-players-and-image-cache.md) | Players resume from the server, and k3s imports cached images at boot | Accepted |
 | [0013](0013-admin-content-authoring.md) | Admins author content in the app; the database copy wins over files | Accepted |
+| [0016](0016-readiness-from-all-evidence.md) | Readiness counts labs, mock exams and lessons; review sessions mix certs | Accepted |

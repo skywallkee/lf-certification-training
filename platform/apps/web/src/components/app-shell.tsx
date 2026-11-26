@@ -24,6 +24,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
     ? [
         { key: "today", href: "/today", label: en.nav.today },
         { key: "path", href: "/path", label: en.nav.path },
+        { key: "progress", href: "/progress", label: en.nav.progress },
         { key: "certs", href: "/certs", label: en.nav.certs },
         { key: "review", href: "/review", label: en.nav.review, badge: due },
         { key: "search", href: "/search", label: en.nav.search },

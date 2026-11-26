@@ -38,11 +38,21 @@ export function createDocsProxy(opts: DocsProxyOptions) {
       res.end();
       return;
     }
+    // Only a path on the site itself: "@evil.example/" or "//evil.example/" would otherwise turn
+    // `https://kubernetes.io` + path into a request to another host.
+    const base = new URL(upstream(site));
+    const path = req.url ?? "/";
+    const target = path.startsWith("/") && !path.startsWith("//") ? new URL(path, base) : null;
+    if (!target || target.origin !== base.origin) {
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Bad request");
+      return;
+    }
     const port = /:(\d+)$/.exec(req.headers.host ?? "")?.[1];
     const viewerOrigin = (h: string) => `http://${h}.localhost${port ? `:${port}` : ""}`;
     let upstreamRes: Response;
     try {
-      upstreamRes = await doFetch(`${upstream(site)}${req.url ?? "/"}`, {
+      upstreamRes = await doFetch(target, {
         method: req.method,
         redirect: "manual",
         headers: {

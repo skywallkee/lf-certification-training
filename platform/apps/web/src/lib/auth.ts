@@ -11,7 +11,22 @@ import { sendEmail } from "@/server/email";
 export const VERIFY_SUBJECT = "Verify your email for LF Cert Trainer";
 export const RESET_SUBJECT = "Reset your LF Cert Trainer password";
 
+/**
+ * The compose file ships placeholder secrets so `docker compose up` works on a laptop. Anywhere else they would let
+ * anyone forge sessions, so a production build outside APP_ENV=local refuses to start with them.
+ */
+export function assertProductionSecrets(vars: Record<string, string | undefined> = process.env): void {
+  if (vars.NODE_ENV !== "production" || vars.APP_ENV === "local") return;
+  const weak = ["BETTER_AUTH_SECRET", "LAB_CONTROLLER_SECRET", "LAB_TOKEN_SECRET"].filter((name) => {
+    const v = vars[name];
+    if (name !== "BETTER_AUTH_SECRET" && !v) return false; // labs are optional
+    return !v || v.length < 16 || /change-me/i.test(v);
+  });
+  if (weak.length) throw new Error(`Set long random values for ${weak.join(", ")} (at least 16 characters, not the local placeholders).`);
+}
+
 function createAuth() {
+  assertProductionSecrets();
   return betterAuth({
     appName: "LF Cert Trainer",
     baseURL: env.baseUrl,

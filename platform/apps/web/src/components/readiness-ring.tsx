@@ -1,4 +1,4 @@
-import { pct, type Readiness } from "@/lib/readiness";
+import { evidenceSummary, pct, type Readiness } from "@/lib/readiness";
 import { en } from "@/messages/en";
 
 /** Weighted readiness with its band and evidence count, or "not enough evidence" below the threshold. */
@@ -40,7 +40,7 @@ export function ReadinessRing({ readiness, size = 96 }: { readiness: Readiness; 
       </svg>
       <div className="flex flex-col gap-1 text-sm text-muted-foreground">
         <span>
-          Range {pct(readiness.low)} to {pct(readiness.high)}%, from {readiness.answers} answers
+          Range {pct(readiness.low)} to {pct(readiness.high)}%, from {evidenceSummary(readiness.bySource)}
         </span>
         <span>{readiness.ready ? "Ready to book" : en.readiness.bookReady}</span>
       </div>

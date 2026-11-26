@@ -33,3 +33,38 @@ export function isDue(state: ReviewState, today: IsoDate): boolean {
 export function reviewMinutes(count: number): number {
   return Math.max(1, Math.round((count * 45) / 60));
 }
+
+/** A question missed this many times or more is a "hard" one: the review page suggests reading its lesson again. */
+export const HARD_AFTER_LAPSES = 3;
+
+export function isHard(state: Pick<ReviewState, "lapses">): boolean {
+  return state.lapses >= HARD_AFTER_LAPSES;
+}
+
+/** "Step 2 of 5": how far a question is through the intervals before it leaves the queue. */
+export function stepLabel(box: number): string {
+  return `Step ${Math.min(box, LAST_BOX) + 1} of ${INTERVAL_DAYS.length}`;
+}
+
+export interface QueueItem extends ReviewState {
+  questionId: string;
+  certCode: string;
+}
+
+/**
+ * The questions for one review session: the most overdue first, then the lowest box (least learned), then
+ * interleaved across certs so a session does not run through one cert in a block. Mixing topics is harder in
+ * the moment but sticks better, and it mirrors exam days where questions jump between domains.
+ */
+export function pickSession<T extends QueueItem>(due: readonly T[], limit = 20): T[] {
+  const sorted = [...due].sort((a, b) => a.dueOn.localeCompare(b.dueOn) || a.box - b.box || a.questionId.localeCompare(b.questionId));
+  const chosen = sorted.slice(0, limit);
+  const byCert = new Map<string, T[]>();
+  for (const item of chosen) byCert.set(item.certCode, [...(byCert.get(item.certCode) ?? []), item]);
+  const lanes = [...byCert.values()];
+  const out: T[] = [];
+  for (let i = 0; out.length < chosen.length; i++) {
+    for (const lane of lanes) if (lane[i]) out.push(lane[i]!);
+  }
+  return out;
+}
