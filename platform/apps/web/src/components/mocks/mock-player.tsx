@@ -16,6 +16,7 @@ import { TerminalPane } from "@/components/labs/terminal-pane";
 import { usePlayerState } from "@/components/labs/use-player-state";
 import { TabTitle } from "@/components/labs/tab-title";
 import { SampleBadge } from "@/components/status-chip";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -229,6 +230,7 @@ export function MockPlayer(props: MockPlayerProps) {
           {props.mock ? <SampleBadge /> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ThemeToggle showLabel={false} />
           <SessionTimer
             expiresAt={started ? poll.expiresAt : null}
             skewMs={skewMs}
@@ -315,7 +317,7 @@ export function MockPlayer(props: MockPlayerProps) {
           onStart={begin}
         />
       ) : (
-        <div ref={mainRef} className={cn("grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:overflow-hidden", tab === "docs" ? "xl:grid-cols-[minmax(420px,1fr)_minmax(0,1fr)]" : "xl:grid-cols-[minmax(340px,460px)_1fr]")}>
+        <div ref={mainRef} className={cn("grid min-h-0 flex-1 auto-rows-max grid-cols-[minmax(0,1fr)] gap-4 overflow-auto p-4 xl:auto-rows-auto xl:overflow-hidden", tab === "docs" ? "xl:grid-cols-[minmax(420px,1fr)_minmax(0,1fr)]" : "xl:grid-cols-[minmax(340px,460px)_1fr]")}>
           <div ref={panel} tabIndex={-1} role="region" aria-label="Tasks and documentation" className="flex min-h-0 flex-col gap-4 rounded-lg border bg-card p-5">
             <div role="tablist" aria-label="Left panel" className="flex gap-1 rounded-md bg-muted p-1">
               {(
@@ -408,7 +410,7 @@ function PrepareScreen(props: {
   const ready = poll.status === "ready";
   const failed = poll.status === "failed";
   return (
-    <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 lg:grid-cols-[1fr_minmax(360px,480px)]">
+    <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-[minmax(0,1fr)] gap-4 overflow-auto p-4 lg:auto-rows-auto lg:grid-cols-[1fr_minmax(360px,480px)]">
       <section aria-labelledby="rules" className="flex flex-col gap-4 rounded-lg border bg-card p-6">
         <div>
           <h1 id="rules" className="text-xl font-semibold">

@@ -65,7 +65,7 @@ export default async function AdminPage() {
           {runs.length === 0 ? (
             <p className="mt-2 text-[15px] text-muted-foreground">No ingest has run yet. Run pnpm curriculum:ingest.</p>
           ) : (
-            <div className="mt-3 overflow-x-auto">
+            <div className="relative mt-3 overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-sm">
                 <thead className="text-muted-foreground">
                   <tr>
@@ -136,7 +136,7 @@ export default async function AdminPage() {
 
         <Card aria-labelledby="coverage">
           <CardTitle id="coverage">Coverage by cert</CardTitle>
-          <div className="mt-3 overflow-x-auto">
+          <div className="relative mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead className="text-muted-foreground">
                 <tr>
@@ -172,7 +172,7 @@ export default async function AdminPage() {
 
         <Card aria-labelledby="users">
           <CardTitle id="users">Users</CardTitle>
-          <div className="mt-3 overflow-x-auto">
+          <div className="relative mt-3 overflow-x-auto">
             <table className="w-full min-w-[620px] text-left text-sm">
               <thead className="text-muted-foreground">
                 <tr>

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { ChangePasswordForm, DeleteAccount, ProfileForm } from "@/components/forms/account-forms";
 import { PageHeader } from "@/components/page-header";
+import { ThemeChoice } from "@/components/theme-toggle";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getDb } from "@/db";
 import { account } from "@/db/schema";
@@ -52,11 +53,12 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             Change my goal
           </Link>
         </Card>
-        <Card aria-labelledby="theme">
-          <CardTitle id="theme">Theme</CardTitle>
-          <p className="mt-2 text-[15px] text-muted-foreground">
-            The app follows your system setting. Use the theme button in the top bar to pick light or dark on this device.
-          </p>
+        <Card aria-labelledby="appearance">
+          <CardTitle id="appearance" className="mb-4">
+            Appearance
+          </CardTitle>
+          <ThemeChoice className="max-w-md" />
+          <p className="mt-3 text-sm text-muted-foreground">Saved on this device. The theme button in the top bar switches it too.</p>
         </Card>
         <Card aria-labelledby="danger" className="border-destructive/40">
           <CardTitle id="danger">Delete account</CardTitle>

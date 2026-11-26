@@ -22,6 +22,9 @@ export const en = {
     mocks: "Mocks",
     signIn: "Sign in",
     signOut: "Sign out",
+    signUp: "Sign up",
+    home: "Home",
+    more: "More",
     skip: "Skip to content",
   },
   home: {
