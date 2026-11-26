@@ -18,10 +18,14 @@ export interface DocsLink {
  * sites that forbid framing still show; the frame stays loaded while the learner switches back to the
  * exercises. "Open in a new window" is the fallback when the viewer cannot reach a site.
  */
-export function DocsPanel({ links }: { links: DocsLink[] }) {
+export function DocsPanel({ links, selected: rawSelected = 0, onSelect }: { links: DocsLink[]; selected?: number; onSelect?: (index: number) => void }) {
   const framable = links.filter((l) => l.viewerUrl);
-  const [selected, setSelected] = useState(0);
-  const [src, setSrc] = useState(framable[0]?.viewerUrl ?? null);
+  const [selected, setSelectedState] = useState(rawSelected < framable.length ? rawSelected : 0);
+  const setSelected = (i: number) => {
+    setSelectedState(i);
+    onSelect?.(i);
+  };
+  const [src, setSrc] = useState(framable[selected]?.viewerUrl ?? null);
   const [reloads, setReloads] = useState(0);
   const page = framable[selected];
 

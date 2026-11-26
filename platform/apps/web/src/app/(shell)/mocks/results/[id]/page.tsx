@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LocalTime } from "@/components/local-time";
 import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { CheckCircle2, ExternalLink, EyeOff, XCircle } from "lucide-react";
 import { domainScores, isActive, taskScores } from "@lfct/labs";
-import { SessionStatus, dateTime, durationLabel } from "@/components/labs/session-status";
+import { SessionStatus, durationLabel } from "@/components/labs/session-status";
 import { Markdown } from "@/components/markdown";
 import { SampleBadge } from "@/components/status-chip";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getCatalog } from "@/server/catalog";
 import { getLab, getLastCheck, getSession } from "@/server/labs";
-import { domainName } from "@/server/mocks";
+import { domainName, getMockHistory } from "@/server/mocks";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Mock exam results" };
@@ -25,7 +26,11 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
   if (!session) notFound();
   if (session.mode === "lab") redirect(`/labs/history/${id}`);
   if (isActive(session.status)) redirect(`/mocks/attempts/${id}`);
-  const [lab, final, catalog] = await Promise.all([getLab(session.labId), getLastCheck(id, "final"), getCatalog()]);
+  const [lab, final, catalog, history] = await Promise.all([getLab(session.labId), getLastCheck(id, "final"), getCatalog(), getMockHistory(user.id)]);
+  // The graded attempt of the same mock just before this one, for "compared with last time".
+  const series = history.find((h) => h.mock.id === session.labId)?.graded ?? [];
+  const index = series.findIndex((g) => g.id === id);
+  const previous = index > 0 ? series[index - 1] : undefined;
   const results = final?.results ?? [];
   const cert = catalog.certs.get(session.certCode);
   const passMark = lab?.passPercent ?? 66;
@@ -48,7 +53,7 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
           <SessionStatus status={session.status} />
         </div>
         <p className="text-sm text-muted-foreground">
-          {mode} · started {dateTime.format(session.startedAt ?? session.createdAt)} UTC · time used {durationLabel(session.startedAt, session.endedAt)} of{" "}
+          {mode} · started <LocalTime value={session.startedAt ?? session.createdAt} /> · time used {durationLabel(session.startedAt, session.endedAt)} of{" "}
           {session.minutes} min
         </p>
         {session.statusMessage ? <p className="text-[15px]">{session.statusMessage}</p> : null}
@@ -74,6 +79,15 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
             </span>
           </div>
         )}
+        {graded && previous ? (
+          <p className="mt-2 text-sm">
+            {session.score! === previous.score
+              ? "The same score as your previous attempt"
+              : `${session.score! > previous.score ? "Up" : "Down"} ${Math.abs(session.score! - previous.score)} points from your previous attempt (${previous.score}%)`}
+            .{" "}
+            <Link href="/mocks/history">See your score trend</Link>
+          </p>
+        ) : null}
         {session.startedAt ? (
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
             <EyeOff aria-hidden="true" className="size-4" />
@@ -94,6 +108,7 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
                   <span className="font-semibold">{domainName(cert, d.domain)}</span>
                   <span className="text-muted-foreground">
                     {d.earned} of {d.possible} points · {d.percent}%
+                    <DomainDelta now={d.percent} before={previous?.domains?.find((p) => p.domain === d.domain)?.percent} />
                   </span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted" role="presentation">
@@ -181,4 +196,10 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
       </div>
     </article>
   );
+}
+
+function DomainDelta({ now, before }: { now: number; before: number | undefined }) {
+  if (before === undefined || before === now) return null;
+  const up = now > before;
+  return <span className={cn("ml-1 font-semibold", up ? "text-success" : "text-destructive")}>({up ? "up" : "down"} {Math.abs(now - before)} since last time)</span>;
 }

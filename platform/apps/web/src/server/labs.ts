@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { ACTIVE_STATUSES, minutesUsed, monthStart, nextMonthStart, startBlock, type StartBlock } from "@lfct/labs";
 import { lab as labTable } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
@@ -52,6 +52,34 @@ export async function getUsage(userId: string, now = new Date()): Promise<LabUsa
   const monthly = env.labs.monthlyMinutes;
   const active = rows.find((r) => (ACTIVE_STATUSES as readonly string[]).includes(r.status)) ?? null;
   return { minutesUsed: used, monthlyMinutes: monthly, minutesLeft: Math.max(0, monthly - used), resetsOn: nextMonthStart(now), active };
+}
+
+/** The learner's running lab or mock attempt with its title, for the banner on every page; null if none. */
+export async function getActiveSession(userId: string): Promise<import("@/components/labs/active-session-banner").ActiveSessionInfo | null> {
+  const [row] = await getDb()
+    .select({
+      id: labSession.id,
+      mode: labSession.mode,
+      status: labSession.status,
+      startedAt: labSession.startedAt,
+      expiresAt: labSession.expiresAt,
+      title: labTable.title,
+      labId: labSession.labId,
+    })
+    .from(labSession)
+    .leftJoin(labTable, eq(labTable.id, labSession.labId))
+    .where(and(eq(labSession.userId, userId), inArray(labSession.status, [...ACTIVE_STATUSES])))
+    .limit(1);
+  if (!row) return null;
+  return {
+    id: row.id,
+    mode: row.mode,
+    status: row.status,
+    title: row.title ?? row.labId,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    now: new Date().toISOString(),
+  };
 }
 
 export interface Capacity {
@@ -151,7 +179,36 @@ async function controllerHealthy(): Promise<boolean> {
   }
 }
 
-/** "About 1 minute to start": tier 1 on local Docker boots in well under a minute once images are cached. */
-export function bootEstimate(tier: number): string {
+/**
+ * Typical boot time per lab on this machine: the median seconds from request to ready over the last ten boots
+ * of each lab (any learner), so the start button tells the truth about this laptop. Labs not run yet are absent.
+ */
+export async function getBootTimes(): Promise<Map<string, number>> {
+  const rows = await getDb()
+    .select({ labId: labSession.labId, createdAt: labSession.createdAt, readyAt: labSession.readyAt })
+    .from(labSession)
+    .where(isNotNull(labSession.readyAt))
+    .orderBy(desc(labSession.readyAt))
+    .limit(500);
+  const byLab = new Map<string, number[]>();
+  for (const r of rows) {
+    const list = byLab.get(r.labId) ?? [];
+    if (list.length < 10) list.push((r.readyAt!.getTime() - r.createdAt.getTime()) / 1000);
+    byLab.set(r.labId, list);
+  }
+  return new Map([...byLab].map(([id, list]) => [id, Math.round(median(list))]));
+}
+
+function median(values: number[]): number {
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+}
+
+/** "Usually ready in about 20 s" from real boots here, else a rough guess by tier. */
+export function bootEstimate(tier: number, typicalSeconds?: number): string {
+  if (typicalSeconds !== undefined) {
+    return typicalSeconds < 90 ? `Usually ready in about ${Math.max(5, Math.round(typicalSeconds / 5) * 5)} s` : `Usually ready in about ${Math.round(typicalSeconds / 60)} min`;
+  }
   return tier === 1 ? "About 1 minute to start" : "About 3 minutes to start";
 }

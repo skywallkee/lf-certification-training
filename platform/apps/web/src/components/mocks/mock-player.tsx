@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, ListChecks, Loader2, Play } from "lucide-react";
+import type { PlayerState } from "@lfct/labs/player";
 import { taskStates, type CheckResult } from "@lfct/labs/status";
 import { beginMockAction, checkMockTaskAction, submitMockAction } from "@/app/actions/mocks";
 import { BootProgress } from "@/components/labs/boot-progress";
@@ -12,6 +13,8 @@ import { ExercisePanel } from "@/components/labs/exercise-panel";
 import type { PlayerTask } from "@/components/labs/lab-player";
 import { SessionTimer } from "@/components/labs/session-timer";
 import { TerminalPane } from "@/components/labs/terminal-pane";
+import { usePlayerState } from "@/components/labs/use-player-state";
+import { TabTitle } from "@/components/labs/tab-title";
 import { SampleBadge } from "@/components/status-chip";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -24,6 +27,8 @@ interface Poll {
   statusMessage: string | null;
   expiresAt: string | null;
   startedAt: string | null;
+  /** The controller is grading and deleting the attempt. */
+  ending: boolean;
   now: string;
   createdAt: string;
 }
@@ -45,6 +50,8 @@ export interface MockPlayerProps {
   initial: Poll;
   /** Practice mode: the newest result of each task's own Check. */
   lastResults: CheckResult[];
+  /** Where the learner was (task, flags, panel), saved on the server for resuming after a refresh. */
+  playerState: PlayerState;
 }
 
 /**
@@ -58,13 +65,15 @@ export function MockPlayer(props: MockPlayerProps) {
   const [poll, setPoll] = useState<Poll>(props.initial);
   const [skewMs, setSkewMs] = useState(() => new Date(props.initial.now).getTime() - Date.now());
   const [elapsed, setElapsed] = useState(0);
-  const [tab, setTab] = useState<"tasks" | "docs">("tasks");
-  const [flags, setFlags] = useState<string[]>([]);
+  const [saved, save] = usePlayerState(props.sessionId, props.playerState);
+  const tab = saved.tab;
+  const setTab = (t: "tasks" | "docs") => save({ tab: t });
+  const flags = saved.flags;
   const [results, setResults] = useState<CheckResult[]>(props.lastResults);
   const [checkingTask, setCheckingTask] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [starting, startStarting] = useTransition();
-  const [grading, setGrading] = useState<null | "submit" | "time">(null);
+  const [grading, setGrading] = useState<null | "submit" | "time">(props.initial.ending ? "submit" : null);
   const [warning, setWarning] = useState<number | null>(null);
   const submitForm = useRef<HTMLFormElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
@@ -85,10 +94,15 @@ export function MockPlayer(props: MockPlayerProps) {
   }, [props.sessionId]);
 
   useEffect(() => {
-    if (ended || grading) return;
-    const t = setInterval(refresh, ready ? 10_000 : 1500);
+    if (ended) return;
+    // While grading after Submit the form's redirect takes over; after a refresh mid-grading, polling does.
+    const t = setInterval(refresh, grading ? 2000 : ready ? 10_000 : 1500);
     return () => clearInterval(t);
   }, [ended, ready, grading, refresh]);
+
+  useEffect(() => {
+    if (poll.ending) setGrading((g) => g ?? "submit");
+  }, [poll.ending]);
 
   useEffect(() => {
     if (ended && poll.status !== "failed") router.replace(`/mocks/results/${props.sessionId}`);
@@ -124,13 +138,27 @@ export function MockPlayer(props: MockPlayerProps) {
   // Leaving the exam window (the page becomes hidden) is counted and shown in the results only.
   useEffect(() => {
     if (!started) return;
+    // A refresh or closing the tab fires pagehide first: that is resuming later, not looking elsewhere.
+    let unloading = false;
+    const onPageHide = () => {
+      unloading = true;
+    };
+    const onPageShow = () => {
+      unloading = false;
+    };
     const onVisibility = () => {
-      if (document.visibilityState !== "hidden") return;
+      if (document.visibilityState !== "hidden" || unloading) return;
       const url = `/api/labs/sessions/${props.sessionId}/window-leave`;
       if (!navigator.sendBeacon?.(url)) void fetch(url, { method: "POST", keepalive: true }).catch(() => undefined);
     };
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
   }, [started, props.sessionId]);
 
   // F6 / Shift+F6: toolbar -> task panel -> terminal.
@@ -177,6 +205,7 @@ export function MockPlayer(props: MockPlayerProps) {
 
   return (
     <div className="flex h-dvh min-h-[600px] flex-col">
+      <TabTitle label={grading ? "Grading" : poll.status === "failed" ? "Did not start" : ended ? null : ready ? "Ready to start" : "Preparing"} expiresAt={started && !grading ? poll.expiresAt : null} skewMs={skewMs} />
       <div
         ref={toolbar}
         tabIndex={-1}
@@ -326,7 +355,10 @@ export function MockPlayer(props: MockPlayerProps) {
                   multiCluster={props.clusters.length > 1}
                   canAct={started}
                   onShowHint={() => undefined}
-                  onFlagsChange={setFlags}
+                  current={saved.current}
+                  flags={flags}
+                  onCurrentChange={(current) => save({ current })}
+                  onFlagsChange={(next) => save({ flags: next })}
                   hideStates={props.mode === "exam"}
                   noun="Task"
                   renderActions={
@@ -348,7 +380,7 @@ export function MockPlayer(props: MockPlayerProps) {
               )}
             </div>
             <div id="panel-docs" role="tabpanel" aria-labelledby="tab-docs" hidden={tab !== "docs"} className="flex min-h-0 flex-1 flex-col">
-              <DocsPanel links={props.docs} />
+              <DocsPanel links={props.docs} selected={saved.doc} onSelect={(doc) => save({ doc })} />
             </div>
           </div>
           <div className="flex min-h-[420px] flex-col">

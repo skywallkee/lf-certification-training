@@ -1,6 +1,6 @@
 import "server-only";
-import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
-import { mockStartBlock, monthStart, type CheckResult, type MockMode, type MockStartBlock } from "@lfct/labs";
+import { and, desc, eq, gte, inArray, isNotNull, ne } from "drizzle-orm";
+import { domainScores, mockStartBlock, monthStart, type CheckResult, type GradedAttempt, type MockMode, type MockStartBlock } from "@lfct/labs";
 import { lab as labTable } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
 import { labCheckRun, labSession } from "@/db/schema";
@@ -86,6 +86,50 @@ export async function getLastChecksPerTask(sessionId: string): Promise<CheckResu
     if (!taskId || seen.has(taskId)) continue;
     seen.add(taskId);
     out.push(...run.results.map(({ detail: _d, ...r }) => r));
+  }
+  return out;
+}
+
+export interface MockHistory {
+  mock: LabRow;
+  /** Graded attempts (started and scored), oldest first, with their score per domain. */
+  graded: GradedAttempt[];
+}
+
+/**
+ * Every graded attempt of the learner, grouped by mock exam, with each attempt's score per domain computed from
+ * its final grading. Mocks the learner never finished an attempt of are left out.
+ */
+export async function getMockHistory(userId: string): Promise<MockHistory[]> {
+  const db = getDb();
+  const sessions = await db
+    .select()
+    .from(labSession)
+    .where(and(eq(labSession.userId, userId), ne(labSession.mode, "lab"), isNotNull(labSession.startedAt), isNotNull(labSession.score)))
+    .orderBy(labSession.startedAt);
+  if (sessions.length === 0) return [];
+  const [mocks, finals] = await Promise.all([
+    listMocks(),
+    db
+      .select({ sessionId: labCheckRun.sessionId, results: labCheckRun.results, id: labCheckRun.id })
+      .from(labCheckRun)
+      .where(and(inArray(labCheckRun.sessionId, sessions.map((s) => s.id)), eq(labCheckRun.kind, "final")))
+      .orderBy(labCheckRun.id),
+  ]);
+  const finalBySession = new Map(finals.map((f) => [f.sessionId, f.results]));
+  const out: MockHistory[] = [];
+  for (const mock of mocks) {
+    const graded = sessions
+      .filter((s) => s.labId === mock.id)
+      .map((s) => ({
+        id: s.id,
+        at: s.startedAt!,
+        score: s.score!,
+        mode: s.mode,
+        passMark: mock.passPercent ?? 66,
+        domains: domainScores(mock.tasks, finalBySession.get(s.id) ?? []).map((d) => ({ domain: d.domain, percent: d.percent })),
+      }));
+    if (graded.length > 0) out.push({ mock, graded });
   }
   return out;
 }

@@ -1,49 +1,49 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LocalTime } from "@/components/local-time";
 import { Timer } from "lucide-react";
-import { MOCK_MODES } from "@lfct/labs";
+import { MOCK_MODES, trendSummary } from "@lfct/labs";
 import { PageHeader } from "@/components/page-header";
-import { SessionStatus, dateTime } from "@/components/labs/session-status";
+import { SessionStatus } from "@/components/labs/session-status";
 import { SampleBadge } from "@/components/status-chip";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
-import { getCapacity, getHistory, getUsage } from "@/server/labs";
-import { getMockAttemptsUsed, listMocks, mockAllowance, usedFor } from "@/server/mocks";
+import { getCapacity, getHistory } from "@/server/labs";
+import { getMockAttemptsUsed, getMockHistory, listMocks, mockAllowance, usedFor } from "@/server/mocks";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Mock exams" };
 
 export default async function MocksPage() {
   const user = await requireUser("/mocks");
-  const [mocks, used, usage, capacity, catalog, attempts] = await Promise.all([
+  const [mocks, used, capacity, catalog, attempts, history] = await Promise.all([
     listMocks(),
     getMockAttemptsUsed(user.id),
-    getUsage(user.id),
     getCapacity(),
     getCatalog(),
     getHistory(user.id, "mock"),
+    getMockHistory(user.id),
   ]);
+  const trends = new Map(history.map((h) => [h.mock.id, trendSummary(h.graded)]));
+  const recent = attempts.slice(0, 5);
   const byCert = new Map<string, typeof mocks>();
   for (const m of mocks) byCert.set(m.certCode, [...(byCert.get(m.certCode) ?? []), m]);
   const titles = new Map(mocks.map((m) => [m.id, m.title]));
 
   return (
     <>
-      <PageHeader title={en.mocks.title} lead={en.mocks.lead} />
+      <PageHeader
+        title={en.mocks.title}
+        lead={en.mocks.lead}
+        actions={
+          <Link href="/mocks/history" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            History and score trends
+          </Link>
+        }
+      />
       <div className="flex flex-col gap-6">
-        {usage.active ? (
-          <Card aria-labelledby="running" className="border-primary">
-            <h2 id="running" className="text-base font-semibold">
-              {usage.active.mode === "lab" ? "A lab is running" : "Your mock exam is in progress"}
-            </h2>
-            <p className="mt-1 text-[15px] text-muted-foreground">{titles.get(usage.active.labId) ?? usage.active.labId}</p>
-            <Link href={`/labs/sessions/${usage.active.id}`} className={`${buttonVariants()} mt-3`}>
-              {usage.active.mode === "lab" ? "Open the lab" : "Back to the exam"}
-            </Link>
-          </Card>
-        ) : null}
         {!capacity.controllerUp ? (
           <p role="status" className="rounded-md bg-warning-soft px-4 py-3 text-[15px]">
             {en.mocks.controllerDown}
@@ -77,6 +77,7 @@ export default async function MocksPage() {
                       <p className="text-sm">
                         {m.minutes} min · {m.tasks.length} tasks · {m.clusters.length} cluster{m.clusters.length === 1 ? "" : "s"} · pass mark {m.passPercent ?? 66}%
                       </p>
+                      <MockTrendLine summary={trends.get(m.id)} passMark={m.passPercent ?? 66} />
                       <div className="mt-auto">
                         <Link href={`/mocks/${m.id}`} className={buttonVariants({ variant: "outline" })}>
                           Details and start
@@ -92,7 +93,7 @@ export default async function MocksPage() {
 
         <Card aria-labelledby="attempts" className="overflow-x-auto p-0">
           <CardTitle id="attempts" className="px-5 pt-5">
-            Your attempts
+            Recent attempts
           </CardTitle>
           {attempts.length === 0 ? (
             <p className="px-5 pb-5 pt-2 text-[15px] text-muted-foreground">No attempts yet.</p>
@@ -102,19 +103,19 @@ export default async function MocksPage() {
                 <tr>
                   <th scope="col" className="px-5 py-3 font-semibold">Mock exam</th>
                   <th scope="col" className="px-5 py-3 font-semibold">Mode</th>
-                  <th scope="col" className="px-5 py-3 font-semibold">Started (UTC)</th>
+                  <th scope="col" className="px-5 py-3 font-semibold">Started</th>
                   <th scope="col" className="px-5 py-3 font-semibold">Status</th>
                   <th scope="col" className="px-5 py-3 font-semibold">Score</th>
                 </tr>
               </thead>
               <tbody>
-                {attempts.map((a) => (
+                {recent.map((a) => (
                   <tr key={a.id} className="border-t">
                     <td className="px-5 py-3">
                       <Link href={`/mocks/results/${a.id}`}>{titles.get(a.labId) ?? a.labId}</Link>
                     </td>
                     <td className="px-5 py-3">{a.mode === "exam" ? "Exam" : "Practice"}</td>
-                    <td className="px-5 py-3">{dateTime.format(a.startedAt ?? a.createdAt)}</td>
+                    <td className="px-5 py-3"><LocalTime value={a.startedAt ?? a.createdAt} /></td>
                     <td className="px-5 py-3">
                       <SessionStatus status={a.status} />
                     </td>
@@ -124,8 +125,26 @@ export default async function MocksPage() {
               </tbody>
             </table>
           )}
+          {attempts.length > 0 ? (
+            <p className="border-t px-5 py-3 text-sm">
+              <Link href="/mocks/history">All {attempts.length} attempts and your score trends</Link>
+            </p>
+          ) : null}
         </Card>
       </div>
     </>
+  );
+}
+
+/** "Last 62% (+12) · best 75% · 1 pass in 3": the mock's own trend at a glance, or nothing before a graded attempt. */
+function MockTrendLine({ summary, passMark }: { summary: ReturnType<typeof trendSummary> | undefined; passMark: number }) {
+  if (!summary || summary.latest === null) return null;
+  const change = summary.change;
+  return (
+    <p className="text-sm text-muted-foreground">
+      Last <strong className={summary.latest >= passMark ? "text-success" : "text-foreground"}>{summary.latest}%</strong>
+      {change !== null && change !== 0 ? ` (${change > 0 ? "+" : ""}${change} vs the attempt before)` : ""} · best {summary.best}% · {summary.passed} pass
+      {summary.passed === 1 ? "" : "es"} in {summary.attempts}
+    </p>
   );
 }

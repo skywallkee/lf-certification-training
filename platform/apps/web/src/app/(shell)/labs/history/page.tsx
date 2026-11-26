@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
-import { SessionStatus, dateTime, durationLabel } from "@/components/labs/session-status";
+import { SessionStatus, durationLabel } from "@/components/labs/session-status";
 import { Card } from "@/components/ui/card";
 import { getHistory, listLabs } from "@/server/labs";
 import { requireUser } from "@/server/session";
@@ -27,7 +28,7 @@ export default async function LabHistoryPage() {
             <thead className="text-muted-foreground">
               <tr>
                 <th scope="col" className="px-5 py-3 font-semibold">Lab</th>
-                <th scope="col" className="px-5 py-3 font-semibold">Started (UTC)</th>
+                <th scope="col" className="px-5 py-3 font-semibold">Started</th>
                 <th scope="col" className="px-5 py-3 font-semibold">Status</th>
                 <th scope="col" className="px-5 py-3 font-semibold">Time used</th>
                 <th scope="col" className="px-5 py-3 font-semibold">Score</th>
@@ -39,7 +40,7 @@ export default async function LabHistoryPage() {
                   <td className="px-5 py-3">
                     <Link href={`/labs/history/${s.id}`}>{titles.get(s.labId) ?? s.labId}</Link>
                   </td>
-                  <td className="px-5 py-3">{dateTime.format(s.createdAt)}</td>
+                  <td className="px-5 py-3"><LocalTime value={s.createdAt} /></td>
                   <td className="px-5 py-3">
                     <SessionStatus status={s.status} />
                   </td>

@@ -25,7 +25,18 @@ export function blockMessage(block: StartBlock, usage: LabUsage, labMinutes: num
 }
 
 /** Start button with the scarcity line ("About 1 minute to start · uses up to 30 of your 600 lab minutes"). */
-export function StartLab({ lab, usage, block }: { lab: Pick<LabRow, "id" | "tier" | "minutes">; usage: LabUsage; block: StartBlock | null }) {
+export function StartLab({
+  lab,
+  usage,
+  block,
+  bootSeconds,
+}: {
+  lab: Pick<LabRow, "id" | "tier" | "minutes">;
+  usage: LabUsage;
+  block: StartBlock | null;
+  /** Typical boot time of this lab on this machine, when it has run before. */
+  bootSeconds?: number | undefined;
+}) {
   if (block?.reason === "active-session") {
     return (
       <div className="flex flex-col gap-2">
@@ -44,7 +55,7 @@ export function StartLab({ lab, usage, block }: { lab: Pick<LabRow, "id" | "tier
         </Button>
       </form>
       <p className="text-[13px] text-muted-foreground">
-        {bootEstimate(lab.tier)} · uses up to {lab.minutes} of your {usage.minutesLeft} remaining lab minutes
+        {bootEstimate(lab.tier, bootSeconds)} · uses up to {lab.minutes} of your {usage.minutesLeft} remaining lab minutes
       </p>
       {block ? (
         <p role="status" className="max-w-[60ch] rounded-md bg-warning-soft px-3 py-2 text-sm text-foreground">

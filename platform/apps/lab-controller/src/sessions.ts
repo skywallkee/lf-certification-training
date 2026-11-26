@@ -157,6 +157,8 @@ export class Sessions {
       const { session, lab } = found;
       if (!isActive(session.status)) return { score: session.score };
       const mock = session.mode !== "lab";
+      // Tell players opened from now on (a refresh, another tab) that the session is ending.
+      await this.db.update(labSession).set({ endingAt: new Date() }).where(eq(labSession.id, sessionId));
       // Mock exams freeze the terminal before grading, so no command runs while the checks do.
       if (mock) this.onEnded(sessionId);
       let score: number | null = null;
