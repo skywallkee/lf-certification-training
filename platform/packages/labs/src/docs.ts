@@ -17,7 +17,7 @@ export function parseDocsHosts(raw: string | undefined): string[] {
 
 /**
  * The viewer URL for a docs link, or null when the site is not allowlisted (open it in a new window then).
- * `base` is a template such as `http://{host}.localhost:3001`.
+ * `base` is a template such as `http://{host}.localhost:4001`.
  */
 export function docsViewerUrl(link: string, base: string, hosts: readonly string[]): string | null {
   let url: URL;

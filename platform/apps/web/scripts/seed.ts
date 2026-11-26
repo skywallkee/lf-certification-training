@@ -8,6 +8,7 @@ import * as schema from "../src/db/schema.ts";
 import { addDays, addMonths, todayIn } from "../src/lib/dates.ts";
 import { nextReviewState, type ReviewState } from "../src/lib/review.ts";
 import { seedCohort } from "./seed-cohort.ts";
+import { seedDiscussions } from "./seed-discussions.ts";
 
 /**
  * Seeds the sample learners described in the spec, one per stage, so Today, Path and readiness can be
@@ -180,6 +181,7 @@ export async function seed(databaseUrl: string, opts: { today?: string; cohort?:
     if (rbacLab) await graded(rbacLab, "lab", addDays(lastMonth, -4), () => true);
     if (fullMock) await graded(fullMock, "exam", lastMonth, (i) => i % 3 !== 2 && i < fullMock.tasks.length - 2);
     console.log(`Seeded ${Object.keys(SAMPLE_USERS).length} sample learners (password: ${SAMPLE_PASSWORD}).`);
+    console.log(`Seeded ${await seedDiscussions(db, ids, now)} sample discussion posts.`);
     if (opts.cohort !== false) console.log(`Seeded ${await seedCohort(db, today)} sample cohort learners for the admin analytics page.`);
   } finally {
     await pool.end();

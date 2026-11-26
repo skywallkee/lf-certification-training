@@ -1,6 +1,6 @@
 # LF Cert Trainer, the whole stack on one machine:
 #
-#   docker compose up --build        then open http://localhost:3000 (sample logins in the README)
+#   docker compose up --build        then open http://localhost:4000 (sample logins in the README)
 #
 # Services: Postgres and its backups, a local mail inbox (Mailpit), a one-shot setup job (migrations, content ingest, sample learners), the web app, the
 # lesson video narrator (local text to speech), and the lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
@@ -22,8 +22,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      # For psql and `pnpm dev` from the host. Change the left side if 5432 is taken.
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      # For psql and `pnpm dev` from the host. Change the left side if 4432 is taken.
+      - "127.0.0.1:${POSTGRES_PORT:-4432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d lfct"]
       interval: 3s
@@ -55,15 +55,15 @@ services:
     restart: unless-stopped
 
   # A local test inbox: the web app sends every email here over SMTP, and nothing reaches real addresses.
-  # Open http://localhost:8025 to read verification emails.
+  # Open http://localhost:4025 to read verification emails.
   mailpit:
     image: axllent/mailpit:v1.33.1
     environment:
       MP_MAX_MESSAGES: 500
     ports:
-      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
-      # SMTP, for `pnpm dev` on the host (SMTP_URL=smtp://localhost:1025).
-      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_PORT:-4025}:8025"
+      # SMTP, for `pnpm dev` on the host (SMTP_URL=smtp://localhost:4026).
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-4026}:1025"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
@@ -116,14 +116,14 @@ services:
       LAB_K3S_IMAGE: ${LAB_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1}
       LAB_DOCS_HOSTS: ${LAB_DOCS_HOSTS:-kubernetes.io,helm.sh}
       LAB_IMAGE_CACHE: ${LAB_IMAGE_CACHE:-true}
-      LAB_ALLOWED_ORIGINS: ${APP_URL:-http://localhost:3000}
+      LAB_ALLOWED_ORIGINS: ${APP_URL:-http://localhost:${WEB_PORT:-4000}}
     volumes:
       # Starts and removes lab containers on this machine's Docker.
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
     networks: [default, labs]
     ports:
       # The browser's terminal WebSocket connects here.
-      - "127.0.0.1:${LAB_CONTROLLER_PORT:-3001}:3001"
+      - "127.0.0.1:${LAB_CONTROLLER_PORT:-4001}:4001"
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -141,8 +141,8 @@ services:
     image: lfct-narrator:local
     init: true
     ports:
-      # For `pnpm dev` on the host (NARRATOR_URL=http://localhost:8880).
-      - "127.0.0.1:${NARRATOR_PORT:-8880}:8880"
+      # For `pnpm dev` on the host (NARRATOR_URL=http://localhost:4880).
+      - "127.0.0.1:${NARRATOR_PORT:-4880}:8880"
     # Healthcheck: defined in the Dockerfile (GET /health once the model is loaded).
     restart: unless-stopped
 
@@ -157,21 +157,21 @@ services:
       <<: *secrets
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/lfct
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-auth-secret-change-me-0123456789abcdef}
-      BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
+      BETTER_AUTH_URL: ${APP_URL:-http://localhost:${WEB_PORT:-4000}}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.com}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       # Email goes to the Mailpit inbox above. Set SMTP_URL in .env to send real mail instead.
       SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
       MAIL_FROM: ${MAIL_FROM:-LF Cert Trainer <no-reply@lfct.localhost>}
-      MAIL_INBOX_URL: ${MAIL_INBOX_URL:-http://localhost:${MAILPIT_PORT:-8025}}
+      MAIL_INBOX_URL: ${MAIL_INBOX_URL:-http://localhost:${MAILPIT_PORT:-4025}}
       # A production build running on a laptop: the verify page also shows the link and the inbox.
       APP_ENV: local
       SHOW_DEV_EMAILS: "true"
-      LAB_CONTROLLER_URL: http://lab-controller:3001
-      LAB_TERMINAL_URL: ws://localhost:${LAB_CONTROLLER_PORT:-3001}
+      LAB_CONTROLLER_URL: http://lab-controller:4001
+      LAB_TERMINAL_URL: ws://localhost:${LAB_CONTROLLER_PORT:-4001}
       # The docs pane: the controller serves these sites at <site>.localhost (resolves to this machine).
-      LAB_DOCS_URL: http://{host}.localhost:${LAB_CONTROLLER_PORT:-3001}
+      LAB_DOCS_URL: http://{host}.localhost:${LAB_CONTROLLER_PORT:-4001}
       LAB_DOCS_HOSTS: ${LAB_DOCS_HOSTS:-kubernetes.io,helm.sh}
       LAB_PROVIDER_NAME: ${LAB_PROVIDER_NAME:-local-docker}
       LAB_MONTHLY_MINUTES: ${LAB_MONTHLY_MINUTES:-600}
@@ -186,7 +186,7 @@ services:
     volumes:
       - narration:/data/narration
     ports:
-      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      - "127.0.0.1:${WEB_PORT:-4000}:4000"
     depends_on:
       setup:
         condition: service_completed_successfully

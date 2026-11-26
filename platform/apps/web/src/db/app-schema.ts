@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.ts";
 
 /**
@@ -34,6 +34,8 @@ export const profile = pgTable("profile", {
   remindDay: integer("remind_day").notNull().default(1),
   /** Local hour from which reminder emails go out. */
   remindHour: integer("remind_hour").notNull().default(8),
+  /** Emails about discussions the learner follows (new posts, replies, an accepted answer). On by default, opt-out. */
+  notifyDiscussions: boolean("notify_discussions").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -359,4 +361,81 @@ export const contentRevision = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("content_revision_item_idx").on(t.itemType, t.itemId, t.createdAt)],
+);
+
+/**
+ * Community discussions (ADR 0022): threads under a lesson, question, lab or mock exam task, referenced by type and
+ * content id without a foreign key, like notes. A thread is a root post (parentId null); replies are one level deep.
+ * Posts cascade with their author's account, and replies with their thread.
+ */
+export type DiscussionTargetType = "lesson" | "question" | "lab" | "mock-task";
+/** visible; hidden (by a moderator, or automatically after enough reports); deleted (by its author, kept as a placeholder while it has replies). */
+export type DiscussionPostStatus = "visible" | "hidden" | "deleted";
+
+export const discussionPost = pgTable(
+  "discussion_post",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    targetType: text("target_type").$type<DiscussionTargetType>().notNull(),
+    targetId: text("target_id").notNull(),
+    parentId: integer("parent_id").references((): AnyPgColumn => discussionPost.id, { onDelete: "cascade" }),
+    userId: userRef(),
+    body: text("body").notNull(),
+    /** The author marked the post as a spoiler (it shows a solution); it stays collapsed until a reader opens it. */
+    spoiler: boolean("spoiler").notNull().default(false),
+    /** Replies only: the thread's author (or an admin) accepted this reply as the answer. One per thread. */
+    accepted: boolean("accepted").notNull().default(false),
+    status: text("status").$type<DiscussionPostStatus>().notNull().default("visible"),
+    /** Why a post is hidden: "moderator" or "reports". */
+    hiddenReason: text("hidden_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("discussion_post_target_idx").on(t.targetType, t.targetId, t.createdAt),
+    index("discussion_post_parent_idx").on(t.parentId),
+    index("discussion_post_user_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+export const discussionVote = pgTable(
+  "discussion_vote",
+  {
+    postId: integer("post_id")
+      .notNull()
+      .references(() => discussionPost.id, { onDelete: "cascade" }),
+    userId: userRef(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.userId] })],
+);
+
+/** Learner reports on a post, for the moderation queue. One per learner and post; the reporter is set null if they leave. */
+export const discussionReport = pgTable(
+  "discussion_report",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    postId: integer("post_id")
+      .notNull()
+      .references(() => discussionPost.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    reason: text("reason").notNull(),
+    details: text("details"),
+    status: flagStatus("status").notNull().default("open"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("discussion_report_status_idx").on(t.status, t.createdAt), uniqueIndex("discussion_report_once_idx").on(t.postId, t.userId)],
+);
+
+/** Learners who follow a discussion and get an email about new posts in it. Posting follows it. */
+export const discussionFollow = pgTable(
+  "discussion_follow",
+  {
+    userId: userRef(),
+    targetType: text("target_type").$type<DiscussionTargetType>().notNull(),
+    targetId: text("target_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.targetType, t.targetId] }), index("discussion_follow_target_idx").on(t.targetType, t.targetId)],
 );

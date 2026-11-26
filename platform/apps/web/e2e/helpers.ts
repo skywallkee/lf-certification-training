@@ -3,7 +3,7 @@ import { expect, type Page } from "@playwright/test";
 import pg from "pg";
 
 export const PASSWORD = "sample-password-123";
-export const DB_URL = process.env.E2E_DATABASE_URL ?? "postgres://postgres@localhost:5432/lfct_test";
+export const DB_URL = process.env.E2E_DATABASE_URL ?? "postgres://postgres@localhost:4432/lfct_test";
 
 /** Signs in and waits to leave the sign-in page. */
 export async function signIn(page: Page, email: string, password = PASSWORD) {

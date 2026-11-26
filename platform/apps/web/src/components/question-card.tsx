@@ -50,6 +50,7 @@ export function QuestionCard({
   options,
   isLast,
   flag,
+  discuss,
 }: {
   quizId: string;
   questionId: string;
@@ -58,6 +59,8 @@ export function QuestionCard({
   options: CardOption[];
   isLast: boolean;
   flag: ReactNode;
+  /** Link to the question's discussion, shown with the feedback once the learner has answered. */
+  discuss?: ReactNode;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
@@ -242,6 +245,7 @@ export function QuestionCard({
               </a>
               {result.reviewDueOn ? ` · This question returns to your review queue on ${formatLong(result.reviewDueOn)}.` : ""}
             </p>
+            {discuss ? <div>{discuss}</div> : null}
           </section>
         ) : null}
       </div>

@@ -69,21 +69,21 @@ FROM runtime AS lab-controller
 WORKDIR /app
 COPY platform/apps/lab-controller/docker-entrypoint.mjs ./docker-entrypoint.mjs
 COPY --from=build /repo/dist/bundles/lab-controller.mjs ./lab-controller.mjs
-EXPOSE 3001
+EXPOSE 4001
 HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=20 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
 CMD ["node", "docker-entrypoint.mjs"]
 
 # --- web: Next.js standalone server -----------------------------------------------------------------------------
 FROM runtime AS web
-ENV NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1 PORT=4000 HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=build --chown=node:node /repo/platform/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/platform/apps/web/.next/static ./platform/apps/web/.next/static
 # Lesson video narration cache (one MP3 per sentence); compose mounts a volume here, which starts owned by node.
 RUN mkdir -p /data/narration && chown node:node /data/narration
 USER node
-EXPOSE 3000
+EXPOSE 4000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/sign-in',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:4000/sign-in',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
 CMD ["node", "platform/apps/web/server.js"]

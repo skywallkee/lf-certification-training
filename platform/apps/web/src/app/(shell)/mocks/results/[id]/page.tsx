@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import * as z from "zod";
 import { CheckCircle2, ExternalLink, EyeOff, XCircle } from "lucide-react";
 import { domainScores, isActive, taskScores } from "@lfct/labs";
+import { DiscussLink } from "@/components/discussions/discuss-link";
 import { SessionStatus, durationLabel } from "@/components/labs/session-status";
 import { Markdown } from "@/components/markdown";
 import { SampleBadge } from "@/components/status-chip";
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { getCatalog } from "@/server/catalog";
 import { getLab, getLastCheck, getSession } from "@/server/labs";
 import { domainName, getMockHistory } from "@/server/mocks";
+import { discussionCounts } from "@/server/discussions";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Mock exam results" };
@@ -40,6 +42,7 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
   const domains = lab ? domainScores(lab.tasks, results) : [];
   const weakest = domains[0];
   const mode = session.mode === "exam" ? "Exam mode" : "Practice mode";
+  const talk = lab ? await discussionCounts("mock-task", lab.tasks.map((t) => `${lab.id}/${t.id}`)) : new Map<string, number>();
 
   return (
     <article className="flex flex-col gap-6">
@@ -167,6 +170,9 @@ export default async function MockResultsPage({ params }: { params: Promise<{ id
                       <ExternalLink aria-hidden="true" className="size-3.5" />
                     </a>
                   ) : null}
+                  <div className="mt-2">
+                    <DiscussLink type="mock-task" id={`${lab.id}/${t.id}`} count={talk.get(`${lab.id}/${t.id}`) ?? 0} />
+                  </div>
                 </li>
               );
             })}

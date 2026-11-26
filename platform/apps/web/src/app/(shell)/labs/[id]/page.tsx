@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Discussion } from "@/components/discussions/discussion";
 import { QuotaMeter } from "@/components/labs/quota-meter";
 import { StartLab, blockMessage } from "@/components/labs/start-lab";
 import { Markdown } from "@/components/markdown";
@@ -103,6 +104,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
           </Card>
         </div>
       </div>
+      <Discussion targetType="lab" targetId={lab.id} viewer={user} back={`/labs/${lab.id}`} />
     </article>
   );
 }

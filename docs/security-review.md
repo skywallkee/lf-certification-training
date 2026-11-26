@@ -28,7 +28,7 @@ Lab, mock and quiz players are checked in their own flows.
 - **Sample logins with a known password** (`admin@example.com` / `sample-password-123`) are seeded by default.
   Use `SEED=never` for any stack other people can reach.
 - **Docs pages share the `localhost` site.** The docs viewer serves kubernetes.io and helm.sh at
-  `<site>.localhost:3001`; browsers may treat those as same-site with the app, so their scripts could send
+  `<site>.localhost:4001`; browsers may treat those as same-site with the app, so their scripts could send
   same-site requests to it. Server actions still check the Origin header, and the sites are the official docs.
 - **Rate limits live in memory**, so they reset when the web container restarts and do not cover several
   replicas. Enough for one local container; a shared store is needed in the cloud.

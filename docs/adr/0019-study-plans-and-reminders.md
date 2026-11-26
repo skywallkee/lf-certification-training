@@ -47,7 +47,7 @@ before booking, so a plan has to work from a target date too.
 
 ## Consequences
 
-- Locally every reminder lands in Mailpit (http://localhost:8025). "Email me this week's plan" on the Plan page
+- Locally every reminder lands in Mailpit (http://localhost:4025). "Email me this week's plan" on the Plan page
   sends the weekly email at once, so it can be checked without waiting for the chosen day.
 - Defaults chosen without product input, all constants in the two lib files: 40/20 base hours, the pace
   thresholds, 15% review share, 3-day nudge, countdown at 7 and 1 days, reminders at 08:00 on Mondays once

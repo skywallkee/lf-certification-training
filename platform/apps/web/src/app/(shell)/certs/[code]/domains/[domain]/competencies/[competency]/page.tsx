@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { videoSeconds } from "@lfct/curriculum";
 import { lesson as lessonTable } from "@lfct/curriculum/db";
 import { completeLessonAction, startQuizAction } from "@/app/actions/study";
+import { Discussion } from "@/components/discussions/discussion";
 import { BookmarkButton, FlagButton, NoteEditor } from "@/components/item-tools";
 import { LessonBody } from "@/components/lesson-body";
 import { LessonVideo } from "@/components/lesson-video";
@@ -146,6 +147,9 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
                 <NoteEditor targetType="lesson" targetId={l.id} body={state!.notes.get(l.id) ?? ""} />
               </div>
             ) : null}
+            <div className="mt-8">
+              <Discussion targetType="lesson" targetId={l.id} viewer={user} back={back} anchor={`discussion-lesson-${l.id}`} />
+            </div>
           </section>
         );
       })}

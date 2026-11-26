@@ -15,7 +15,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "../src/db/schema.ts";
 import { todayIn } from "../src/lib/dates.ts";
 import { COHORT_DOMAIN, seedCohort } from "./seed-cohort.ts";
-import { SAMPLE_EMAILS, seed } from "./seed.ts";
+import { seedDiscussions } from "./seed-discussions.ts";
+import { SAMPLE_EMAILS, SAMPLE_USERS, seed } from "./seed.ts";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -45,6 +46,16 @@ if (mode !== "never") {
     console.log("Sample learners already exist; keeping them (SEED=always resets them).");
     // Databases seeded before the analytics page existed get the sample cohort on their own.
     if (cohort.rows[0]!.n === 0) console.log(`Seeded ${await seedCohort(drizzle(pool, { schema }), todayIn("UTC"))} sample cohort learners for the admin analytics page.`);
+    // Likewise sample discussions, for databases seeded before discussions existed (and only while there are none).
+    const posts = await pool.query<{ n: number }>("SELECT count(*)::int AS n FROM discussion_post");
+    if (posts.rows[0]!.n === 0) {
+      const users = await pool.query<{ id: string; email: string }>('SELECT id, email FROM "user" WHERE email = ANY($1)', [SAMPLE_EMAILS]);
+      const byEmail = new Map(users.rows.map((u) => [u.email, u.id]));
+      const ids = Object.fromEntries(Object.entries(SAMPLE_USERS).map(([k, u]) => [k, byEmail.get(u.email)]));
+      if (Object.values(ids).every(Boolean)) {
+        console.log(`Seeded ${await seedDiscussions(drizzle(pool, { schema }), ids as Parameters<typeof seedDiscussions>[1])} sample discussion posts.`);
+      }
+    }
     await pool.end();
   }
 }

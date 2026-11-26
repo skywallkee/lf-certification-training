@@ -11,7 +11,7 @@ import { getCatalog } from "@/server/catalog";
 import { sendPlanNow } from "@/server/reminders";
 import { getProfile, requireUser } from "@/server/session";
 import { learnerToday } from "@/server/today";
-import { turnOffReminders, verifyUnsubscribe } from "@/server/unsubscribe";
+import { unsubscribe, unsubscribeKind, verifyUnsubscribe } from "@/server/unsubscribe";
 
 const CertCode = z.string().regex(/^[A-Z]{2,6}$/);
 
@@ -108,8 +108,10 @@ export async function sendPlanNowAction(_prev: PlanFormState, _form: FormData): 
 export async function unsubscribeAction(form: FormData): Promise<void> {
   const u = String(form.get("u") ?? "");
   const t = String(form.get("t") ?? "");
-  const userId = verifyUnsubscribe(u, t);
-  if (!userId) redirect("/unsubscribe?invalid=1");
-  await turnOffReminders(userId);
-  redirect("/unsubscribe?done=1");
+  const kind = unsubscribeKind(String(form.get("k") ?? ""));
+  const k = kind === "discussions" ? "&k=discussions" : "";
+  const userId = verifyUnsubscribe(u, t, kind);
+  if (!userId) redirect(`/unsubscribe?invalid=1${k}`);
+  await unsubscribe(userId, kind);
+  redirect(`/unsubscribe?done=1${k}`);
 }

@@ -24,4 +24,5 @@ in the code. To change a decision, add a new record that supersedes the old one.
 | [0019](0019-study-plans-and-reminders.md) | Weekly study plans from the exam date, and opt-in reminder emails | Accepted |
 | [0020](0020-admin-analytics-from-existing-tables.md) | Admin analytics are computed from existing tables, with a seeded sample cohort | Accepted |
 | [0021](0021-mock-exams-per-exam-format.md) | Mock exams follow each exam's format: CKAD and CKS layouts, and multiple-choice mocks | Accepted |
+| [0022](0022-community-discussions.md) | Community discussions under lessons, questions, labs and mock tasks, locked during exams | Accepted |
 | [0023](0023-rich-lessons-and-lesson-videos.md) | Rich lessons: diagrams as data, and narrated lesson videos built from the lesson | Proposed |
