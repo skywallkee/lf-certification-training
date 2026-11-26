@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { deleteAccountAction, updateProfileAction, type ProfileState } from "@/app/actions/account";
+import { changePasswordAction, deleteAccountAction, updateProfileAction, type PasswordState, type ProfileState } from "@/app/actions/account";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { FieldError, Input, Label, Select } from "@/components/ui/field";
+import { FieldError, FieldHint, Input, Label, Select } from "@/components/ui/field";
 
 export function ProfileForm({ name, timeZone, hours, zones }: { name: string; timeZone: string; hours: number | null; zones: string[] }) {
   const [state, action, pending] = useActionState<ProfileState, FormData>(updateProfileAction, {});
@@ -43,6 +43,38 @@ export function ProfileForm({ name, timeZone, hours, zones }: { name: string; ti
       <div>
         <Button type="submit" disabled={pending}>
           Save profile
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function ChangePasswordForm({ changed }: { changed: boolean }) {
+  const [state, action, pending] = useActionState<PasswordState, FormData>(changePasswordAction, {});
+  return (
+    <form action={action} className="flex max-w-md flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="current">Current password</Label>
+        <Input id="current" name="current" type="password" autoComplete="current-password" required />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="new-password">New password</Label>
+        <Input id="new-password" name="password" type="password" autoComplete="new-password" minLength={10} required aria-describedby="new-password-hint" />
+        <FieldHint id="new-password-hint">At least 10 characters.</FieldHint>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="confirm-password">Repeat the new password</Label>
+        <Input id="confirm-password" name="confirm" type="password" autoComplete="new-password" minLength={10} required />
+      </div>
+      {state.error ? <FieldError>{state.error}</FieldError> : null}
+      {changed && !state.error ? (
+        <p role="status" className="text-sm font-medium text-success">
+          Password changed. Other devices were signed out.
+        </p>
+      ) : null}
+      <div>
+        <Button type="submit" disabled={pending}>
+          Change password
         </Button>
       </div>
     </form>
