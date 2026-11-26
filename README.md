@@ -124,7 +124,11 @@ Sample learners all use the password `sample-password-123`:
 | `new@example.com` | Just signed up, no answers yet |
 | `mid@example.com` | KCSA and CKAD passed, KCNA expiring, CKA booked, 10 days of CKA practice and a review queue |
 | `golden@example.com` | All 17 certs held, KCSA expiring |
-| `admin@example.com` | Admin: content editor (Admin > Content), ingest runs, flag queue, coverage, users |
+| `admin@example.com` | Admin: content editor (Admin > Content), analytics (Admin > Analytics), ingest runs, flag queue, coverage, users |
+
+The seed also adds a sample cohort of 30 learners at `@cohort.example.com` (no password, so nobody signs in as
+them) with six months of answers, labs and mock exams, so Admin > Analytics has something to show. An existing
+database gets the cohort on the next `docker compose up`; your own progress is kept.
 
 Sign-up works without a mail server: in development the verify page shows the emailed link, and with
 `SMTP_URL=smtp://localhost:1025` plus `docker compose up -d mailpit` the emails also land in the local inbox. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
