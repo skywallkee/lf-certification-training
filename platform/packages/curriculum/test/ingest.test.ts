@@ -90,4 +90,38 @@ describe.skipIf(!url)("content ingest", () => {
     const result = await ingestContent(db, await loadContent(curriculum, { includeSample: false }));
     expect(result).toEqual({ lessons: 0, questions: 0, labs: 0, removedLessons: 12, removedQuestions: 60, removedLabs: 6 });
   });
+
+  it("never overwrites or deletes items created or edited in the admin editor", async () => {
+    const db = drizzle(pool, { schema });
+    const content = await loadContent(curriculum);
+    await ingestContent(db, content);
+    const edited = content.lessons[0]!;
+    await db.update(schema.lesson).set({ title: "Edited in the app", origin: "app" }).where(eq(schema.lesson.id, edited.id));
+    await db.insert(schema.question).values({
+      id: "app-only-question",
+      certCode: "CKA",
+      kind: "single",
+      stem: "Made in the app?",
+      options: [
+        { id: "a", text: "Yes", correct: true },
+        { id: "b", text: "No", correct: false },
+      ],
+      explanation: "It was.",
+      sourceTitle: "Kubernetes docs",
+      sourceUrl: "https://kubernetes.io/docs/",
+      competencyRefs: [content.questions[0]!.competencies[0]!],
+      mock: true,
+      origin: "app",
+      published: false,
+      file: "app",
+      contentHash: "x",
+    });
+    await ingestContent(db, content);
+    const [lessonRow] = await db.select().from(schema.lesson).where(eq(schema.lesson.id, edited.id));
+    expect(lessonRow?.title).toBe("Edited in the app");
+    const result = await ingestContent(db, await loadContent(curriculum, { includeSample: false }));
+    expect(result).toMatchObject({ removedLessons: 11, removedQuestions: 60 });
+    const left = await pool.query("SELECT id FROM lesson UNION ALL SELECT id FROM question ORDER BY 1");
+    expect(left.rows.map((r) => r.id)).toEqual(["app-only-question", edited.id].sort());
+  });
 });

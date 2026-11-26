@@ -108,7 +108,7 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
                 .
               </p>
             ) : null}
-            <LessonBody hash={l.contentHash} source={l.body} />
+            <LessonBody hash={l.contentHash} source={l.body} untrusted={l.origin === "app"} />
             {l.docs.length > 0 ? (
               <section aria-labelledby={`docs-${l.id}`} className="mt-8 max-w-[72ch]">
                 <h2 id={`docs-${l.id}`} className="mb-2 text-lg font-semibold">

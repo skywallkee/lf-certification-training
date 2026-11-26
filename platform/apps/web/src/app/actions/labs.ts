@@ -8,7 +8,7 @@ import { EXTEND_MINUTES, type CheckResult } from "@lfct/labs";
 import { getDb } from "@/db";
 import { labHintUse, labSession } from "@/db/schema";
 import { env } from "@/env";
-import { blockFor, callController, ControllerError, getCapacity, getHintUses, getLab, getSession, getUsage } from "@/server/labs";
+import { blockFor, callController, ControllerError, getCapacity, getHintUses, getLab, getSession, getUsage, canOpen } from "@/server/labs";
 import { requireAdmin, requireUser } from "@/server/session";
 
 const SessionId = z.uuid();
@@ -18,7 +18,7 @@ export async function startLabAction(form: FormData): Promise<void> {
   const labId = z.string().min(1).max(64).parse(form.get("lab"));
   const user = await requireUser(`/labs/${labId}`);
   const lab = await getLab(labId);
-  if (!lab) redirect("/labs");
+  if (!lab || !canOpen(lab, user)) redirect("/labs");
   if (lab.kind === "mock") redirect(`/mocks/${lab.id}`);
   const [usage, capacity] = await Promise.all([getUsage(user.id), getCapacity()]);
   const block = blockFor(lab, usage, capacity);

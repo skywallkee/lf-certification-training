@@ -133,6 +133,10 @@ export const lesson = pgTable(
     docs: jsonb("docs").$type<DocLinkJson[]>().notNull(),
     competencyRefs: text("competency_refs").array().notNull(),
     mock: boolean("mock").notNull().default(false),
+    /** "file": loaded from content/ by the ingest. "app": created or edited in the admin editor; the ingest leaves it alone. */
+    origin: text("origin").$type<"file" | "app">().notNull().default("file"),
+    /** Drafts are hidden from learners until an admin publishes them. Ingested items are always published. */
+    published: boolean("published").notNull().default(true),
     file: text("file").notNull(),
     contentHash: text("content_hash").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -159,6 +163,10 @@ export const question = pgTable(
     competencyRefs: text("competency_refs").array().notNull(),
     mock: boolean("mock").notNull().default(false),
     knownIssue: text("known_issue"),
+    /** "file": loaded from content/ by the ingest. "app": created or edited in the admin editor; the ingest leaves it alone. */
+    origin: text("origin").$type<"file" | "app">().notNull().default("file"),
+    /** Drafts are hidden from learners until an admin publishes them. Ingested items are always published. */
+    published: boolean("published").notNull().default(true),
     file: text("file").notNull(),
     contentHash: text("content_hash").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -220,6 +228,10 @@ export const lab = pgTable(
     /** Mock exams: pass mark in percent. */
     passPercent: integer("pass_percent"),
     mock: boolean("mock").notNull().default(false),
+    /** "file": loaded from content/ by the ingest. "app": created or edited in the admin editor; the ingest leaves it alone. */
+    origin: text("origin").$type<"file" | "app">().notNull().default("file"),
+    /** Drafts are hidden from learners until an admin publishes them. Ingested items are always published. */
+    published: boolean("published").notNull().default(true),
     file: text("file").notNull(),
     contentHash: text("content_hash").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

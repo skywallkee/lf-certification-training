@@ -9,10 +9,15 @@ import { env } from "@/env";
 export type LabRow = typeof labTable.$inferSelect;
 export type LabSessionRow = typeof labSession.$inferSelect;
 
-/** Every lab (not the mock exams), by cert then title. Tasks include checks: keep them on the server. */
+/** Every published lab (not the mock exams), by cert then title. Tasks include checks: keep them on the server. */
 export async function listLabs(): Promise<LabRow[]> {
-  const rows = await getDb().select().from(labTable).where(eq(labTable.kind, "lab"));
+  const rows = await getDb().select().from(labTable).where(and(eq(labTable.kind, "lab"), eq(labTable.published, true)));
   return rows.sort((a, b) => a.certCode.localeCompare(b.certCode) || a.title.localeCompare(b.title));
+}
+
+/** Drafts (unpublished labs and mock exams) are open only to admins, who try them before publishing. */
+export function canOpen(lab: Pick<LabRow, "published">, user: { role: string }): boolean {
+  return lab.published || user.role === "admin";
 }
 
 export async function getLab(id: string): Promise<LabRow | null> {
@@ -25,7 +30,7 @@ export async function labsForCompetency(ref: string): Promise<Pick<LabRow, "id" 
   const rows = await getDb()
     .select({ id: labTable.id, title: labTable.title, minutes: labTable.minutes, tier: labTable.tier, mock: labTable.mock, refs: labTable.competencyRefs })
     .from(labTable)
-    .where(eq(labTable.kind, "lab"));
+    .where(and(eq(labTable.kind, "lab"), eq(labTable.published, true)));
   return rows.filter((r) => r.refs.includes(ref));
 }
 

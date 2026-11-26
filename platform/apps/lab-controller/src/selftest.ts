@@ -49,6 +49,8 @@ for (const l of labs) {
     kind: l.kind,
     passPercent: l.passPercent ?? null,
     mock: l.mock,
+    origin: "file",
+    published: true,
     file: l.file,
     contentHash: l.hash,
     updatedAt: new Date(),

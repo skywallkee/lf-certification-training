@@ -29,6 +29,13 @@
       "when": 1795678055815,
       "tag": "0003_resume_player",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795680837092,
+      "tag": "0004_content_revisions",
+      "breakpoints": true
     }
   ]
 }

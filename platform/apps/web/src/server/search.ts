@@ -1,5 +1,5 @@
 import "server-only";
-import { ilike, or, sql } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { lesson, question } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
 import { competencyPath, getCatalog } from "./catalog";
@@ -26,8 +26,8 @@ export async function search(query: string, limit = 30): Promise<SearchResult[]>
   const lessonCond = or(...tokens.flatMap((t) => [ilike(lesson.title, `%${escapeLike(t)}%`), ilike(lesson.summary, `%${escapeLike(t)}%`), ilike(lesson.body, `%${escapeLike(t)}%`)]));
   const questionCond = or(...tokens.map((t) => ilike(question.stem, `%${escapeLike(t)}%`)));
   const [lessons, questions] = await Promise.all([
-    db.select({ id: lesson.id, title: lesson.title, summary: lesson.summary, body: lesson.body, refs: lesson.competencyRefs, cert: lesson.certCode, mock: lesson.mock }).from(lesson).where(lessonCond).limit(50),
-    db.select({ id: question.id, stem: question.stem, refs: question.competencyRefs, cert: question.certCode, mock: question.mock }).from(question).where(sql`${questionCond} and ${question.knownIssue} is null`).limit(50),
+    db.select({ id: lesson.id, title: lesson.title, summary: lesson.summary, body: lesson.body, refs: lesson.competencyRefs, cert: lesson.certCode, mock: lesson.mock }).from(lesson).where(and(lessonCond, eq(lesson.published, true))).limit(50),
+    db.select({ id: question.id, stem: question.stem, refs: question.competencyRefs, cert: question.certCode, mock: question.mock }).from(question).where(sql`${questionCond} and ${question.knownIssue} is null and ${question.published}`).limit(50),
   ]);
   const results: (SearchResult & { score: number })[] = [];
   for (const l of lessons) {

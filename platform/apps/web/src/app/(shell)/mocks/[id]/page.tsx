@@ -3,11 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MOCK_MODES, START_WINDOW_MINUTES, type MockMode } from "@lfct/labs";
 import { StartMock, mockBlockMessage } from "@/components/mocks/start-mock";
-import { SampleBadge } from "@/components/status-chip";
+import { DraftBadge, SampleBadge } from "@/components/status-chip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
-import { bootEstimate, getBootTimes, getCapacity, getUsage } from "@/server/labs";
+import { bootEstimate, canOpen, getBootTimes, getCapacity, getUsage } from "@/server/labs";
 import { domainName, getMock, getMockAttemptsUsed, mockAllowance, mockBlockFor, usedFor } from "@/server/mocks";
 import { requireUser } from "@/server/session";
 
@@ -26,7 +26,7 @@ export default async function MockPage({
   const { id } = await params;
   const user = await requireUser(`/mocks/${id}`);
   const mock = await getMock(id);
-  if (!mock) notFound();
+  if (!mock || !canOpen(mock, user)) notFound();
   const [used, usage, capacity, catalog, bootTimes] = await Promise.all([getMockAttemptsUsed(user.id), getUsage(user.id), getCapacity(), getCatalog(), getBootTimes()]);
   const { blocked, mode: modeParam } = await searchParams;
   const initialMode: MockMode = modeParam === "practice" ? "practice" : "exam";
@@ -55,6 +55,7 @@ export default async function MockPage({
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-[30px] font-bold">{mock.title}</h1>
           {mock.mock ? <SampleBadge /> : null}
+          {mock.published ? null : <DraftBadge />}
         </div>
         <p className="max-w-[72ch] text-[15px] text-muted-foreground">{mock.summary}</p>
         <p className="text-sm">

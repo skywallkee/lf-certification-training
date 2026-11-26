@@ -132,8 +132,9 @@ async function loadCatalog(): Promise<Catalog> {
         mock: lesson.mock,
       })
       .from(lesson)
+      .where(eq(lesson.published, true))
       .orderBy(asc(lesson.file)),
-    db.select({ certCode: question.certCode, refs: question.competencyRefs }).from(question),
+    db.select({ certCode: question.certCode, refs: question.competencyRefs }).from(question).where(eq(question.published, true)),
   ]);
 
   const certs = new Map<string, CatalogCert>();

@@ -23,6 +23,18 @@ export function StatusChip({ status, className }: { status: CertDisplayStatus; c
   );
 }
 
+/** An unpublished item: only admins see it, in the editor or by its link. */
+export function DraftBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn("inline-flex items-center rounded-full border border-primary px-2 py-0.5 text-xs font-semibold text-primary", className)}
+      title="Not published: learners cannot see it yet"
+    >
+      Draft
+    </span>
+  );
+}
+
 export function SampleBadge({ className }: { className?: string }) {
   return (
     <span

@@ -7,9 +7,9 @@ import { labCheckRun, labSession } from "@/db/schema";
 import { env } from "@/env";
 import type { Capacity, LabRow, LabUsage } from "./labs";
 
-/** Practical mock exams, by cert then length (full first). Tasks include checks: keep them on the server. */
+/** Published practical mock exams, by cert then length (full first). Tasks include checks: keep them on the server. */
 export async function listMocks(): Promise<LabRow[]> {
-  const rows = await getDb().select().from(labTable).where(eq(labTable.kind, "mock"));
+  const rows = await getDb().select().from(labTable).where(and(eq(labTable.kind, "mock"), eq(labTable.published, true)));
   return rows.sort((a, b) => a.certCode.localeCompare(b.certCode) || b.minutes - a.minutes || a.title.localeCompare(b.title));
 }
 

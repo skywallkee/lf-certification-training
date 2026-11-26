@@ -38,20 +38,25 @@ export default async function AdminPage() {
   const describe = (type: string, id: string) => {
     if (type === "lesson") {
       const l = catalog.lessonsById.get(id);
-      return l ? { label: `Lesson: ${l.title}`, href: competencyPath(l.competencyRefs[0]!) } : { label: `Lesson ${id} (removed)`, href: null };
+      return l ? { label: `Lesson: ${l.title}`, href: `/admin/content/lesson/${encodeURIComponent(id)}` } : { label: `Lesson ${id} (removed)`, href: null };
     }
-    return { label: `Question ${id}`, href: null };
+    return { label: `Question ${id}`, href: `/admin/content/question/${encodeURIComponent(id)}` };
   };
   const certs = [...catalog.certs.values()].sort((a, b) => a.code.localeCompare(b.code));
   return (
     <>
       <PageHeader
         title="Admin"
-        lead="Content ingest, coverage, reported problems and users."
+        lead="Content, ingest, coverage, reported problems and users."
         actions={
-          <Link href="/admin/labs" className="text-sm font-medium">
-            Labs: sessions and spend
-          </Link>
+          <>
+            <Link href="/admin/content" className="text-sm font-medium">
+              Content: create and edit
+            </Link>
+            <Link href="/admin/labs" className="text-sm font-medium">
+              Labs: sessions and spend
+            </Link>
+          </>
         }
       />
       <div className="flex flex-col gap-6">
@@ -101,9 +106,9 @@ export default async function AdminPage() {
                 <li key={`known-${k.id}`} className="flex flex-col gap-1 py-3">
                   <span className="text-sm font-semibold text-warning">Known issue in content</span>
                   <span>
-                    Question {k.id} · <Link href={competencyPath(k.refs[0]!)}>its competency</Link>
+                    <Link href={`/admin/content/question/${encodeURIComponent(k.id)}`}>Question {k.id}</Link> · <Link href={competencyPath(k.refs[0]!)}>its competency</Link>
                   </span>
-                  <span className="text-sm text-muted-foreground">{k.issue} Fix it in content/ and re-ingest; it is left out of quizzes meanwhile.</span>
+                  <span className="text-sm text-muted-foreground">{k.issue} Fix it in the editor (and clear the known issue) or in content/; it is left out of quizzes meanwhile.</span>
                 </li>
               ))}
               {flags.map((f) => {
