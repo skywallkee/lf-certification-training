@@ -1,4 +1,5 @@
-# Build context for the lab workstation image: the Dockerfile only copies these two files.
+# Build context for the lab workstation image: only the files the Dockerfile copies or bind-mounts.
 *
+!apt-install.sh
 !entrypoint.sh
 !tmux.conf

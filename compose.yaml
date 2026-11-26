@@ -76,6 +76,9 @@ services:
     build:
       context: platform/lab-image
       secrets: [extra_ca]
+      args:
+        # Optional Ubuntu mirror if archive.ubuntu.com keeps failing, e.g. http://de.archive.ubuntu.com/ubuntu
+        APT_MIRROR: ${APT_MIRROR:-}
     image: lfct-lab-tools:local
     command: ["true"]
     restart: "no"
