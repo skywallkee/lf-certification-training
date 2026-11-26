@@ -18,6 +18,18 @@ test("visitors can browse certs and read a lesson without an account", async ({ 
   await expect(page).toHaveURL(/\/sign-in\?next=/);
 });
 
+test("lesson code blocks are highlighted and can be copied", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const url = "/certs/cka/domains/servicing-networking/competencies/define-enforce-network-policies";
+  await page.goto(url);
+  const block = page.locator(".code-block").first();
+  await expect(block.locator("code.language-yaml .hljs-attr").first()).toHaveText("apiVersion:");
+  await block.getByRole("button", { name: "Copy code" }).click();
+  await expect(block.getByRole("button", { name: "Copied code" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("kind: NetworkPolicy");
+  await expectAccessible(page, url);
+});
+
 test("a competency without a lesson says the lesson is coming", async ({ page }) => {
   await page.goto("/certs/cka/domains/storage/competencies/configure-volume-types-access-modes");
   await expect(page.getByRole("heading", { name: "Lesson coming" })).toBeVisible();

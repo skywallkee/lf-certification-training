@@ -36,6 +36,9 @@ three images and pulls k3s, so give it a few minutes; later starts take seconds.
 10 to 30 seconds. Data is kept in the `pgdata` volume across restarts (`docker compose down -v` wipes it).
 Settings and their defaults are in [`.env.example`](.env.example); copy it to `.env` to change them.
 
+Emails the app sends (sign-up verification, for example) go to a local test inbox, [Mailpit](https://mailpit.axllent.org),
+at http://localhost:8025. Nothing reaches real addresses unless you set `SMTP_URL` in `.env` to a real provider.
+
 Lab containers run privileged (k3s needs it), are labelled `lfct.managed=true`, and are deleted when the
 lab ends. A lab can boot up to three clusters (one k3s container each, about 600 MB of memory apiece). The
 lab player's Documentation tab shows kubernetes.io and helm.sh through the controller at
@@ -106,8 +109,8 @@ Sample learners all use the password `sample-password-123`:
 | `golden@example.com` | All 17 certs held, KCSA expiring |
 | `admin@example.com` | Admin: ingest runs, flag queue, coverage, users |
 
-Sign-up works without a mail provider: in development the verify page shows the link that would have been
-emailed. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
+Sign-up works without a mail server: in development the verify page shows the emailed link, and with
+`SMTP_URL=smtp://localhost:1025` plus `docker compose up -d mailpit` the emails also land in the local inbox. End-to-end tests (Playwright with axe accessibility checks) build the app and reset a separate
 database:
 
 ```sh

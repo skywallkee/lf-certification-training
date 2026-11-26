@@ -2,7 +2,7 @@
 #
 #   docker compose up --build        then open http://localhost:3000 (sample logins in the README)
 #
-# Services: Postgres, a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
+# Services: Postgres, a local mail inbox (Mailpit), a one-shot setup job (migrations, content ingest, sample learners), the web app, and the
 # lab controller, which starts each lab as k3s in Docker next to these containers (it needs the Docker socket).
 # Settings come from .env when present (see .env.example); the defaults below are for local use only.
 name: lfct
@@ -29,6 +29,23 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # A local test inbox: the web app sends every email here over SMTP, and nothing reaches real addresses.
+  # Open http://localhost:8025 to read verification emails.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    environment:
+      MP_MAX_MESSAGES: 500
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+      # SMTP, for `pnpm dev` on the host (SMTP_URL=smtp://localhost:1025).
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   # Builds the lab workstation image (ttyd, kubectl, helm, Chainsaw) that the controller starts per lab.
   lab-tools:
@@ -102,7 +119,11 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.com}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      # A production build running on a laptop: show verification links instead of sending email.
+      # Email goes to the Mailpit inbox above. Set SMTP_URL in .env to send real mail instead.
+      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+      MAIL_FROM: ${MAIL_FROM:-LF Cert Trainer <no-reply@lfct.localhost>}
+      MAIL_INBOX_URL: ${MAIL_INBOX_URL:-http://localhost:${MAILPIT_PORT:-8025}}
+      # A production build running on a laptop: the verify page also shows the link and the inbox.
       APP_ENV: local
       SHOW_DEV_EMAILS: "true"
       LAB_CONTROLLER_URL: http://lab-controller:3001
@@ -121,6 +142,8 @@ services:
       setup:
         condition: service_completed_successfully
       lab-controller:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     restart: unless-stopped
 
