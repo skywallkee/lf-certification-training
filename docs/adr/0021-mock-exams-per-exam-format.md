@@ -1,9 +1,9 @@
-# 0018. Mock exams follow each exam's format: CKAD and CKS layouts, and multiple-choice mocks
+# 0021. Mock exams follow each exam's format: CKAD and CKS layouts, and multiple-choice mocks
 
 Date: 2026-11-26
 Status: Accepted
 
-(Numbered 0018 because other changes in flight at the same time take 0017, 0019 and 0020.)
+(Numbered 0021 because 0017, 0019 and 0020 are taken by other changes made at the same time.)
 
 ## Context
 
@@ -25,7 +25,7 @@ are timed multiple-choice tests rather than terminal tasks. Content is still moc
 - **Questions are drawn per attempt by domain weight** (largest remainder), capped at what each domain holds, with
   seats a short domain cannot fill passed to the others, and unseen questions first. When the bank is smaller than
   the mock, the attempt asks what there is and scales the timer to the same pace (90 minutes for 60 questions).
-- **An attempt is a `quiz` row with kind `mock`** (web migration 0005 adds the enum value and `mock_id`,
+- **An attempt is a `quiz` row with kind `mock`** (web migration 0006 adds the enum value and `mock_id`,
   `expires_at`, `draft`, `score`, `pass_percent`). Answers and flags autosave to `draft` while the clock runs; there
   is no feedback until Submit or time up. Grading writes one `answer` row per answered question, so readiness, the
   review queue, recent activity and the progress dashboard's mock exam checks use them with no new code path.
