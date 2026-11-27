@@ -1,0 +1,568 @@
+---
+id: cka-etcd-commands
+title: "etcd commands: talking to the cluster's database with etcdctl"
+summary: "The etcdctl and etcdutl commands a cluster administrator needs: how a command reaches etcd, where the certificate flags come from, checking health, reading what Kubernetes stores, and taking and restoring a snapshot."
+minutes: 17
+competencies:
+  - cka/cluster-architecture-installation-configuration/manage-lifecycle-kubernetes-clusters
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Operating etcd clusters for Kubernetes"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/
+  - title: "etcd docs: Interacting with etcd"
+    url: https://etcd.io/docs/v3.6/dev-guide/interacting_v3/
+  - title: "etcd docs: Disaster recovery"
+    url: https://etcd.io/docs/v3.6/op-guide/recovery/
+  - title: "etcd docs: How to check cluster status"
+    url: https://etcd.io/docs/v3.6/tasks/operator/how-to-check-cluster-status/
+  - title: "Kubernetes docs: Encrypting confidential data at rest"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/
+mock: false
+diagrams:
+  etcdctl-path:
+    title: "How an etcdctl command reaches etcd"
+    caption: "etcdctl is only a client. It opens a TLS connection to etcd's client port and proves who it is with a certificate, exactly as the API server does."
+    nodes:
+      - { id: admin, label: "You", sub: "shell on the node", icon: user, col: 0, row: 1 }
+      - { id: etcdctl, label: "etcdctl", sub: "client, no state", icon: process, col: 1, row: 1 }
+      - { id: etcd, label: "etcd", sub: "127.0.0.1:2379", icon: database, col: 2, row: 1, tone: primary }
+      - { id: apiserver, label: "kube-apiserver", sub: "the usual client", icon: control-plane, col: 2, row: 0, tone: muted }
+      - { id: certs, label: "Certificates", sub: "/etc/kubernetes/pki", icon: secret, col: 1, row: 2, tone: warning }
+      - { id: data, label: "Data directory", sub: "/var/lib/etcd", icon: volume, col: 2, row: 2, tone: muted }
+    edges:
+      - { from: admin, to: etcdctl, label: "types" }
+      - { from: etcdctl, to: etcd, label: "TLS :2379" }
+      - { from: apiserver, to: etcd, label: "same port" }
+      - { from: certs, to: etcdctl, label: "TLS files", dashed: true }
+      - { from: etcd, to: data, label: "writes" }
+  key-layout:
+    title: "Where Kubernetes keeps an object in etcd"
+    caption: "Every object is one key under /registry: the resource, then the namespace, then the name. Cluster-scoped resources skip the namespace."
+    nodes:
+      - { id: root, label: "/registry", sub: "everything", icon: database, col: 0, row: 1, tone: primary }
+      - { id: pods, label: "pods", sub: "resource", icon: pod, col: 1, row: 0 }
+      - { id: deployments, label: "deployments", sub: "resource", icon: deployment, col: 1, row: 1 }
+      - { id: secrets, label: "secrets", sub: "resource", icon: secret, col: 1, row: 2 }
+      - { id: ns, label: "shop", sub: "namespace", icon: cluster, col: 2, row: 0 }
+      - { id: key, label: "web-7d9", sub: "one key, one object", icon: file, col: 3, row: 0, tone: success }
+    edges:
+      - { from: root, to: pods }
+      - { from: root, to: deployments }
+      - { from: root, to: secrets }
+      - { from: pods, to: ns }
+      - { from: ns, to: key }
+  backup-restore:
+    title: "A snapshot out, a new data directory in"
+    caption: "Saving goes through the running server, so it needs certificates. Restoring only reads a file and writes a directory, so it needs none; etcd then has to be pointed at the new directory."
+    nodes:
+      - { id: live, label: "Running etcd", sub: "127.0.0.1:2379", icon: database, col: 0, row: 0, tone: primary }
+      - { id: snap, label: "Snapshot file", sub: "/opt/backup/etcd.db", icon: file, col: 1, row: 0, tone: warning }
+      - { id: newdir, label: "New data dir", sub: "/var/lib/etcd-restore", icon: volume, col: 2, row: 0, tone: success }
+      - { id: manifest, label: "etcd.yaml", sub: "hostPath volume", icon: config, col: 2, row: 1 }
+      - { id: restarted, label: "etcd Pod", sub: "restarted by kubelet", icon: pod, col: 1, row: 1, tone: success }
+    edges:
+      - { from: live, to: snap, label: "save" }
+      - { from: snap, to: newdir, label: "restore" }
+      - { from: manifest, to: newdir, label: "points to", dashed: true }
+      - { from: manifest, to: restarted, label: "applies" }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "etcd commands"
+      narration: >-
+        Everything your cluster knows lives in etcd. Most days you never touch it, because the API server does that
+        for you. But to check its health, to back it up, or to bring a cluster back, you talk to etcd yourself. In
+        this lesson you will learn the handful of commands that do it, and where their long flags come from.
+      visual:
+        kind: title
+        heading: "etcd commands"
+        subheading: "Talking to the cluster's database with etcdctl"
+    - id: tools
+      title: "Two tools, one API version"
+      narration: >-
+        There are two command line tools. The first one, etcdctl, talks to a running etcd over the network. The
+        second one, etcdutl, works on files on disk, with no server at all. Both speak version three of the etcd
+        API, which is the only one Kubernetes uses. Old guides show version two commands, and those no longer work.
+      visual:
+        kind: points
+        heading: "What you type"
+        items:
+          - "Two tools ship with etcd"
+          - "etcdctl: a network client for a running etcd"
+          - "etcdutl: works on snapshot files and data directories"
+          - "API v3 only: put, get, del, snapshot, endpoint, member"
+          - "v2 commands (set, ls, cluster-health) are gone"
+    - id: path
+      title: "How a command reaches etcd"
+      narration: >-
+        You type a command in a shell on the control plane node. The etcdctl client holds no state of its own. It
+        opens a secure connection to etcd on port 2379, the same port the API server uses. And etcd only answers
+        clients that show a certificate it trusts, so every command needs three files. Whatever you ask for is read
+        from, or written to, the data directory on the node's disk.
+      visual:
+        kind: diagram
+        diagram: etcdctl-path
+        steps:
+          - [admin]
+          - [etcdctl, admin-etcdctl]
+          - [etcd, etcdctl-etcd, apiserver, apiserver-etcd]
+          - [certs, certs-etcdctl]
+          - [data, etcd-data]
+    - id: flags
+      title: "Where the flags come from"
+      narration: >-
+        You never need to remember the file paths, because etcd's own manifest lists them. The listen client URLs
+        line gives you the endpoint. The trusted CA file is what you pass as the CA certificate. The certificate
+        file and the key file are the pair you present as a client. And the data directory tells you where etcd
+        keeps its files, which matters when you restore.
+      visual:
+        kind: code
+        heading: "/etc/kubernetes/manifests/etcd.yaml"
+        lang: yaml
+        code: |
+          spec:
+            containers:
+              - name: etcd
+                command:
+                  - etcd
+                  - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.10:2379
+                  - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+                  - --cert-file=/etc/kubernetes/pki/etcd/server.crt
+                  - --key-file=/etc/kubernetes/pki/etcd/server.key
+                  - --client-cert-auth=true
+                  - --data-dir=/var/lib/etcd
+        steps: ["1-5", "6", "7", "8-9", "11"]
+    - id: health
+      title: "Is etcd healthy?"
+      narration: >-
+        Set the endpoint and the three files once, as environment variables, and every later command stays short.
+        Endpoint health tells you whether etcd can still commit a write. Endpoint status shows the version, the
+        database size, and which member is the leader. Member list shows every member of the cluster.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "export ETCDCTL_ENDPOINTS=https://127.0.0.1:2379 ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt ETCDCTL_CERT=/etc/kubernetes/pki/etcd/server.crt ETCDCTL_KEY=/etc/kubernetes/pki/etcd/server.key"
+          - cmd: "etcdctl endpoint health"
+            out: "https://127.0.0.1:2379 is healthy: successfully committed proposal: took = 9.8ms"
+          - cmd: "etcdctl endpoint status -w table"
+            out: "+------------------------+------------------+---------+---------+-----------+\n|        ENDPOINT        |        ID        | VERSION | DB SIZE | IS LEADER |\n+------------------------+------------------+---------+---------+-----------+\n| https://127.0.0.1:2379 | 8e9e05c52164694d |   3.6.5 |  4.1 MB |      true |\n+------------------------+------------------+---------+---------+-----------+"
+          - cmd: "etcdctl member list -w table"
+            out: "+------------------+---------+--------------+----------------------------+----------------------------+\n|        ID        | STATUS  |     NAME     |         PEER ADDRS         |        CLIENT ADDRS        |\n+------------------+---------+--------------+----------------------------+----------------------------+\n| 8e9e05c52164694d | started | controlplane | https://192.168.56.10:2380 | https://192.168.56.10:2379 |\n+------------------+---------+--------------+----------------------------+----------------------------+"
+    - id: keys
+      title: "What Kubernetes stores"
+      narration: >-
+        Kubernetes keeps everything under one prefix, called registry. Below it comes the resource, such as pods,
+        deployments or secrets. Then the namespace. And finally the object's name, so each object is exactly one
+        key.
+      visual:
+        kind: diagram
+        diagram: key-layout
+        steps:
+          - [root]
+          - [pods, deployments, secrets, root-pods, root-deployments, root-secrets]
+          - [ns, pods-ns]
+          - [key, ns-key]
+    - id: reading
+      title: "Reading keys"
+      narration: >-
+        Get with a prefix lists every key below a path, and keys only hides the values. The values are binary, so
+        to read an object you still use kubectl. Watch prints each change as it happens, which shows you the API
+        server writing in real time.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "etcdctl get /registry/pods/shop --prefix --keys-only"
+            out: "/registry/pods/shop/web-7d9f8c6b5-4xkzq\n\n/registry/pods/shop/web-7d9f8c6b5-j2m8n"
+          - cmd: "etcdctl get /registry/pods/shop/web-7d9f8c6b5-4xkzq --print-value-only | head -c 60"
+            out: "k8s\\x00\\n\\t\\n\\x02v1\\x12\\x03Pod\\x12\\xd1\\x1f\\n\\xa5\\x0e\\n\\x15web-7d9f8c6b5-4xkzq..."
+          - cmd: "etcdctl watch /registry/pods/shop --prefix"
+            out: "PUT\n/registry/pods/shop/web-7d9f8c6b5-9tq2w\nk8s..."
+    - id: backup-restore
+      title: "Backup and restore"
+      narration: >-
+        A backup starts from the running etcd. The snapshot save command asks the server for a consistent copy and
+        writes it to one file. To restore, etcdutl turns that file into a brand new data directory, without talking
+        to any server. Then you point etcd's manifest at the new directory. The kubelet restarts the etcd Pod, and
+        the cluster is back to the moment of the snapshot.
+      visual:
+        kind: diagram
+        diagram: backup-restore
+        steps:
+          - [live]
+          - [snap, live-snap]
+          - [newdir, snap-newdir]
+          - [manifest, manifest-newdir]
+          - [restarted, manifest-restarted]
+    - id: backup-commands
+      title: "The three snapshot commands"
+      narration: >-
+        Save the snapshot with etcdctl, using the endpoint and certificates you already set. Check the file with
+        etcdutl snapshot status, which needs no certificates. Restore it into a new, empty directory. Then change
+        the host path in the etcd manifest, and wait for the Pod to come back.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "etcdctl snapshot save /opt/backup/etcd.db"
+            out: "Snapshot saved at /opt/backup/etcd.db"
+          - cmd: "etcdutl snapshot status /opt/backup/etcd.db -w table"
+            out: "+----------+----------+------------+------------+\n|   HASH   | REVISION | TOTAL KEYS | TOTAL SIZE |\n+----------+----------+------------+------------+\n| 6a1d9f3c |    48211 |       1304 |     4.1 MB |\n+----------+----------+------------+------------+"
+          - cmd: "etcdutl snapshot restore /opt/backup/etcd.db --data-dir /var/lib/etcd-restore"
+            out: "restored snapshot  {\"path\": \"/opt/backup/etcd.db\", \"data-dir\": \"/var/lib/etcd-restore\"}"
+          - cmd: "vi /etc/kubernetes/manifests/etcd.yaml   # hostPath: /var/lib/etcd-restore"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Read the flags from the etcd manifest instead of recalling them. Export the four environment variables
+        once, and stop typing certificates. If the tool is missing on the node, run it inside the etcd Pod. If the
+        API server is down, reach the container with crictl instead of kubectl. And always verify a snapshot before
+        you rely on it.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "grep the manifest: listen-client, trusted-ca, cert-file, key-file"
+          - "Export ETCDCTL_ENDPOINTS, _CACERT, _CERT and _KEY once"
+          - "No etcdctl on the node? kubectl exec into the etcd Pod"
+          - "API server down? crictl exec still works"
+          - "etcdutl snapshot status proves the backup is readable"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The etcdctl client talks to a running etcd, and etcdutl works on files. Every network command needs an
+        endpoint and three certificate files, and the etcd manifest tells you all four. Endpoint health, endpoint
+        status and member list answer whether etcd is well. Snapshot save makes the backup, and snapshot restore
+        builds a new data directory that etcd must be pointed at. Read from etcd as much as you like, but leave
+        the writing to the API server.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "etcdctl: running server. etcdutl: files on disk"
+          - "Endpoint + CA + cert + key, all in etcd.yaml"
+          - "endpoint health, endpoint status, member list"
+          - "snapshot save, then restore to a new data directory"
+          - "Read freely; let the API server do the writing"
+---
+
+## Why you need etcd commands
+
+On a normal day nobody talks to etcd except the API server. You run `kubectl`, the API server checks and stores the
+object, and etcd is an implementation detail. That stops being true in exactly the situations a cluster
+administrator is paid for:
+
+- **Before an upgrade or a risky change**, you want a backup of the whole cluster state. The cluster state *is*
+  etcd, so the backup is an etcd snapshot.
+- **When the control plane misbehaves**, `kubectl` may hang or fail, and you need to know whether etcd itself is
+  healthy without going through the API server.
+- **After a disaster**, restoring a snapshot is the only way to get the cluster's objects back.
+
+All three are done with etcd's own command line tools, not with `kubectl`.
+
+<KeyIdea>
+`etcdctl` is a client, just like the API server is. Give it the same three things the API server has (an endpoint,
+a CA to trust and a client certificate with its key) and it can ask etcd anything. Every long etcdctl command is
+those three things plus a two-word subcommand.
+</KeyIdea>
+
+## The two tools and the API version
+
+etcd ships two tools, and knowing which one a job belongs to removes most of the confusion:
+
+| Tool | Talks to | Needs certificates | Used for |
+|------|----------|--------------------|----------|
+| `etcdctl` | A **running** etcd, over the network | Yes | Health, members, reading keys, `snapshot save`, defragmenting |
+| `etcdutl` | **Files** on disk, no server involved | No | `snapshot status`, `snapshot restore`, offline maintenance |
+
+The split is recent. Up to etcd 3.5, `etcdctl snapshot restore` and `etcdctl snapshot status` existed and printed a
+deprecation warning; from etcd 3.6 they are removed, and only `etcdutl` restores. If a command from an older guide
+answers `unknown command "restore"`, this is why.
+
+The other thing old guides get wrong is the **API version**. etcd had a v2 API with a different data model and
+different commands. Kubernetes only ever uses v3, and etcdctl has defaulted to v3 since etcd 3.4.
+
+| | API v2 (old guides) | API v3 (what you use) |
+|---|---|---|
+| Write and read | `etcdctl set`, `get`, `ls`, `rm` | `etcdctl put`, `get`, `del` |
+| Health | `etcdctl cluster-health` | `etcdctl endpoint health` |
+| Backup | `etcdctl backup` | `etcdctl snapshot save` |
+| TLS flags | `--ca-file`, `--cert-file`, `--key-file` | `--cacert`, `--cert`, `--key` |
+
+<Callout kind="note" title="About ETCDCTL_API=3">
+Many guides, and the Kubernetes documentation, still start commands with `ETCDCTL_API=3`. It was needed when
+etcdctl defaulted to v2. Today it changes nothing, so it is harmless to keep and safe to leave out. Check what you
+have with `etcdctl version`.
+</Callout>
+
+## How a command reaches etcd
+
+<Diagram id="etcdctl-path" />
+
+etcd listens for clients on port **2379** (port 2380 is for the members talking to each other). On a kubeadm
+cluster it runs as a static Pod on the control plane node, on the host network, so from a shell on that node it is
+reachable at `https://127.0.0.1:2379`.
+
+etcd is started with `--client-cert-auth=true`. That means TLS in both directions: etcdctl checks etcd's
+certificate against a CA, and etcd refuses any client that does not present a certificate signed by its own CA.
+That is why a bare `etcdctl member list` just hangs and times out on a real cluster.
+
+You never have to remember the paths. Each etcdctl flag has a twin among the flags etcd itself was started with,
+and those are in the static Pod manifest:
+
+| etcd server flag (in `etcd.yaml`) | etcdctl flag | Environment variable | kubeadm default |
+|---|---|---|---|
+| `--listen-client-urls` | `--endpoints` | `ETCDCTL_ENDPOINTS` | `https://127.0.0.1:2379` |
+| `--trusted-ca-file` | `--cacert` | `ETCDCTL_CACERT` | `/etc/kubernetes/pki/etcd/ca.crt` |
+| `--cert-file` | `--cert` | `ETCDCTL_CERT` | `/etc/kubernetes/pki/etcd/server.crt` |
+| `--key-file` | `--key` | `ETCDCTL_KEY` | `/etc/kubernetes/pki/etcd/server.key` |
+
+Every etcdctl flag can be given as an environment variable instead: upper-case the flag name, turn dashes into
+underscores and put `ETCDCTL_` in front.
+
+<DeepDive title="Why the server's certificate works as a client certificate">
+It looks odd to hand etcdctl the *server's* certificate. It works because kubeadm issues `server.crt` for both
+server and client authentication, and all etcd asks of a client is a certificate signed by the etcd CA. Two other
+pairs signed by the same CA work just as well:
+
+- `/etc/kubernetes/pki/etcd/healthcheck-client.crt` and `.key`, made for health checks.
+- `/etc/kubernetes/pki/apiserver-etcd-client.crt` and `.key`, the pair the API server itself uses (look for
+  `--etcd-certfile` in `kube-apiserver.yaml`).
+
+Note that etcd has **its own CA** (`pki/etcd/ca.crt`), separate from the cluster CA in `pki/ca.crt`. Passing the
+cluster CA is a classic way to get `x509: certificate signed by unknown authority`.
+</DeepDive>
+
+<DeepDive title="Three places to run etcdctl from">
+- **On the control plane node**, if etcdctl is installed there. The certificate files are on the node's disk, so
+  the paths in the table work as they are.
+- **Inside the etcd Pod**: `kubectl -n kube-system exec etcd-controlplane -- etcdctl ...`. The Pod mounts
+  `/etc/kubernetes/pki/etcd` at the same path, so the same flags work. The image is minimal and may have no shell,
+  so call `etcdctl` directly instead of through `sh -c`, and pass flags rather than relying on your own shell's
+  environment variables. A file you write there (a snapshot, for example) lands inside the container unless you
+  write it under a mounted path such as `/var/lib/etcd`.
+- **Through the container runtime**, when the API server is down and `kubectl` no longer answers:
+  `crictl ps --name etcd` gives the container id, and `crictl exec <id> etcdctl ...` runs the command. This works
+  because the kubelet and the runtime keep static Pods running without the API server.
+</DeepDive>
+
+## The commands, by job
+
+| Job | Command | What it tells you or does |
+|-----|---------|---------------------------|
+| Is etcd alive? | `etcdctl endpoint health` | Commits a test proposal: healthy means a write still gets through |
+| How is it doing? | `etcdctl endpoint status -w table` | Version, database size, leader, Raft term and index per endpoint |
+| Who is in the cluster? | `etcdctl member list -w table` | Each member's id, name, peer and client URLs |
+| List keys | `etcdctl get /registry --prefix --keys-only` | Every key Kubernetes has written |
+| Read one key | `etcdctl get <key>` | The key and its value (binary for Kubernetes objects) |
+| Follow changes | `etcdctl watch <key> --prefix` | Prints every PUT and DELETE as it happens |
+| Back up | `etcdctl snapshot save <file>` | A consistent copy of the whole keyspace in one file |
+| Check a backup | `etcdutl snapshot status <file> -w table` | Hash, revision, key count and size of the file |
+| Restore | `etcdutl snapshot restore <file> --data-dir <dir>` | Builds a new data directory from the file |
+| Reclaim space | `etcdctl defrag` | Gives freed space in the database file back to the disk |
+| Find alarms | `etcdctl alarm list` | Shows `NOSPACE` when the database hit its size quota |
+
+Add `--cluster` to the `endpoint` commands to ask every member instead of only the endpoints you named. `-w` sets
+the output format: `simple` (the default), `table`, `json` or `fields`.
+
+### What Kubernetes stores, and where
+
+<Diagram id="key-layout" />
+
+The API server keeps every object as one key under the `/registry` prefix: `/registry/<resource>/<namespace>/<name>`,
+or `/registry/<resource>/<name>` for cluster-scoped resources. A few names are historical: nodes live under
+`/registry/minions`, and Services under `/registry/services/specs`.
+
+The values are not YAML. They are the objects in Kubernetes' binary protobuf encoding, starting with the bytes
+`k8s`. You can spot names and image strings in the output, but to *read* an object you still use `kubectl`. What
+etcdctl is good for here is proving that something exists (or does not) at the storage level, counting keys, and
+watching the API server work.
+
+<Callout kind="warning" title="Read, do not write">
+`etcdctl put` and `etcdctl del` work on `/registry` keys, and nothing stops you. But a write that bypasses the API
+server skips validation, admission, defaulting, finalizers and garbage collection, and can leave objects no
+component can decode. On a Kubernetes cluster, treat etcdctl as read-only, plus snapshots and maintenance.
+</Callout>
+
+<DeepDive title="Why a healthy etcd can still refuse writes">
+etcd keeps old revisions of every key until they are **compacted**, and the space compaction frees stays inside the
+database file until you **defragment**. The file also has a size quota (`--quota-backend-bytes`, 2 GB by default).
+When it is reached, etcd raises a `NOSPACE` alarm and accepts only reads and deletes: the API server then fails
+every write with `etcdserver: mvcc: database space exceeded`, while `endpoint health` may still look fine.
+
+The API server compacts old revisions on its own every five minutes, so on a Kubernetes cluster the usual fix is
+`etcdctl defrag` (one member at a time, because a member blocks while it defragments) followed by
+`etcdctl alarm disarm`. Compare `DB SIZE` with the in-use size in `endpoint status` to see how much a defrag
+would reclaim.
+</DeepDive>
+
+## Backup and restore
+
+<Diagram id="backup-restore" />
+
+`snapshot save` asks the running server for a point-in-time copy of its database and streams it into one file. It
+is safe on a live cluster, and the file carries an integrity hash at the end. `snapshot restore` does not put data
+back *into* a running etcd. It unpacks the file into a **new data directory**, and you then start etcd on that
+directory. Until etcd is pointed at it, nothing has changed.
+
+<DeepDive title="What restore does to cluster identity">
+A restore writes new member and cluster ids into the new directory, on purpose: a restored member can then never
+rejoin the old cluster by accident and mix two histories. For a single control plane node the defaults are enough.
+In a cluster with several etcd members, every member is restored from the **same** snapshot file with its own
+`--name`, `--initial-cluster`, `--initial-cluster-token` and `--initial-advertise-peer-urls`, and all of them start
+on their new directories together.
+
+A database file copied straight out of a data directory (`member/snap/db`) has no integrity hash, so restoring it
+needs `--skip-hash-check`. A file made with `snapshot save` never does.
+</DeepDive>
+
+## Using it
+
+All four examples run in a root shell on the control plane node of a kubeadm cluster.
+
+<Example title="Find the flags and check that etcd is healthy">
+Read the endpoint and the three file paths from the manifest, export them once, then ask.
+
+```bash
+grep -E 'listen-client-urls|trusted-ca-file|cert-file|key-file|data-dir' /etc/kubernetes/manifests/etcd.yaml
+
+export ETCDCTL_ENDPOINTS=https://127.0.0.1:2379
+export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/server.crt
+export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/server.key
+
+etcdctl endpoint health
+etcdctl endpoint status -w table
+etcdctl member list -w table
+```
+
+The grep also matches `--peer-cert-file` and `--peer-key-file`. Those are for member-to-member traffic on port
+2380; ignore them. If the manifest is not readable, `kubectl -n kube-system describe pod etcd-<node-name>` shows
+the same command line.
+</Example>
+
+<Example title="See what the API server writes">
+With the variables from the first example still set, look at the storage behind the objects you know.
+
+```bash
+etcdctl get /registry --prefix --keys-only | head -20       # a sample of everything
+etcdctl get /registry/pods --prefix --keys-only              # every Pod, all namespaces
+etcdctl get /registry/pods/shop --prefix --count-only --write-out=fields   # how many in one namespace
+etcdctl watch /registry/pods/shop --prefix                   # leave running; Ctrl+C to stop
+```
+
+In a second terminal, run `kubectl -n shop run tmp --image=nginx:1.29-alpine` and watch several `PUT` events for
+the same key arrive: the object is created, then scheduled, then its status is updated. Delete the Pod and a
+`DELETE` follows.
+</Example>
+
+<Example title="Take a snapshot and prove it is good">
+Save the snapshot to the path the task names, then verify it. A backup you have not checked is a hope, not a
+backup.
+
+```bash
+etcdctl snapshot save /opt/backup/etcd.db
+etcdutl snapshot status /opt/backup/etcd.db -w table
+```
+
+The same thing without environment variables, as one command you can paste anywhere:
+
+```bash
+etcdctl --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  snapshot save /opt/backup/etcd.db
+```
+
+`snapshot status` needs no certificates, because it only reads the file. A snapshot is a full copy of the cluster's
+objects, Secrets included, so treat the file as you would the cluster's credentials.
+</Example>
+
+<Example title="Restore a snapshot on a kubeadm control plane">
+Restore into a new directory, then make etcd use it.
+
+```bash
+etcdutl snapshot restore /opt/backup/etcd.db --data-dir /var/lib/etcd-restore
+```
+
+Now edit `/etc/kubernetes/manifests/etcd.yaml` and change the **hostPath** of the data volume. Leave the
+`--data-dir` flag and the `volumeMounts` alone: the container still sees `/var/lib/etcd`, it is the directory on
+the host behind that path that changes.
+
+```yaml
+  volumes:
+    - hostPath:
+        path: /var/lib/etcd-restore     # was /var/lib/etcd
+        type: DirectoryOrCreate
+      name: etcd-data
+```
+
+The kubelet notices the changed manifest and recreates the etcd Pod; give it a minute.
+
+```bash
+crictl ps --name etcd            # the container is back and its age is seconds
+etcdctl endpoint health
+kubectl get pods -A              # objects are as they were at the snapshot
+```
+
+The other control plane components were talking to the old data. If `kubectl` shows stale or odd state, restart
+them by moving their manifests out of `/etc/kubernetes/manifests` and back, and run `systemctl restart kubelet`.
+</Example>
+
+## Tricks
+
+<Trick title="Never type a certificate path from memory">
+`grep -E 'listen-client|trusted-ca|cert-file|key-file' /etc/kubernetes/manifests/etcd.yaml` prints all four values.
+Copy them. A task may also run etcd with different paths or a different port on purpose, and the manifest is the
+only place that tells you.
+</Trick>
+
+<Trick title="Export once, then type short commands">
+The four `ETCDCTL_` variables turn every later command into two or three words. Use either the variables or the
+flags, not both for the same setting, and remember the variables are gone in a new shell or after `sudo -i`.
+</Trick>
+
+<Trick title="Let the help text write the command">
+`etcdctl snapshot save -h` and `etcdutl snapshot restore -h` list every flag with an example. That is faster than
+searching the documentation, and it matches the version actually installed.
+</Trick>
+
+<Trick title="No etcdctl on the node? Use the one in the Pod">
+`kubectl -n kube-system exec etcd-controlplane -- etcdctl --cacert=... --cert=... --key=... endpoint health` works
+with the same paths, because the Pod mounts the certificate directory. Save snapshots under `/var/lib/etcd/` in the
+Pod so the file appears on the host, then move it where the task wants it.
+</Trick>
+
+<Trick title="Check whether Secrets are encrypted at rest">
+`etcdctl get /registry/secrets/shop/db-password | hexdump -C` shows the Secret's value in clear text unless
+encryption at rest is configured. With it, the value starts with `k8s:enc:` and the provider's name, such as
+`k8s:enc:aescbc:v1:`. This is the check the Kubernetes documentation itself uses.
+</Trick>
+
+## Common mistakes
+
+- **A command that hangs, then `context deadline exceeded`.** The TLS flags are missing, or the endpoint says
+  `http://` instead of `https://`. etcd does not answer clients it cannot authenticate.
+- **`certificate signed by unknown authority`.** You passed the cluster CA (`pki/ca.crt`) instead of etcd's own CA
+  (`pki/etcd/ca.crt`).
+- **`unknown command "restore"` or `"status"`.** The etcdctl on this machine is 3.6 or newer: use `etcdutl` for
+  `snapshot restore` and `snapshot status`.
+- **Restoring into the live data directory.** Restore refuses a directory that already has data, and deleting
+  `/var/lib/etcd` under a running etcd destroys the cluster. Always restore to a new directory and switch over.
+- **Restoring and stopping there.** The restore only creates a directory. Until the hostPath in `etcd.yaml` points
+  at it, etcd keeps serving the old data and `kubectl` shows no change.
+- **Changing the wrong line in the manifest.** Editing `--data-dir` without the matching volume and mount makes etcd
+  write inside the container, where the data is lost on the next restart. Change the hostPath only.
+- **Saving the snapshot inside the container.** With `kubectl exec`, `/opt/backup/etcd.db` is a path in the
+  container, not on the node, and it disappears with the container.
+
+## Recap
+
+- `etcdctl` talks to a running etcd and needs an endpoint, a CA, a certificate and a key; `etcdutl` works on files
+  and needs none of them.
+- All four values are in `/etc/kubernetes/manifests/etcd.yaml`; export them as `ETCDCTL_` variables once.
+- `endpoint health`, `endpoint status -w table` and `member list` answer whether etcd is well.
+- Kubernetes objects are keys under `/registry`; read them freely, but leave the writing to the API server.
+- Backup is `etcdctl snapshot save`; restore is `etcdutl snapshot restore` into a new directory, then point the
+  etcd manifest's hostPath at it.
