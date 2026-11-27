@@ -166,7 +166,7 @@ test("the progress dashboard shows readiness per cert from questions, lessons, l
   await expect(cka.getByText("Booked")).toBeVisible();
   await expect(cka.getByRole("img", { name: /Readiness \d+ percent/ })).toBeVisible();
   await expect(cka.getByText(/lab tasks? and \d+ mock exam tasks?/)).toBeVisible();
-  await expect(cka.getByText("3 of 5")).toBeVisible();
+  await expect(cka.getByText("3 of 6")).toBeVisible();
   await expect(cka.getByText(/1 of 2 solved/)).toBeVisible();
   await expect(cka.getByText(/^Best \d+%$/)).toBeVisible();
   await expect(cka.getByRole("heading", { name: "Before you book" })).toBeVisible();

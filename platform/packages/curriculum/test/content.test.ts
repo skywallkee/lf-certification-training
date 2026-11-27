@@ -11,9 +11,9 @@ describe("content in the repository", () => {
     curriculum = await loadCurriculum();
   });
 
-  it("loads the sample set: 12 lessons and 74 questions across KCNA, KCSA, CKA and CKNE, all marked mock", async () => {
+  it("loads the sample set: 13 lessons and 74 questions across KCNA, KCSA, CKA and CKNE, all marked mock", async () => {
     const content = await loadContent(curriculum);
-    expect(content.lessons).toHaveLength(12);
+    expect(content.lessons).toHaveLength(13);
     expect(content.questions).toHaveLength(74);
     expect(new Set([...content.lessons, ...content.questions].map((i) => i.cert))).toEqual(new Set(["KCNA", "KCSA", "CKA", "CKNE"]));
     expect([...content.lessons, ...content.questions].every((i) => i.mock)).toBe(true);

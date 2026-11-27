@@ -2,11 +2,13 @@ import { inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { videoSeconds } from "@lfct/curriculum";
 import { lesson as lessonTable } from "@lfct/curriculum/db";
 import { completeLessonAction, startQuizAction } from "@/app/actions/study";
 import { Discussion } from "@/components/discussions/discussion";
 import { BookmarkButton, FlagButton, NoteEditor } from "@/components/item-tools";
 import { LessonBody } from "@/components/lesson-body";
+import { LessonVideo } from "@/components/lesson-video";
 import { SampleBadge } from "@/components/status-chip";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -17,6 +19,7 @@ import { loadCert } from "@/server/cert-page";
 import { getItemState } from "@/server/items";
 import { getCompletedLessons } from "@/server/progress";
 import { labsForCompetency } from "@/server/labs";
+import { playerScenes } from "@/server/narration";
 import { getUser } from "@/server/session";
 
 type Params = { code: string; domain: string; competency: string };
@@ -93,7 +96,7 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
               {l.mock ? <SampleBadge /> : null}
             </div>
             <p className="mb-6 max-w-[72ch] text-[15px] text-muted-foreground">
-              {l.summary} · {l.minutes} min read
+              {l.summary} · {l.minutes} min read{l.video ? ` · ${Math.max(1, Math.round(videoSeconds(l.video) / 60))} min video` : ""}
             </p>
             {shared.length > 0 ? (
               <p className="mb-6 rounded-md bg-primary-soft px-4 py-2 text-sm">
@@ -109,7 +112,8 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
                 .
               </p>
             ) : null}
-            <LessonBody hash={l.contentHash} source={l.body} untrusted={l.origin === "app"} />
+            {l.video ? <LessonVideo title={l.title} scenes={playerScenes(l.id, l.video, l.diagrams)} /> : null}
+            <LessonBody hash={l.contentHash} source={l.body} untrusted={l.origin === "app"} diagrams={l.diagrams} />
             {l.docs.length > 0 ? (
               <section aria-labelledby={`docs-${l.id}`} className="mt-8 max-w-[72ch]">
                 <h2 id={`docs-${l.id}`} className="mb-2 text-lg font-semibold">

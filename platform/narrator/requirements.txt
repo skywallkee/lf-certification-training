@@ -1,0 +1,7 @@
+# Pinned: the narrator is rebuilt rarely and a new onnxruntime or phonemizer can change how words sound.
+kokoro-onnx==0.6.1
+onnxruntime==1.32.0
+numpy==2.5.5
+soundfile==0.14.0
+phonemizer==3.6.0
+espeakng-loader==0.2.4

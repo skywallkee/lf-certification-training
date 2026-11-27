@@ -62,16 +62,16 @@ export function ContentEditor({
         setValue(JSON.parse(r.value) as Record<string, unknown>);
       }
       if (next === "preview") {
-        const body = view === "form" ? String(value.body ?? "") : await bodyOf(source);
-        setPreview(await previewLessonAction(body));
+        const lesson = view === "form" ? JSON.stringify(value) : await lessonOf(source);
+        setPreview(await previewLessonAction(lesson));
       }
       setView(next);
     });
   };
 
-  const bodyOf = async (src: string) => {
+  const lessonOf = async (src: string) => {
     const r = await convertItemAction(type, "form", src);
-    return r.ok ? String((JSON.parse(r.value) as Record<string, unknown>).body ?? "") : "";
+    return r.ok ? r.value : "{}";
   };
 
   const views: { key: View; label: string }[] = [

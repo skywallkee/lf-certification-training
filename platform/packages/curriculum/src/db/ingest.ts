@@ -160,6 +160,8 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
         minutes: l.minutes,
         body: l.body,
         docs: l.docs,
+        diagrams: l.diagrams,
+        video: l.video ?? null,
         competencyRefs: l.competencies,
         mock: l.mock,
         file: l.file,

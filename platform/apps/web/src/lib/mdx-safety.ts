@@ -3,12 +3,12 @@ import remarkGfm from "remark-gfm";
 
 /**
  * Lesson MDX is evaluated on the server, so MDX written in the admin editor is held to a safe subset before it
- * is saved or rendered: Markdown, plus the lesson components (<Callout>, <Flow>) with plain values as props.
+ * is saved or rendered: Markdown, plus the lesson components (LESSON_COMPONENTS) with plain values as props.
  * No import/export, no {expressions} in the text, no other JSX tags (no <script>, no event handlers), and prop
  * expressions may only hold literals, such as steps={["Pod", "Service"]}.
  */
 
-export const LESSON_COMPONENTS = ["Callout", "Flow"] as const;
+export const LESSON_COMPONENTS = ["Callout", "Flow", "Diagram", "KeyIdea", "DeepDive", "Example", "Trick"] as const;
 
 interface Point {
   line?: number;
@@ -75,7 +75,7 @@ export function mdxProblems(source: string): string[] {
       case "mdxJsxFlowElement":
       case "mdxJsxTextElement": {
         if (!n.name || !(LESSON_COMPONENTS as readonly string[]).includes(n.name)) {
-          problems.push(`${at(n)}: <${n.name ?? ""}> is not allowed; lessons can use ${LESSON_COMPONENTS.map((c) => `<${c}>`).join(" and ")}`);
+          problems.push(`${at(n)}: <${n.name ?? ""}> is not allowed; lessons can use ${LESSON_COMPONENTS.map((c) => `<${c}>`).join(", ")}`);
           break;
         }
         for (const a of n.attributes ?? []) {
