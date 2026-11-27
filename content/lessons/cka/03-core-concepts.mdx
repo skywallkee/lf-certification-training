@@ -1,0 +1,546 @@
+---
+id: cka-core-concepts
+title: "Core concepts: how Kubernetes thinks"
+summary: "The mental model behind every other CKA topic: objects that record what you want, one API that everything goes through, and controllers that keep making reality match."
+minutes: 20
+competencies:
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Objects in Kubernetes"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/
+  - title: "Kubernetes docs: Controllers"
+    url: https://kubernetes.io/docs/concepts/architecture/controller/
+  - title: "Kubernetes docs: Kubernetes components"
+    url: https://kubernetes.io/docs/concepts/overview/components/
+  - title: "Kubernetes docs: The Kubernetes API"
+    url: https://kubernetes.io/docs/concepts/overview/kubernetes-api/
+  - title: "Kubernetes docs: Owners and dependents"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
+mock: false
+diagrams:
+  one-door:
+    title: "Everything goes through the API server"
+    caption: "You and every component of the cluster are clients of one API. Nothing talks to etcd directly, and the components never call each other: they read and write objects, and react to what the others wrote."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl", icon: user, col: 0, row: 1 }
+      - { id: api, label: "API server", sub: "the only way in", icon: control-plane, col: 1, row: 1, tone: primary }
+      - { id: etcd, label: "etcd", sub: "stores every object", icon: database, col: 1, row: 0, tone: muted }
+      - { id: controllers, label: "Controllers", sub: "fix the differences", icon: process, col: 2, row: 0 }
+      - { id: scheduler, label: "Scheduler", sub: "picks a node", icon: process, col: 2, row: 1 }
+      - { id: kubelet, label: "kubelet", sub: "on every node", icon: node, col: 2, row: 2 }
+      - { id: containers, label: "Containers", sub: "the real workload", icon: container, col: 1, row: 2, tone: success }
+    edges:
+      - { from: you, to: api, label: "kubectl" }
+      - { from: api, to: etcd, label: "save", both: true }
+      - { from: controllers, to: api, label: "watch, write" }
+      - { from: scheduler, to: api, label: "watch" }
+      - { from: kubelet, to: api, label: "watch, report" }
+      - { from: kubelet, to: containers, label: "starts" }
+  reconcile-loop:
+    title: "The reconciliation loop"
+    caption: "A controller compares what the object asks for with what exists, makes one change to close the gap, and looks again. The loop never ends, which is why the cluster repairs itself."
+    nodes:
+      - { id: spec, label: "Desired state", sub: "spec: replicas 3", icon: file, col: 0, row: 0, tone: primary }
+      - { id: controller, label: "Controller", sub: "compare, then act", icon: process, col: 1, row: 0 }
+      - { id: cluster, label: "The cluster", sub: "Pods that exist", icon: cluster, col: 1, row: 1, tone: success }
+      - { id: status, label: "Actual state", sub: "status: 2 ready", icon: file, col: 0, row: 1, tone: warning }
+    edges:
+      - { from: spec, to: controller, label: "wants 3" }
+      - { from: status, to: controller, label: "has 2" }
+      - { from: controller, to: cluster, label: "creates 1 Pod" }
+      - { from: cluster, to: status, label: "reports" }
+  deployment-chain:
+    title: "One command, five independent actors"
+    caption: "Follow the arrows from You to the running containers. Each actor only notices an object in the API that needs its attention and does its one job; nobody runs the whole sequence."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl create", icon: user, col: 0, row: 0 }
+      - { id: deploy, label: "Deployment web", sub: "replicas: 3", icon: deployment, col: 1, row: 0, tone: primary }
+      - { id: dctl, label: "Deployment ctrl", sub: "controller", icon: process, col: 2, row: 0 }
+      - { id: rs, label: "ReplicaSet", sub: "web-7c5d9f6b8", icon: replicaset, col: 2, row: 1, tone: primary }
+      - { id: rctl, label: "ReplicaSet ctrl", sub: "controller", icon: process, col: 1, row: 1 }
+      - { id: pods, label: "3 Pods", sub: "Pending, no node", icon: pod, col: 0, row: 1, tone: warning }
+      - { id: sched, label: "Scheduler", sub: "sets nodeName", icon: process, col: 0, row: 2 }
+      - { id: kubelet, label: "kubelet", sub: "on the chosen node", icon: node, col: 1, row: 2 }
+      - { id: containers, label: "Containers", sub: "Pods now Running", icon: container, col: 2, row: 2, tone: success }
+    edges:
+      - { from: you, to: deploy, label: "creates" }
+      - { from: deploy, to: dctl, label: "seen by" }
+      - { from: dctl, to: rs, label: "creates" }
+      - { from: rs, to: rctl, label: "seen by" }
+      - { from: rctl, to: pods, label: "creates" }
+      - { from: pods, to: sched, label: "seen by" }
+      - { from: sched, to: kubelet, label: "binds" }
+      - { from: kubelet, to: containers, label: "starts" }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Core concepts"
+      narration: >-
+        Before the details, you need the way Kubernetes thinks. Almost everything in this course is the same three
+        ideas applied again and again. Learn them once here, and the rest of the course becomes much easier to
+        predict.
+      visual:
+        kind: title
+        heading: "Core concepts"
+        subheading: "How Kubernetes thinks: objects, one API, and control loops"
+    - id: problem
+      title: "Commands do not survive failure"
+      narration: >-
+        Imagine running containers with a script of commands. The script runs once, and then it is finished.
+        When a server dies at night, nothing starts your containers again. And nothing records what was supposed
+        to be running in the first place. Kubernetes turns this around: you describe the result you want, and the
+        system keeps working to make it true.
+      visual:
+        kind: points
+        heading: "Why not just run commands?"
+        items:
+          - "A script runs once, then stops caring"
+          - "A dead server takes your containers with it"
+          - "Nothing remembers what should be running"
+          - "Kubernetes: describe the result, not the steps"
+    - id: three-ideas
+      title: "Objects, one API, controllers"
+      narration: >-
+        Here are the three ideas in one picture. You talk to the API server, and only to the API server. It saves
+        what you asked for, as objects, in a database called etcd. Controllers watch those objects and repair
+        any difference they find. The scheduler watches too, and picks a node for every new Pod. The kubelet on
+        each node watches for Pods given to that node, and starts the real containers.
+      visual:
+        kind: diagram
+        diagram: one-door
+        steps:
+          - [you, api, you-api]
+          - [you, api]
+          - [etcd, api-etcd]
+          - [controllers, controllers-api]
+          - [scheduler, scheduler-api]
+          - [kubelet, kubelet-api, containers, kubelet-containers]
+    - id: object
+      title: "Reading an object"
+      narration: >-
+        Every object has the same shape. The first two lines say what kind of thing it is, and which version of
+        the API describes it. Metadata identifies it: a name, a namespace, and labels. Spec is yours: it is the
+        state you want. Status belongs to Kubernetes: it is the state that was last observed.
+      visual:
+        kind: code
+        heading: "The same four parts, every time"
+        lang: yaml
+        code: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: web
+            namespace: shop
+            labels:
+              app: web
+          spec:
+            replicas: 3
+            selector:
+              matchLabels:
+                app: web
+            template:
+              metadata:
+                labels:
+                  app: web
+              spec:
+                containers:
+                  - name: web
+                    image: nginx:1.29
+          status:                # written by Kubernetes
+            replicas: 3
+            readyReplicas: 2
+        steps: ["1-23", "1-2", "3-7", "8-20", "21-23"]
+    - id: loop
+      title: "The reconciliation loop"
+      narration: >-
+        This is the loop that makes Kubernetes heal itself. The spec says three replicas are wanted. The status
+        says only two are ready. A controller compares the two, and creates one Pod to close the gap. The cluster
+        changes, the new state is reported, and the controller looks again. It never stops looking.
+      visual:
+        kind: diagram
+        diagram: reconcile-loop
+        steps:
+          - [controller]
+          - [spec, spec-controller]
+          - [status, status-controller]
+          - [cluster, controller-cluster]
+          - [cluster-status]
+    - id: chain
+      title: "What one command sets off"
+      narration: >-
+        Watch what happens when you create a Deployment that asks for three replicas. The Deployment controller
+        notices it and creates a ReplicaSet. The ReplicaSet controller notices that, sees no Pods where three are
+        wanted, and creates three Pods. The scheduler notices Pods without a node, and picks a node for each one.
+        The kubelet on that node notices Pods assigned to it, and starts the containers. Nobody ran the whole
+        sequence. Each part only watched the API and did its one job.
+      visual:
+        kind: diagram
+        diagram: deployment-chain
+        steps:
+          - [you, deploy, you-deploy]
+          - [dctl, deploy-dctl, rs, dctl-rs]
+          - [rctl, rs-rctl, pods, rctl-pods]
+          - [sched, pods-sched]
+          - [kubelet, sched-kubelet, containers, kubelet-containers]
+    - id: demo
+      title: "See it heal"
+      narration: >-
+        You can prove this in half a minute. Create a Deployment with three replicas. List the Pods, and you see
+        three of them running. Now delete one Pod by hand. List them again: a replacement is already there, a few
+        seconds old.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl create deployment web --image=nginx:1.29 --replicas=3"
+            out: "deployment.apps/web created"
+          - cmd: "kubectl get pods"
+            out: "NAME                  READY   STATUS    RESTARTS   AGE\nweb-7c5d9f6b8-4xk2p   1/1     Running   0          40s\nweb-7c5d9f6b8-9hvtz   1/1     Running   0          40s\nweb-7c5d9f6b8-qm7wd   1/1     Running   0          40s"
+          - cmd: "kubectl delete pod web-7c5d9f6b8-4xk2p"
+            out: "pod \"web-7c5d9f6b8-4xk2p\" deleted"
+          - cmd: "kubectl get pods"
+            out: "NAME                  READY   STATUS    RESTARTS   AGE\nweb-7c5d9f6b8-9hvtz   1/1     Running   0          58s\nweb-7c5d9f6b8-qm7wd   1/1     Running   0          58s\nweb-7c5d9f6b8-t6rnb   1/1     Running   0          4s"
+    - id: whose-job
+      title: "Troubleshoot by asking whose job it is"
+      narration: >-
+        This model is also your best troubleshooting tool. When something is stuck, ask whose job the next step
+        was. If the Pods were never created, look at the controllers. If a Pod stays Pending, look at the
+        scheduler. If it has a node but the containers never start, look at the kubelet on that node. And if
+        every command fails, the API server or etcd is the problem.
+      visual:
+        kind: points
+        heading: "Whose job was the next step?"
+        items:
+          - "Stuck? Find the step that did not happen"
+          - "No Pods created: controllers"
+          - "Pod Pending, no node: scheduler"
+          - "Node set, no containers: kubelet"
+          - "Every command fails: API server or etcd"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        A few habits save time. Created only means the request was stored, so always check the status afterwards.
+        Read the events at the bottom of describe, because every component explains itself there. To remove
+        something for good, delete the object that owns it, not the Pods. And when you forget a kind or its API
+        version, list the API resources instead of guessing.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "The habits that pay off"
+          - "\"created\" means stored, not running: check status"
+          - "kubectl describe: read the Events at the bottom"
+          - "Delete the owner, not the Pods"
+          - "kubectl api-resources: kinds, versions, short names"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Kubernetes stores what you want as objects. Spec is what you want, and status is what exists. Everything
+        goes through the API server, and only the API server talks to the database. Controllers, the scheduler
+        and the kubelet each watch for their own work and do it, forever. Keep this picture in mind, because
+        every lesson that follows fills in one part of it.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Objects record what you want"
+          - "spec = desired, status = observed"
+          - "One API server in front of etcd"
+          - "Control loops watch, compare and act, forever"
+          - "Every later lesson fills in one part"
+---
+
+## Why these concepts come first
+
+Suppose you ran your application with plain commands: start three containers on three servers, and you are done.
+The commands ran once and then stopped caring. When a server dies at three in the morning nothing starts the lost
+container somewhere else, and nothing even *remembers* that three were supposed to be running. Operating by
+commands means a human, or a pile of scripts, has to notice every failure and know every repair.
+
+Kubernetes turns this around. You do not tell it what to **do**; you tell it what should **exist**: "three
+replicas of this image, reachable on port 80". It writes that down, and from then on its components work, without
+ever finishing, to make the real world match what was written. A crashed container, a dead node and a typo fixed
+by you are all handled the same way: there is a difference between what is wanted and what exists, so something
+acts to remove it.
+
+<KeyIdea>
+You never give Kubernetes orders. You record the state you want as **objects**, through **one API**, and
+**controllers** keep comparing that record with reality and closing the gap. Every other topic in the CKA is this
+idea applied to a different kind of object.
+</KeyIdea>
+
+That is why this lesson comes before the components and the objects themselves. If you know the model, most
+behaviour can be predicted instead of memorised, and most troubleshooting becomes one question: *whose job was the
+next step, and why did it not happen?*
+
+## What Kubernetes is made of
+
+<Diagram id="one-door" />
+
+Three ideas carry the whole system:
+
+- **Objects.** An object is a record of intent stored by the cluster: a Pod, a Deployment, a Service, a Node, a
+  Namespace. The cluster's state is nothing more than the set of all its objects.
+- **One API.** Objects are created, read, changed and deleted only through the **API server**. `kubectl` is an
+  ordinary client of it, and so is every component of Kubernetes. The API server is the only process that talks
+  to **etcd**, the database that stores the objects.
+- **Controllers.** A controller is a loop that watches some kind of object and makes changes until reality matches
+  it. Most run inside the kube-controller-manager; the **scheduler** and the **kubelet** on each node follow the
+  same pattern for their own part of the work.
+
+The machines are split the same way. The **control plane** (API server, etcd, controller manager, scheduler)
+decides; the **worker nodes** (kubelet, container runtime, kube-proxy) run the containers. The next lessons take
+these components one at a time. For now, notice the shape: a hub with spokes, and no arrows between the spokes.
+
+### Every object has the same four parts
+
+```yaml
+apiVersion: apps/v1          # which API group and version describes this object
+kind: Deployment             # what kind of object it is
+metadata:                    # who it is: name, namespace, labels, annotations
+  name: web
+  namespace: shop
+  labels:
+    app: web
+spec:                        # desired state: written by you
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.29
+status:                      # observed state: written by Kubernetes, never by you
+  replicas: 3
+  readyReplicas: 2
+```
+
+| Part | Who writes it | What it answers |
+|------|---------------|-----------------|
+| `apiVersion` and `kind` | You | What type of object is this, and which schema checks it? |
+| `metadata` | You, plus fields the system adds (`uid`, `resourceVersion`, `creationTimestamp`, `ownerReferences`) | Which object is this, and how can others find it? |
+| `spec` | You (or a controller acting for you) | What state do you want? |
+| `status` | The controller or kubelet responsible for the object | What state was last observed? |
+
+A few objects that only hold data, such as ConfigMaps and Secrets, have `data` instead of `spec` and no
+status: there is nothing to reconcile, only something to read.
+
+`apiVersion` trips people up because of one historical accident. The oldest kinds (Pod, Service, Namespace, Node,
+ConfigMap, Secret) live in the unnamed **core** group and are written `v1`. Everything newer lives in a named
+group and is written `group/version`: `apps/v1` for Deployments, `batch/v1` for Jobs,
+`networking.k8s.io/v1` for NetworkPolicies.
+
+## How it works: the reconciliation loop
+
+<Diagram id="reconcile-loop" />
+
+The documentation compares a controller to a thermostat: you set a temperature, it measures the room, and it
+switches the heating on or off until the two agree. A Kubernetes controller does the same with objects:
+
+1. **Observe.** Watch the objects it is responsible for, and the things they own.
+2. **Compare.** Does what exists match the `spec`?
+3. **Act.** If not, make a change, usually by creating, updating or deleting *other objects* through the API.
+4. **Repeat**, forever.
+
+The controller for ReplicaSets, for example, counts the Pods that match the ReplicaSet's selector. Two Pods where
+`replicas: 3` is wanted means it creates one. Four means it deletes one. It does not care *why* the number is
+wrong, which is exactly what makes it robust: a crash, a drained node and a person running `kubectl delete pod`
+all look the same to it.
+
+### One command, followed end to end
+
+<Diagram id="deployment-chain" />
+
+When you run `kubectl create deployment web --image=nginx:1.29 --replicas=3`, this is everything that happens:
+
+1. `kubectl` sends a Deployment object to the API server. The API server checks who you are, whether you may do
+   this, and whether the object is valid, then saves it in etcd and answers `deployment.apps/web created`.
+   **Nothing is running yet.**
+2. The **Deployment controller** is watching Deployments. It sees one with no ReplicaSet and creates a ReplicaSet
+   with the same Pod template.
+3. The **ReplicaSet controller** is watching ReplicaSets. It sees one that wants three Pods and has none, and
+   creates three Pod objects. They are `Pending`: they exist in the API but have no node.
+4. The **scheduler** is watching for Pods whose `spec.nodeName` is empty. It picks a node for each and records the
+   choice (this is called *binding*).
+5. The **kubelet** on each chosen node is watching for Pods bound to its node. It asks the container runtime to
+   pull the image and start the containers, then reports the result in the Pod's `status`.
+6. The status flows back up: the ReplicaSet counts ready Pods, the Deployment counts ready replicas, and
+   `kubectl get deployment web` shows `3/3`.
+
+No component told another what to do. Each one noticed an object that needed its attention and did its single
+job. That is also why the system keeps working when a piece restarts: when the scheduler comes back, the
+unscheduled Pods are still sitting in the API, waiting to be noticed.
+
+<DeepDive title="Why the loops react to state, not to events">
+Kubernetes controllers are **level-triggered**: they act on what the state *is*, not on a notification that
+something *happened*. An event-driven design ("a Pod died, so start one") breaks if the message is lost or the
+controller was down at the wrong moment. A state-driven design ("there are two, there should be three") gives the
+right answer whenever it runs, however many changes it missed.
+
+In practice a controller opens a **watch** on the API server, a long-lived request that streams every change, and
+keeps a local cache. The watch only makes the loop fast; correctness comes from comparing full state. This is why
+controllers can be restarted, upgraded or moved to another control plane node without losing work.
+
+Three metadata fields make this cooperation safe:
+
+- **`resourceVersion`** changes on every write. An update that carries a stale version is rejected with a conflict
+  instead of silently overwriting someone else's change (the "object has been modified" error you sometimes see
+  from `kubectl edit`).
+- **`generation`** goes up when the `spec` changes, and a controller copies the value it has dealt with into
+  `status.observedGeneration`. If the two differ, the controller has not caught up with your latest change yet, and
+  the rest of the status still describes the old spec.
+- **`ownerReferences`** point from an object to the object that created it. A Pod's owner is its ReplicaSet; the
+  ReplicaSet's owner is its Deployment. When you delete an owner, the garbage collector deletes its dependents.
+</DeepDive>
+
+<DeepDive title="What the API server does with a request">
+Every write passes the same gates, in order: **authentication** (who are you?), **authorization** (may you do
+this? usually RBAC), **admission** (plugins that may change or reject the object, for example by filling in
+defaults or enforcing a quota), **validation** against the schema for that `apiVersion` and `kind`, and only then
+storage in etcd. A rejection at any gate is immediate and the error says which one, so read it: `Unauthorized` is
+authentication, `Forbidden` is authorization or admission, and `is invalid` or `unknown field` is validation.
+
+The URL of an object follows from its manifest. A Deployment `web` in namespace `shop` lives at
+`/apis/apps/v1/namespaces/shop/deployments/web`; a Pod, being in the core group, at
+`/api/v1/namespaces/shop/pods/<name>`. Run any command with `-v=6` to see the requests `kubectl` makes.
+</DeepDive>
+
+## The objects you meet first
+
+Each of these gets its own lesson. What matters here is the pattern: every row is a `spec` you write and a
+component that makes it true.
+
+| Object | What you declare | Who makes it true |
+|--------|------------------|-------------------|
+| **Pod** | One or more containers that run together on one node | Scheduler (chooses the node), kubelet (runs it) |
+| **ReplicaSet** | "Keep N copies of this Pod template" | ReplicaSet controller |
+| **Deployment** | "Run this version, N copies, and roll changes out gradually" | Deployment controller, through ReplicaSets |
+| **Service** | "One stable name and IP for the Pods with these labels" | EndpointSlice controller and kube-proxy |
+| **Namespace** | A named compartment for objects | Namespace controller (cleans up on delete) |
+| **Node** | A machine that can run Pods | Its kubelet registers it and reports its health |
+
+Two more ideas tie the objects together:
+
+- **Labels and selectors are the glue.** Objects do not hold lists of each other. A ReplicaSet finds its Pods, and
+  a Service finds its backends, by a label selector such as `app: web`. Change a Pod's label and it leaves the
+  group at once: the ReplicaSet starts a replacement and the Service stops sending it traffic.
+- **Namespaced or cluster-scoped.** Most objects live inside a namespace, and their name only has to be unique
+  there. A few describe the cluster itself and belong to no namespace: Nodes, Namespaces, PersistentVolumes,
+  StorageClasses, ClusterRoles.
+
+<Callout kind="warning" title="A bare Pod heals less than you think">
+The kubelet restarts a crashed **container** inside a Pod, so even a bare Pod survives a crash. But nothing
+recreates the **Pod** itself: if it is deleted, or its node dies, it is gone for good. Self-healing across nodes
+comes from the controller that owns the Pod, which is why real workloads are Deployments, not Pods.
+</Callout>
+
+## Using it
+
+<Example title="Watch the loop repair a deleted Pod">
+Create a Deployment, break it on purpose, and watch the ReplicaSet controller fix it. Use two terminals, or run
+the watch first and press Ctrl+C when you have seen enough.
+
+```bash
+kubectl create deployment web --image=nginx:1.29 --replicas=3
+kubectl get pods -l app=web --watch          # leave this running
+
+# in a second terminal
+kubectl delete pod -l app=web --wait=false   # delete all three at once
+```
+
+The watch shows three Pods `Terminating` and three new ones going `Pending`, `ContainerCreating`, `Running`,
+within a second or two of each other. You asked for the Pods to be deleted and they were; but the ReplicaSet still
+says three, so three exist again. `kubectl create deployment` labels everything `app=<name>`, which is why the
+selector `-l app=web` works.
+</Example>
+
+<Example title="Compare what you asked for with what you have">
+Scale to more replicas than the cluster can start instantly and read both halves of the object:
+
+```bash
+kubectl scale deployment web --replicas=6
+kubectl get deployment web -o jsonpath='{.spec.replicas} wanted, {.status.readyReplicas} ready{"\n"}'
+kubectl get deployment web            # READY shows ready/wanted, for example 4/6
+kubectl rollout status deployment web # waits until status matches spec
+```
+
+`kubectl scale` only changed one number in the `spec`. Everything after that was the controllers catching up, and
+`status` is where you watch them do it.
+</Example>
+
+<Example title="Follow the chain of owners">
+Start from a Pod and walk up to the object you would actually have to change or delete:
+
+```bash
+POD=$(kubectl get pods -l app=web -o jsonpath='{.items[0].metadata.name}')
+kubectl get pod "$POD" -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'
+# ReplicaSet/web-7c5d9f6b8
+kubectl get replicaset web-7c5d9f6b8 -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'
+# Deployment/web
+kubectl delete deployment web         # removes the ReplicaSet and the Pods with it
+```
+
+`kubectl describe pod` shows the same thing on its `Controlled By:` line. The names tell the story too:
+`web-7c5d9f6b8-4xk2p` is Deployment `web`, ReplicaSet hash `7c5d9f6b8`, Pod suffix `4xk2p`.
+</Example>
+
+## Tricks
+
+<Trick title="Troubleshoot by asking whose job it is">
+Find the last step of the chain that *did* happen; the component responsible for the next one is your suspect.
+
+| What you see | The step that did not happen | Look at |
+|--------------|------------------------------|---------|
+| Deployment exists, no ReplicaSet or Pods | A controller did not act | kube-controller-manager |
+| Pod `Pending`, `NODE` column `<none>` | Scheduling | Events on the Pod, then kube-scheduler |
+| Pod has a node, stuck in `ContainerCreating` or `ImagePullBackOff` | Starting containers | Events on the Pod, then the kubelet and runtime on that node |
+| Every `kubectl` command fails or hangs | Nothing can be read or stored | kube-apiserver, then etcd |
+</Trick>
+
+<Trick title="Read the Events before anything else">
+Each component writes down what it did, or why it could not, as Events on the object. They are at the bottom of
+`kubectl describe`, or all together with `kubectl get events --sort-by=.lastTimestamp`. A message such as
+`0/3 nodes are available: 3 Insufficient cpu` is the scheduler telling you the answer. Events are kept for about
+an hour by default, so look soon after the problem.
+</Trick>
+
+<Trick title="Let the cluster tell you kinds, versions and short names">
+`kubectl api-resources` lists every kind with its short name, API version and whether it is namespaced, so you
+never have to remember whether it is `apps/v1` or `v1`. Add `--namespaced=false` to list the cluster-scoped ones,
+and use the short names everywhere: `po`, `deploy`, `rs`, `svc`, `ns`, `no`, `cm`.
+</Trick>
+
+<Trick title="Watch instead of re-running">
+`kubectl get pods --watch` (or `-w`) streams changes as they happen, using the same watch mechanism the
+controllers use. It is the quickest way to see whether a change you made is being reconciled or is stuck.
+</Trick>
+
+## Common mistakes
+
+- **Treating "created" as "running".** `deployment.apps/web created` only means the object passed validation and
+  was stored. Always check the result: `kubectl get`, then `kubectl describe` if it is not what you expect.
+- **Deleting Pods to stop an application.** The owner recreates them. Delete or scale the Deployment instead; if
+  Pods keep coming back, find their owner with `kubectl describe pod` (`Controlled By:`).
+- **Fixing a Pod instead of its template.** Editing a Pod that a ReplicaSet owns changes one copy, and the change
+  is lost with that Pod. Change the Pod template in the Deployment so that every replacement gets it.
+- **Trying to set `status`.** Status in a manifest you apply is ignored. If the status is wrong, the fix is in
+  the spec or in the component that reports it.
+- **The wrong `apiVersion`.** `apiVersion: v1` with `kind: Deployment` fails with `no matches for kind`. Core kinds
+  are `v1`; the rest carry their group. Check with `kubectl api-resources` or `kubectl explain deployment`.
+- **Forgetting the namespace.** "Not found" very often means "in another namespace". Add `-n <namespace>`, or `-A`
+  to search all of them.
+
+## Recap
+
+- You describe **what should exist** as objects; Kubernetes works out the steps and keeps doing so.
+- Every object has `apiVersion`, `kind`, `metadata`, your **`spec`** (desired) and the cluster's **`status`** (observed).
+- Everything, including Kubernetes itself, goes through the **API server**; only it talks to etcd.
+- **Controllers**, the **scheduler** and the **kubelet** each watch for their own work, act, and look again, forever.
+- Stuck? Find the last step that happened and ask whose job the next one was. The Events usually say why.
