@@ -1,0 +1,675 @@
+---
+id: cka-services
+title: "Services"
+summary: "Why Pods need a Service in front of them, how a Service finds its Pods and moves traffic to them, the Service types at a glance, and NodePort in depth: three ports, every node, and the commands that save time in the exam."
+minutes: 25
+competencies:
+  - cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types
+  - cka/troubleshooting/troubleshoot-services-networking
+docs:
+  - title: "Kubernetes docs: Service"
+    url: https://kubernetes.io/docs/concepts/services-networking/service/
+  - title: "Kubernetes docs: Virtual IPs and Service proxies"
+    url: https://kubernetes.io/docs/reference/networking/virtual-ips/
+  - title: "Kubernetes docs: EndpointSlices"
+    url: https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/
+  - title: "Kubernetes docs: DNS for Services and Pods"
+    url: https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/
+  - title: "Kubernetes docs: kubectl expose"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_expose/
+  - title: "Kubernetes docs: Debug Services"
+    url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/
+mock: false
+diagrams:
+  service-routing:
+    title: "A client reaches the Pods through the Service"
+    caption: "The client only knows the name web. Cluster DNS turns the name into the Service's virtual IP, and each connection is sent to one of the ready Pods listed in the EndpointSlice."
+    nodes:
+      - { id: client, label: "Client Pod", sub: "frontend-7d9", icon: pod, col: 0, row: 1 }
+      - { id: dns, label: "CoreDNS", sub: "web = 10.96.0.20", icon: dns, col: 1, row: 0, tone: muted }
+      - { id: svc, label: "Service web", sub: "10.96.0.20:80", icon: service, col: 1, row: 1, tone: primary }
+      - { id: slice, label: "EndpointSlice", sub: "3 ready addresses", icon: file, col: 1, row: 2, tone: muted }
+      - { id: pod-1, label: "web Pod", sub: "10.244.1.7:8080", icon: pod, col: 2, row: 0, tone: success }
+      - { id: pod-2, label: "web Pod", sub: "10.244.1.9:8080", icon: pod, col: 2, row: 1, tone: success }
+      - { id: pod-3, label: "web Pod", sub: "10.244.2.4:8080", icon: pod, col: 2, row: 2, tone: success }
+    edges:
+      - { from: client, to: dns, label: "web?", dashed: true }
+      - { from: client, to: svc, label: "web:80" }
+      - { from: svc, to: pod-1, label: ":8080" }
+      - { from: svc, to: pod-2, label: ":8080" }
+      - { from: svc, to: pod-3, label: ":8080" }
+      - { from: slice, to: svc, label: "lists backends", dashed: true }
+    groups:
+      - { id: node-a, label: "Node A", nodes: [pod-1, pod-2] }
+      - { id: node-b, label: "Node B", nodes: [pod-3] }
+  control-loop:
+    title: "Who keeps a Service pointing at the right Pods"
+    caption: "Nothing here carries traffic. One controller turns selector plus Pods into a list of addresses; kube-proxy on every node turns that list into kernel rules. The kernel then forwards the packets."
+    nodes:
+      - { id: svc, label: "Service web", sub: "selector app=web", icon: service, col: 0, row: 0, tone: primary }
+      - { id: pods, label: "Pods", sub: "labels, readiness", icon: pod, col: 0, row: 2, tone: success }
+      - { id: ctrl, label: "Slice controller", sub: "controller manager", icon: control-plane, col: 1, row: 1, tone: muted }
+      - { id: slice, label: "EndpointSlice", sub: "ready Pod IPs", icon: file, col: 2, row: 1 }
+      - { id: proxy, label: "kube-proxy", sub: "on every node", icon: process, col: 3, row: 1 }
+      - { id: rules, label: "Kernel rules", sub: "iptables / nftables", icon: proxy, col: 4, row: 1, tone: primary }
+    edges:
+      - { from: svc, to: ctrl, label: "watched" }
+      - { from: pods, to: ctrl, label: "watched" }
+      - { from: ctrl, to: slice, label: "writes" }
+      - { from: slice, to: proxy, label: "watched" }
+      - { from: proxy, to: rules, label: "programs" }
+  service-types:
+    title: "Each Service type builds on the one before"
+    caption: "A LoadBalancer Service is also a NodePort Service, which is also a ClusterIP Service. ExternalName is the odd one out: only a DNS alias, with no Pods behind it."
+    nodes:
+      - { id: user, label: "User", sub: "outside the cluster", icon: internet, col: 0, row: 0 }
+      - { id: lb, label: "Load balancer", sub: "type: LoadBalancer", icon: gateway, col: 1, row: 0, tone: warning }
+      - { id: nodeport, label: "Every node", sub: "type: NodePort", icon: node, col: 2, row: 0, tone: warning }
+      - { id: clusterip, label: "Cluster IP", sub: "type: ClusterIP", icon: service, col: 2, row: 1, tone: primary }
+      - { id: pods, label: "Ready Pods", sub: "targetPort 8080", icon: pod, col: 1, row: 1, tone: success }
+      - { id: inside, label: "Pods in cluster", sub: "call web.shop", icon: pod, col: 2, row: 2 }
+    edges:
+      - { from: user, to: lb }
+      - { from: lb, to: nodeport }
+      - { from: nodeport, to: clusterip }
+      - { from: clusterip, to: pods }
+      - { from: inside, to: clusterip }
+  three-ports:
+    title: "The three ports of a NodePort Service"
+    caption: "Read a NodePort Service from the outside in: nodePort on the node, port on the Service, targetPort on the Pod. A client inside the cluster skips the first one."
+    nodes:
+      - { id: outside, label: "Outside client", sub: "calls node IP", icon: user, col: 0, row: 0 }
+      - { id: node, label: "Any node", sub: "nodePort 30080", icon: node, col: 1, row: 0, tone: warning }
+      - { id: svc, label: "Service web", sub: "port 80", icon: service, col: 2, row: 0, tone: primary }
+      - { id: pod, label: "web Pod", sub: "targetPort 8080", icon: pod, col: 3, row: 0, tone: success }
+      - { id: inside, label: "Pod in cluster", sub: "calls web:80", icon: pod, col: 2, row: 1 }
+    edges:
+      - { from: outside, to: node, label: ":30080" }
+      - { from: node, to: svc, label: ":80" }
+      - { from: svc, to: pod, label: ":8080" }
+      - { from: inside, to: svc, label: ":80" }
+  nodeport-path:
+    title: "A node port is open on every node"
+    caption: "Node B runs no web Pod, yet it accepts connections on 30080 and forwards them to a Pod on Node A. That second hop is why the Pod normally sees a node's address as the source, not the real client's."
+    nodes:
+      - { id: user, label: "Outside client", sub: "curl node:30080", icon: user, col: 0, row: 1 }
+      - { id: port-a, label: "Node A rules", sub: ":30080 open", icon: proxy, col: 1, row: 0, tone: warning }
+      - { id: port-b, label: "Node B rules", sub: ":30080 open", icon: proxy, col: 1, row: 2, tone: warning }
+      - { id: pod-1, label: "web Pod", sub: "10.244.1.7:8080", icon: pod, col: 2, row: 0, tone: success }
+      - { id: pod-2, label: "web Pod", sub: "10.244.1.9:8080", icon: pod, col: 3, row: 0, tone: success }
+      - { id: other, label: "Other Pods", sub: "no web Pod here", icon: pod, col: 2, row: 2, tone: muted }
+    edges:
+      - { from: user, to: port-a, label: "192.168.1.11" }
+      - { from: user, to: port-b, label: "192.168.1.12" }
+      - { from: port-a, to: pod-1, label: "local" }
+      - { from: port-b, to: pod-2, label: "second hop", dashed: true }
+    groups:
+      - { id: node-a, label: "Node A", nodes: [port-a, pod-1, pod-2] }
+      - { id: node-b, label: "Node B", nodes: [port-b, other] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Services"
+      narration: >-
+        You already know how a Deployment keeps Pods running. This lesson is about how anything finds those Pods. A
+        Service gives a group of Pods one name and one address that never change. You will see what a Service is made
+        of, how traffic really reaches a Pod, and how a NodePort Service opens your application to the outside.
+      visual:
+        kind: title
+        heading: "Services"
+        subheading: "One stable address for Pods that come and go"
+    - id: problem
+      title: "The problem a Service solves"
+      narration: >-
+        A Deployment replaces Pods all the time: on every rollout, and whenever a node fails. Each replacement comes
+        up with a different IP address. A client cannot chase those addresses, so it needs one name that always
+        works. And with three replicas, something has to spread the traffic over the healthy ones.
+      visual:
+        kind: points
+        heading: "Why not talk to Pods directly?"
+        items:
+          - "Pods are replaced on rollouts and failures"
+          - "Every new Pod gets a new IP"
+          - "Clients need one name that always works"
+          - "Traffic should spread over the healthy replicas"
+    - id: what-it-is
+      title: "What a Service is made of"
+      narration: >-
+        Here is a client Pod that wants to call the web application. It calls the Service by name, on port 80. The
+        Service has a label selector, and every ready Pod with matching labels becomes a backend. The current list of
+        those Pod addresses lives in an EndpointSlice, which Kubernetes keeps up to date for you. And the name itself
+        comes from cluster DNS, which answers with the Service's virtual IP.
+      visual:
+        kind: diagram
+        diagram: service-routing
+        steps:
+          - [client]
+          - [svc, client-svc]
+          - [pod-1, pod-2, pod-3, svc-pod-1, svc-pod-2, svc-pod-3, node-a, node-b]
+          - [slice, slice-svc]
+          - [dns, client-dns]
+    - id: how-it-works
+      title: "How it stays up to date"
+      narration: >-
+        Labels are the only link between a Service and its Pods. A controller in the control plane watches both, and
+        it writes the addresses of the ready Pods into an EndpointSlice. On every node, kube-proxy watches those
+        slices. It turns them into kernel rules that rewrite each new connection to one Pod's real address. So the
+        Service IP is virtual: no process listens on it, and kube-proxy never carries your traffic.
+      visual:
+        kind: diagram
+        diagram: control-loop
+        steps:
+          - [svc, pods]
+          - [ctrl, svc-ctrl, pods-ctrl, slice, ctrl-slice]
+          - [proxy, slice-proxy]
+          - [rules, proxy-rules]
+    - id: types
+      title: "The Service types"
+      narration: >-
+        ClusterIP is the default type, and it is reachable only from inside the cluster. NodePort adds a port on every
+        node, so that clients outside can come in. LoadBalancer adds a cloud load balancer in front of those node
+        ports. Each type builds on the one before, so nothing you learn is thrown away.
+      visual:
+        kind: diagram
+        diagram: service-types
+        steps:
+          - [clusterip, pods, inside, clusterip-pods, inside-clusterip]
+          - [nodeport, nodeport-clusterip]
+          - [lb, user, user-lb, lb-nodeport]
+    - id: three-ports
+      title: "NodePort: three ports"
+      narration: >-
+        A NodePort Service has three port numbers, and mixing them up is the classic mistake. Read them from the
+        outside in. The node port is opened on the nodes, and it comes from the range 30000 to 32767. The port belongs
+        to the Service, and it is what clients inside the cluster call. The target port is where the container
+        actually listens. A client inside the cluster skips the node port and calls the Service directly.
+      visual:
+        kind: diagram
+        diagram: three-ports
+        steps:
+          - [outside]
+          - [outside, node, svc, pod]
+          - [node, outside-node]
+          - [svc, node-svc]
+          - [pod, svc-pod]
+          - [inside, inside-svc]
+    - id: every-node
+      title: "NodePort: every node"
+      narration: >-
+        The node port is open on every node of the cluster. Call Node A, and a Pod on Node A may answer. Call Node B,
+        which runs no web Pod at all, and it still works. Node B forwards the connection to a Pod on another node.
+        Because of that extra hop, the Pod usually sees a node's address instead of the real client's address.
+      visual:
+        kind: diagram
+        diagram: nodeport-path
+        steps:
+          - [user, port-a, port-b, node-a, node-b]
+          - [user-port-a, port-a-pod-1, pod-1, pod-2]
+          - [user-port-b, other]
+          - [port-b-pod-2]
+    - id: manifest
+      title: "Reading a NodePort manifest"
+      narration: >-
+        Here is the whole Service as a manifest. Type NodePort asks for a port on every node. The selector must match
+        the labels on the Pods, letter for letter. Port is what clients call, and target port is where the container
+        listens. Node port pins the number; leave it out and Kubernetes picks a free one for you.
+      visual:
+        kind: code
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: web
+            namespace: shop
+          spec:
+            type: NodePort
+            selector:
+              app: web
+            ports:
+              - port: 80
+                targetPort: 8080
+                nodePort: 30080
+        steps: ["1-13", "7", "8-9", "11-12", "13"]
+    - id: example
+      title: "Expose a Deployment"
+      narration: >-
+        In the exam you rarely type that manifest by hand. One expose command creates the Service and copies the
+        selector from the Deployment. Then read the Service: the ports column shows the Service port and the node
+        port side by side. Next, check that the Service has endpoints, because an empty list means no Pod was
+        selected. Finally, find a node's IP address, and call the node port from outside the cluster.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl -n shop expose deployment web --type=NodePort --port=80 --target-port=8080"
+            out: "service/web exposed"
+          - cmd: "kubectl -n shop get svc web"
+            out: "NAME   TYPE       CLUSTER-IP   EXTERNAL-IP   PORT(S)        AGE\nweb    NodePort   10.96.0.20   <none>        80:31742/TCP   4s"
+          - cmd: "kubectl -n shop get endpointslices -l kubernetes.io/service-name=web"
+            out: "NAME        ADDRESSTYPE   PORTS   ENDPOINTS                          AGE\nweb-x7k2p   IPv4          8080    10.244.1.7,10.244.1.9,10.244.2.4   4s"
+          - cmd: "kubectl get nodes -o wide"
+            out: "NAME     STATUS   ROLES           VERSION   INTERNAL-IP\ncp       Ready    control-plane   v1.34.1   192.168.1.10\nnode-a   Ready    <none>          v1.34.1   192.168.1.11"
+          - cmd: "curl -s http://192.168.1.11:31742"
+            out: "<h1>hello from web</h1>"
+    - id: debugging
+      title: "When a Service does not answer"
+      narration: >-
+        When a Service does not answer, work from the endpoints inward. Start with the endpoints, because no endpoints
+        almost always means the selector does not match the Pod labels. Remember that only ready Pods are listed, so a
+        failing readiness probe looks exactly the same. Endpoints but no answer points at the target port. And for a
+        node port, use a real node IP and the number after the colon.
+      visual:
+        kind: points
+        heading: "Debug in this order"
+        items:
+          - "kubectl describe svc: look at the Endpoints line"
+          - "No endpoints? Compare the selector with the Pod labels"
+          - "Pods that are not ready are left out"
+          - "Endpoints but no answer: check targetPort"
+          - "NodePort: node IP, and the port after the colon"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        A Service is a stable name and virtual IP in front of a changing set of Pods. Its selector decides which Pods,
+        and the EndpointSlice lists the ready ones. The kernel does the forwarding, with rules that kube-proxy writes
+        on every node. NodePort opens the same port on every node, and maps node port to port to target port. The
+        next two lessons take ClusterIP and LoadBalancer one at a time.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Stable name and virtual IP for changing Pods"
+          - "Selector picks Pods; EndpointSlice lists the ready ones"
+          - "kube-proxy writes rules; the kernel forwards"
+          - "nodePort → port → targetPort, on every node"
+          - "Next: ClusterIP, then LoadBalancer"
+---
+
+## Why Services exist
+
+In the last lessons you created Pods, then let a ReplicaSet and a Deployment keep them running. That raises the next
+question: **how does anything talk to those Pods?**
+
+Every Pod gets its own IP address, and Pods can reach each other on those addresses. But a Pod's IP is only good
+for as long as that one Pod lives. A Deployment keeps your application running precisely by *replacing* Pods:
+during every rollout, after every node failure, whenever a Pod is evicted. Each replacement comes up with a **new
+IP address**. Three things go wrong if clients use Pod IPs directly:
+
+- The address a client stored is stale after the next rollout.
+- With three replicas there are three addresses, and the client would have to choose between them and notice when
+  one goes away.
+- Pod IPs only mean something inside the cluster. A browser on your laptop cannot reach `10.244.1.7` at all.
+
+A **Service** solves all three. It is a small Kubernetes object that puts one DNS name and one virtual IP address
+in front of a group of Pods. The name and address stay the same for the Service's whole life, connections are
+spread over the Pods that are ready to take them, and, depending on its **type**, the Service can also open a way
+in from outside the cluster.
+
+<KeyIdea>
+A Service is a stable name and address in front of a changing set of Pods. Clients only ever talk to the Service;
+Kubernetes keeps track of which Pods are behind it right now.
+</KeyIdea>
+
+A Service is also what keeps the parts of an application loosely coupled. The frontend does not know how many
+backend Pods exist, which nodes they run on, or that they were all replaced ten minutes ago. It knows one word:
+`backend`.
+
+## What a Service is made of
+
+<Diagram id="service-routing" />
+
+Four pieces work together:
+
+- **The selector.** A Service has a label selector, such as `app: web`. Every Pod **in the same namespace** whose
+  labels match is a candidate backend. The Service does not know or care which Deployment created the Pods: labels
+  are the only link, exactly as they are between a ReplicaSet and its Pods.
+- **The EndpointSlice.** Kubernetes writes the current list of matching Pod IPs and ports into EndpointSlice
+  objects. Each address is marked ready or not ready, and only ready addresses receive traffic. This list is the
+  first thing to look at when a Service misbehaves.
+- **The virtual IP (ClusterIP).** When you create the Service, the API server gives it an IP from the cluster's
+  Service range, for example `10.96.0.20`. It does not change while the Service exists.
+- **The DNS name.** Cluster DNS (CoreDNS) answers `web.shop.svc.cluster.local` with that IP. From a Pod in the same
+  namespace the short name `web` is enough; from another namespace use `web.shop`.
+
+Here is the smallest useful Service. It has no `type`, so it is a ClusterIP Service:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: shop
+spec:
+  selector:
+    app: web          # Pods with this label are the backends
+  ports:
+    - port: 80        # clients call web:80
+      targetPort: 8080  # the container listens on 8080
+```
+
+<Callout kind="warning" title="A Service selector is a plain map">
+Deployments and ReplicaSets write `selector.matchLabels`. A Service does **not**: its `selector` is the labels
+themselves, one level up. Writing `matchLabels` under a Service's selector is rejected by the API server, and it is
+an easy slip when you have just written a Deployment.
+</Callout>
+
+## How it works underneath
+
+<Diagram id="control-loop" />
+
+The ClusterIP is **virtual**. No network interface has that address and no process listens on it, which is why
+`ping`ing a Service usually gets no answer. Two control loops make it work anyway:
+
+1. **The EndpointSlice controller** (part of the kube-controller-manager) watches Services and Pods. Whenever a Pod
+   that matches the selector appears, becomes ready, stops being ready or is deleted, it rewrites the Service's
+   EndpointSlices.
+2. **kube-proxy**, on every node, watches Services and EndpointSlices and programs that node's kernel with
+   iptables or nftables rules. The rules say: *a new connection to `10.96.0.20:80` is rewritten to one of these Pod
+   addresses*.
+
+When a Pod sends a packet to `10.96.0.20:80`, the kernel **on the sending Pod's own node** matches the rule, picks
+one ready backend and rewrites the destination to that Pod's real address, for example `10.244.2.4:8080`. Replies
+are translated back on the way, so the client never sees the Pod address. There is no central load balancer box
+that the traffic passes through, and so there is no single point that can fall over: every node does its own
+forwarding.
+
+This design explains several things you will meet in practice:
+
+- A new Service works within a second or two on every node, because every kube-proxy sees the same change.
+- A Pod that fails its **readiness probe** stops receiving traffic without being restarted: it is simply dropped
+  from the list. That is the whole point of readiness.
+- If kube-proxy is not running on a node, Pods on that node cannot reach *any* Service, while Pod-to-Pod traffic
+  by IP still works. That pattern is a classic troubleshooting clue.
+
+<DeepDive title="What happens to each connection">
+- The backend is chosen **per connection**, not per request. A client that keeps one connection open (HTTP
+  keep-alive, gRPC, a database pool) keeps talking to the same Pod. Three replicas do not guarantee an even split.
+- In iptables mode the backend is picked at random. There is no "least busy" choice: a Service is a simple spreader,
+  not a smart load balancer.
+- `sessionAffinity: ClientIP` sends all connections from one client IP to the same Pod. The stickiness lasts three
+  hours (10800 seconds) by default.
+- The rules live in the kernel, so restarting kube-proxy does not break running traffic: the rules stay in place
+  until it writes new ones.
+- kube-proxy has several modes on Linux. `iptables` is today's default, `nftables` is its successor and `ipvs` is
+  deprecated. For the exam, knowing that the mode exists and that it is set in the `kube-proxy` ConfigMap in
+  `kube-system` is enough.
+</DeepDive>
+
+<DeepDive title="Endpoints and EndpointSlices: two names for the same idea">
+Older material, and many exam-style questions, talk about the **Endpoints** object: one object per Service, with
+the same name as the Service. It still exists, but it is deprecated since Kubernetes v1.33, and `kubectl get
+endpoints` now prints a warning. Its replacement, **EndpointSlice**, splits the list over several objects (so a
+Service with thousands of Pods does not rewrite one huge object on every change) and carries more detail per
+address.
+
+EndpointSlices have generated names, so you find them by label:
+
+```bash
+kubectl get endpointslices -l kubernetes.io/service-name=web
+```
+
+The fastest check of all needs neither: `kubectl describe svc web` prints an `Endpoints:` line.
+</DeepDive>
+
+<DeepDive title="How a Pod finds a Service: DNS, and the older environment variables">
+DNS is the normal way. Every Pod's `/etc/resolv.conf` points at the cluster DNS Service and carries a search list
+that starts with the Pod's own namespace. That is why `web` works inside namespace `shop`, `web.shop` works from
+anywhere, and `web.shop.svc.cluster.local` is the full name.
+
+There is also an older mechanism. When a Pod starts, the kubelet injects environment variables for every Service
+that exists **in the Pod's namespace at that moment**, such as `WEB_SERVICE_HOST=10.96.0.20` and
+`WEB_SERVICE_PORT=80`. A Service created after the Pod started is missing from that Pod's environment, which is
+one more reason to prefer DNS. You will see these variables when you run `env` in a container, so it is worth
+knowing where they come from.
+</DeepDive>
+
+## The Service types at a glance
+
+<Diagram id="service-types" />
+
+The `type` field decides **from where** the Service can be reached. It does not change how Pods are selected.
+
+| Type | Reachable from | What Kubernetes adds |
+|------|----------------|----------------------|
+| `ClusterIP` (default) | Inside the cluster | A virtual IP and a DNS name |
+| `NodePort` | Anything that can reach a node's IP | ClusterIP, plus the same port opened on every node |
+| `LoadBalancer` | Outside, through one external address | NodePort, plus a load balancer from the cloud provider |
+| `ExternalName` | Inside the cluster | Only a DNS alias (CNAME) to another name; no selector, no proxying |
+
+The first three stack like building blocks. A NodePort Service still has a cluster IP and can be called from inside
+the cluster exactly like a ClusterIP Service; a LoadBalancer Service still has a node port. So everything in this
+lesson about selectors, endpoints and ports applies to all of them.
+
+ClusterIP and LoadBalancer each have their own lesson next. The rest of this one goes deep on **NodePort**, the
+simplest way to reach an application from outside the cluster and the one you can always use on an exam cluster.
+
+## NodePort in depth
+
+### Three ports, read from the outside in
+
+<Diagram id="three-ports" />
+
+A NodePort Service has three port numbers. Most Service mistakes are one of these in the wrong place:
+
+| Field | Where it lives | Meaning | If you leave it out |
+|-------|----------------|---------|---------------------|
+| `nodePort` | On every node | The port outside clients call, on a node's IP | A free port from 30000 to 32767 is picked |
+| `port` | On the Service's virtual IP | The port clients inside the cluster call | Required |
+| `targetPort` | On the Pod | The port the container really listens on | Same as `port` |
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: shop
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080
+```
+
+With this Service, all of these reach the same Pods:
+
+- `http://192.168.1.11:30080` from your laptop, where `192.168.1.11` is any node's IP,
+- `http://web:80` from a Pod in namespace `shop`,
+- `http://10.96.0.20:80` from any Pod or node in the cluster.
+
+Only `port` is required. That is a trap in itself: if you write only `port: 80` and the container listens on 8080,
+`targetPort` silently becomes 80 and every connection is refused.
+
+### Every node answers
+
+<Diagram id="nodeport-path" />
+
+The node port is opened on **every node in the cluster**, control plane nodes included, and not only on the nodes
+that happen to run one of the Pods. A node without a local Pod forwards the connection to a Pod on another node.
+That is convenient (any node IP works, and Pods can move freely), and it has two consequences worth knowing:
+
+- **The Pod does not see the real client address.** To make sure replies travel back the same way, the receiving
+  node replaces the packet's source address with its own. Your application logs show node IPs.
+- **There may be an extra hop** between the node the client called and the node that runs the Pod.
+
+Both are controlled by one field. `externalTrafficPolicy: Local` tells each node to use only its **own** Pods:
+the client address is preserved and there is no second hop, but a node that runs no Pod of the Service no longer
+answers on the node port at all. The default, `Cluster`, is what the diagram shows.
+
+<Callout kind="warning" title="A node port is not protected by anything">
+A NodePort exposes the application on every node's IP to whoever can reach the nodes. Kubernetes adds no
+authentication, no TLS and no firewall. On cloud VMs the reverse also bites: the provider's firewall usually blocks
+30000 to 32767 until you open it, and the symptom is a connection that hangs.
+</Callout>
+
+### Where the port number comes from
+
+- The range **30000 to 32767** is a setting of the API server (`--service-node-port-range`). On a kubeadm cluster
+  you can read it, or change it, in `/etc/kubernetes/manifests/kube-apiserver.yaml`; if the flag is absent the
+  default applies.
+- A node port is **unique in the whole cluster**, across all namespaces, because it is opened on every node. Asking
+  for a port that another Service already holds fails with `provided port is already allocated`.
+- Asking for a port outside the range fails with `provided port is not in the valid range`. That is why you cannot
+  put a NodePort Service on port 80 or 443 of a default cluster.
+- When you do not ask, Kubernetes prefers to pick from the upper part of the range and leaves the lowest ports
+  (30000 to 30085 with the default range) for people who choose a number by hand. Choosing a fixed port in that low
+  band makes collisions with automatic picks unlikely.
+
+<DeepDive title="Why NodePort exists at all, and when to use it">
+NodePort is the one way in that needs nothing outside Kubernetes: no cloud API, no extra controller. That makes it
+the foundation the other entry points stand on. A cloud load balancer created for a LoadBalancer Service usually
+sends its traffic to the node port, and many ingress controllers on bare-metal clusters are themselves exposed
+through one.
+
+Used directly, it fits demos, development clusters, lab and exam clusters, and setups where you run your own load
+balancer in front of the nodes. It fits poorly as the public face of a production application: clients would need
+to know node IPs, node IPs change, the port is an odd high number, and one Service takes one port on every node.
+</DeepDive>
+
+## Using it
+
+<Example title="Expose a Deployment on a node port and prove it works">
+The Deployment `web` in namespace `shop` runs Pods labelled `app: web` that listen on port 8080. Make it reachable
+from outside the cluster, then check every link in the chain.
+
+```bash
+kubectl -n shop expose deployment web --type=NodePort --port=80 --target-port=8080
+kubectl -n shop get svc web
+```
+
+```text
+NAME   TYPE       CLUSTER-IP   EXTERNAL-IP   PORT(S)        AGE
+web    NodePort   10.96.0.20   <none>        80:31742/TCP   4s
+```
+
+Read `80:31742/TCP` as **port:nodePort**. The target port is not in this output; `kubectl describe svc web` shows
+all three. Now check that the Service found its Pods, then call it from outside through any node:
+
+```bash
+kubectl -n shop get endpointslices -l kubernetes.io/service-name=web
+kubectl get nodes -o wide                 # the INTERNAL-IP column
+curl -s http://192.168.1.11:31742
+```
+
+`kubectl expose` copies the Deployment's selector into the Service, so the selector cannot be wrong. If you leave
+out `--port`, it uses the `containerPort` declared in the Pod template, and fails if there is none.
+</Example>
+
+<Example title="Ask for a specific node port">
+The task says "reachable on port 30080 of every node". `kubectl expose` has no flag for the node port, so generate
+the manifest, add one line and apply it:
+
+```bash
+kubectl -n shop expose deployment web --type=NodePort --port=80 --target-port=8080 \
+  --dry-run=client -o yaml > web-svc.yaml
+vim web-svc.yaml        # under ports: add  nodePort: 30080
+kubectl apply -f web-svc.yaml
+```
+
+The Service already exists? Change it in place. Both of these work on a live Service, and you can turn a ClusterIP
+Service into a NodePort Service the same way without recreating it:
+
+```bash
+kubectl -n shop edit svc web
+kubectl -n shop patch svc web -p '{"spec":{"type":"NodePort","ports":[{"port":80,"nodePort":30080}]}}'
+```
+</Example>
+
+<Example title="Find out why a Service does not answer">
+`curl http://192.168.1.11:30080` fails. Do not guess: walk the chain from the Service to the Pod.
+
+```bash
+kubectl -n shop describe svc web          # Selector, TargetPort, NodePort and Endpoints in one place
+```
+
+```text
+Selector:                 app=wbe
+Type:                     NodePort
+Port:                     <unset>  80/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  30080/TCP
+Endpoints:                <none>
+```
+
+`Endpoints: <none>` says no ready Pod matches. Compare the selector with the real labels:
+
+```bash
+kubectl -n shop get pods --show-labels
+kubectl -n shop get pods -l app=web       # the selector you expected: does it find the Pods?
+```
+
+Here the selector has a typo. Fix it with `kubectl -n shop edit svc web`, or in one line with
+`kubectl -n shop set selector svc web app=web`, and the Endpoints line fills in within a second.
+</Example>
+
+<Flow label="Debugging order for any Service" steps={["Endpoints listed?", "Selector equals Pod labels?", "Pods Ready?", "targetPort is the port the app listens on?", "Right node IP and nodePort?"]} />
+
+## Tricks
+
+<Trick title="Let kubectl write the YAML">
+`--dry-run=client -o yaml` turns `kubectl expose` or `kubectl create service` into a manifest you can edit. It is
+faster and safer than typing a Service from memory, and the selector and ports come out right.
+</Trick>
+
+<Trick title="create service nodeport sets the port, but guesses the selector">
+`kubectl create service nodeport web --tcp=80:8080 --node-port=30080` does set the node port in one command (the
+`--tcp` value is `port:targetPort`). The catch: it knows nothing about your Pods and always writes the selector
+`app: <service name>`. It works only when your Pods carry exactly that label. `kubectl expose` reads the real
+selector; this command invents one. Check the endpoints after using it.
+</Trick>
+
+<Trick title="One Pod, one command">
+`kubectl run web --image=nginx --port=80 --expose` creates a Pod and a ClusterIP Service for it together. For an
+existing Pod, `kubectl expose pod web --port=80 --type=NodePort` works as long as the Pod has at least one label
+to select on.
+</Trick>
+
+<Trick title="Refused or hanging tells you where to look">
+A connection that is **refused at once** reached the cluster: suspect empty endpoints or a wrong `targetPort`. A
+connection that **hangs** until it times out usually never arrived: suspect the node IP, a firewall, or a node
+without a local Pod when `externalTrafficPolicy` is `Local`.
+</Trick>
+
+<Trick title="Test from inside before blaming the node port">
+A NodePort Service is also a ClusterIP Service. If
+`kubectl -n shop run tmp --rm -it --restart=Never --image=busybox:1.37 -- wget -qO- http://web` works but the node
+port does not, the Service and Pods are fine and the problem is on the way in. If it fails too, fix the Service
+first.
+</Trick>
+
+<Trick title="Use the node's IP, not localhost">
+When you test a node port from a shell on a node, call the node's own IP from `kubectl get nodes -o wide`.
+`localhost:30080` works with some kube-proxy modes and not with others, so it proves nothing.
+</Trick>
+
+## Common mistakes
+
+- **Selector does not match.** `app: Web` and `app: web` are different labels, and so are `app: web` and
+  `name: web`. The Service is created without complaint and simply has no endpoints.
+- **Swapping `port` and `targetPort`.** Clients call `port`; the container listens on `targetPort`. A Service that
+  has endpoints but refuses connections almost always has the wrong `targetPort`.
+- **Calling the wrong number from outside.** From outside the cluster only the node port works. `curl node:80`
+  fails for a Service with `port: 80`; you need the number after the colon in `80:31742`.
+- **Calling the cluster IP from your laptop.** The cluster IP and the Service's DNS name exist only inside the
+  cluster.
+- **A Service in another namespace than its Pods.** A selector only sees Pods in the Service's own namespace.
+  Forgetting `-n` creates a perfectly valid Service in `default` with no endpoints.
+- **Pods that are not ready.** A Pod that fails its readiness probe is removed from the endpoints, so a broken
+  probe looks exactly like a broken selector. The READY column of `kubectl get pods` tells them apart.
+- **A selector that matches too much.** If two Deployments share the label you select on, the Service mixes both
+  sets of Pods. Select on enough labels to be specific.
+- **Several ports without names.** A Service with more than one entry under `ports` must give each a `name`.
+
+## Recap
+
+- A Service gives a changing set of Pods one stable DNS name and virtual IP; its **selector** picks the Pods and
+  the **EndpointSlice** lists the ready ones.
+- No process sits in the traffic path: **kube-proxy** writes kernel rules on every node, and the kernel forwards
+  each connection to one Pod.
+- `ClusterIP` → `NodePort` → `LoadBalancer` each add a way in on top of the previous type.
+- NodePort opens the same port (30000 to 32767) on **every** node: `nodePort` → `port` → `targetPort`.
+- In the exam: `kubectl expose`, `--dry-run=client -o yaml`, and when something fails, look at the endpoints first.
