@@ -1,0 +1,560 @@
+---
+id: cka-kubectl-explain
+title: "kubectl explain: the API reference inside your terminal"
+summary: "How kubectl explain turns the cluster's own OpenAPI schema into field documentation, how to read its output, and how to use it to write correct manifests fast in the exam."
+minutes: 15
+competencies:
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+  - cka/cluster-architecture-installation-configuration/crds-install-configure-operators
+docs:
+  - title: "kubectl reference: kubectl explain"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_explain/
+  - title: "Kubernetes docs: The Kubernetes API (OpenAPI interface definition)"
+    url: https://kubernetes.io/docs/concepts/overview/kubernetes-api/
+  - title: "kubectl reference: kubectl api-resources"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_api-resources/
+  - title: "Kubernetes docs: kubectl quick reference"
+    url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+diagrams:
+  explain-flow:
+    title: "Where the text of kubectl explain comes from"
+    caption: "Nothing is built into kubectl. It asks the API server which type you mean, downloads that API version's OpenAPI schema, and prints the part your field path points at. Custom resources are in the same schema."
+    nodes:
+      - { id: you, label: "You", sub: "explain pod.spec", icon: user, col: 0, row: 1 }
+      - { id: kubectl, label: "kubectl", sub: "walks the field path", icon: process, col: 1, row: 1, tone: primary }
+      - { id: api, label: "API server", sub: "this cluster's version", icon: control-plane, col: 2, row: 1 }
+      - { id: discovery, label: "Discovery", sub: "/api and /apis", icon: file, col: 3, row: 0, tone: muted }
+      - { id: openapi, label: "OpenAPI v3", sub: "/openapi/v3/...", icon: file, col: 3, row: 1, tone: success }
+      - { id: crds, label: "CRD schemas", sub: "added on install", icon: config, col: 3, row: 2, tone: muted }
+      - { id: output, label: "Field docs", sub: "names, types, text", icon: file, col: 1, row: 2, tone: success }
+    edges:
+      - { from: you, to: kubectl }
+      - { from: kubectl, to: api, label: "GET" }
+      - { from: api, to: discovery, label: "which type?", dashed: true }
+      - { from: api, to: openapi, label: "its schema" }
+      - { from: crds, to: openapi, label: "merged in", dashed: true }
+      - { from: kubectl, to: output, label: "prints" }
+  field-path:
+    title: "A field path is the route through the manifest"
+    caption: "Each dot goes one level deeper, exactly as the indentation does in YAML. The type in angle brackets tells you what to write at that level: a value, a list or a nested object."
+    nodes:
+      - { id: pod, label: "pod", sub: "resource type", icon: pod, col: 0, row: 0, tone: primary }
+      - { id: spec, label: "spec", sub: "<PodSpec>", icon: generic, col: 1, row: 0 }
+      - { id: containers, label: "containers", sub: "<[]Container>", icon: container, col: 2, row: 0 }
+      - { id: probe, label: "livenessProbe", sub: "<Probe>", icon: generic, col: 2, row: 1 }
+      - { id: httpget, label: "httpGet", sub: "<HTTPGetAction>", icon: generic, col: 1, row: 1 }
+      - { id: port, label: "port", sub: "<IntOrString> required", icon: generic, col: 0, row: 1, tone: success }
+    edges:
+      - { from: pod, to: spec, label: "." }
+      - { from: spec, to: containers, label: "." }
+      - { from: containers, to: probe, label: "." }
+      - { from: probe, to: httpget, label: "." }
+      - { from: httpget, to: port, label: "." }
+  manifest-sources:
+    title: "Three helpers, three jobs"
+    caption: "Let a dry run write the skeleton, let explain tell you the exact names and types of the fields you must add, and open the website only when you need a complete example."
+    nodes:
+      - { id: task, label: "Exam task", sub: "add a toleration", icon: user, col: 0, row: 1 }
+      - { id: dryrun, label: "--dry-run=client", sub: "writes the skeleton", icon: process, col: 1, row: 0 }
+      - { id: explain, label: "kubectl explain", sub: "field names and types", icon: process, col: 1, row: 1, tone: primary }
+      - { id: docs, label: "kubernetes.io", sub: "complete examples", icon: internet, col: 1, row: 2, tone: muted }
+      - { id: manifest, label: "pod.yaml", sub: "edited by you", icon: file, col: 2, row: 1 }
+      - { id: cluster, label: "Cluster", sub: "kubectl apply -f", icon: cluster, col: 3, row: 1, tone: success }
+    edges:
+      - { from: task, to: dryrun }
+      - { from: task, to: explain }
+      - { from: task, to: docs, dashed: true }
+      - { from: dryrun, to: manifest }
+      - { from: explain, to: manifest }
+      - { from: docs, to: manifest, dashed: true }
+      - { from: manifest, to: cluster }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "kubectl explain"
+      narration: >-
+        Nobody remembers every field of every Kubernetes object, and in the exam you do not have to. One command
+        prints the documentation for any field, straight from the cluster you are working on. In this lesson you will
+        see where that text comes from, how to read it, and how to turn it into a correct manifest in seconds.
+      visual:
+        kind: title
+        heading: "kubectl explain"
+        subheading: "The API reference inside your terminal"
+    - id: problem
+      title: "The problem it solves"
+      narration: >-
+        A Pod alone has hundreds of fields, nested many levels deep. Field names are case sensitive, and one wrong
+        letter makes the API server reject your file. Searching the website for a field name costs minutes you do
+        not have. And the website describes the newest release, which may not be the version of your cluster.
+      visual:
+        kind: points
+        heading: "Why not just remember the YAML?"
+        items:
+          - "Hundreds of fields, nested many levels deep"
+          - "Names are case sensitive: nodeSelector, not nodeselector"
+          - "Searching the website costs minutes"
+          - "The website may not match your cluster's version"
+    - id: where-it-comes-from
+      title: "Where the text comes from"
+      narration: >-
+        You type kubectl explain and a field path. Kubectl itself knows nothing about Pods, so it asks the API server.
+        First it uses discovery to find out which type you mean, and which group and version it belongs to. Then it
+        downloads the OpenAPI schema for that version, the same schema the server uses to validate your manifests.
+        Custom resources are merged into that schema the moment their definition is installed. Finally kubectl walks
+        along your field path and prints what it finds there.
+      visual:
+        kind: diagram
+        diagram: explain-flow
+        steps:
+          - [you, you-kubectl]
+          - [kubectl, api, kubectl-api]
+          - [discovery, api-discovery]
+          - [openapi, api-openapi]
+          - [crds, crds-openapi]
+          - [output, kubectl-output]
+    - id: field-path
+      title: "The field path"
+      narration: >-
+        A field path starts with the resource type. Each dot goes one level deeper, just like one more step of
+        indentation in YAML. Containers is a list, but you never write an index: the path describes the type, not one
+        object. Keep adding names until you reach the field you need. Here that is the port of an HTTP liveness
+        probe, and explain tells you it is required.
+      visual:
+        kind: diagram
+        diagram: field-path
+        steps:
+          - [pod]
+          - [spec, pod-spec]
+          - [containers, spec-containers]
+          - [probe, httpget, containers-probe, probe-httpget]
+          - [port, httpget-port]
+    - id: reading-output
+      title: "Reading the output"
+      narration: >-
+        Here is the output for the tolerations of a Pod. The header gives the kind and the version, which is what you
+        write at the top of a manifest. The field line shows the type, and the square brackets mean a list. Under
+        fields you get every name you may write at this level, with its type. Some fields list the only values the
+        server accepts, so you never have to guess the spelling.
+      visual:
+        kind: code
+        heading: "kubectl explain pod.spec.tolerations"
+        lang: text
+        code: |
+          KIND:       Pod
+          VERSION:    v1
+
+          FIELD: tolerations <[]Toleration>
+
+          DESCRIPTION:
+              If specified, the pod's tolerations.
+
+          FIELDS:
+            effect  <string>
+            enum: NoExecute, NoSchedule, PreferNoSchedule
+            key  <string>
+            operator  <string>
+            enum: Equal, Exists
+            tolerationSeconds  <integer>
+            value  <string>
+        steps: ["1-9", "1-2", "4", "9-16", "11,14"]
+    - id: recursive
+      title: "The whole tree at once"
+      narration: >-
+        When you do not know where a field lives, ask for the tree with the recursive flag, which prints every
+        nested field name with its type and leaves the descriptions out. Pipe it through grep to find a field by
+        name. Then explain that one field to read its description.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl explain deployment.spec.strategy --recursive"
+            out: "GROUP:      apps\nKIND:       Deployment\nVERSION:    v1\n\nFIELD: strategy <DeploymentStrategy>\n\nFIELDS:\n  rollingUpdate  <RollingUpdateDeployment>\n    maxSurge  <IntOrString>\n    maxUnavailable  <IntOrString>\n  type  <string>\n  enum: Recreate, RollingUpdate"
+          - cmd: "kubectl explain pod.spec --recursive | grep -i -A3 readinessGates"
+            out: "  readinessGates  <[]PodReadinessGate>\n    conditionType  <string> -required-\n  resourceClaims  <[]PodResourceClaim>\n    name  <string> -required-"
+          - cmd: "kubectl explain pod.spec.readinessGates.conditionType"
+            out: "KIND:       Pod\nVERSION:    v1\n\nFIELD: conditionType <string> -required-\n\nDESCRIPTION:\n    ConditionType refers to a condition in the pod's condition list with\n    matching type."
+    - id: workflow
+      title: "From task to manifest"
+      narration: >-
+        In the exam, three helpers work together. A client side dry run writes the skeleton of the manifest for you.
+        Explain gives you the exact names and types of the fields the generator cannot add. The website is the last
+        resort, for when you need a complete example. Then you edit the file and apply it.
+      visual:
+        kind: diagram
+        diagram: manifest-sources
+        steps:
+          - [task]
+          - [dryrun, task-dryrun]
+          - [explain, task-explain]
+          - [docs, task-docs]
+          - [manifest, cluster, dryrun-manifest, explain-manifest, docs-manifest, manifest-cluster]
+    - id: versions-and-crds
+      title: "Versions and custom resources"
+      narration: >-
+        Explain shows the preferred version of a type unless you say otherwise. Pass the API version flag to read an
+        older or a newer one. And because the text comes from the cluster, custom resources work too. Whatever an
+        operator installed, you can explain it like a built in type.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl explain hpa.spec"
+            out: "GROUP:      autoscaling\nKIND:       HorizontalPodAutoscaler\nVERSION:    v2\n\nFIELD: spec <HorizontalPodAutoscalerSpec>\n\nFIELDS:\n  behavior  <HorizontalPodAutoscalerBehavior>\n  maxReplicas  <integer> -required-\n  metrics  <[]MetricSpec>\n  minReplicas  <integer>\n  scaleTargetRef  <CrossVersionObjectReference> -required-"
+          - cmd: "kubectl explain hpa.spec --api-version=autoscaling/v1"
+            out: "GROUP:      autoscaling\nKIND:       HorizontalPodAutoscaler\nVERSION:    v1\n\nFIELD: spec <HorizontalPodAutoscalerSpec>\n\nFIELDS:\n  maxReplicas  <integer> -required-\n  minReplicas  <integer>\n  scaleTargetRef  <CrossVersionObjectReference> -required-\n  targetCPUUtilizationPercentage  <integer>"
+          - cmd: "kubectl explain httproute.spec.rules.backendRefs"
+            out: "GROUP:      gateway.networking.k8s.io\nKIND:       HTTPRoute\nVERSION:    v1\n\nFIELD: backendRefs <[]Object>\n\nFIELDS:\n  name  <string> -required-\n  port  <integer>\n  weight  <integer>\n  ..."
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Use short names, so po and deploy work in explain too. Never put an index or a capital letter in the path
+        that is not in the field name. Read the header to get the API version line of your manifest right. And
+        remember that the same path, with a leading dot, is what you pass to JSONPath when you query a live object.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "Short names work: kubectl explain po.spec"
+          - "No indexes, exact camelCase: containers.livenessProbe"
+          - "GROUP + VERSION in the header = apiVersion"
+          - "Same path for -o jsonpath on a live object"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Kubectl explain prints field documentation from the schema of the cluster you are connected to. A path is the
+        type, then field names joined by dots. The output gives you names, types, required fields and allowed
+        values. Recursive shows the tree, and the API version flag picks the version. Now try it yourself: explain a
+        field you have never used.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Docs from your cluster's own schema, CRDs included"
+          - "Path = type, then field names joined by dots"
+          - "Names, types, -required-, allowed values"
+          - "--recursive for the tree, --api-version for the version"
+---
+
+## Why it exists
+
+A Kubernetes manifest is strict. Every field has one exact name, one exact place in the tree and one type, and the
+API server rejects a file that gets any of them wrong. A Pod alone has several hundred fields once you count
+everything nested under `spec`. Nobody keeps all of that in their head, and in the exam the clock punishes every
+minute spent searching the website for whether it is `nodeSelector` or `nodeselector`, or whether `tolerations`
+sits under the Pod or under the container.
+
+`kubectl explain` answers those questions without leaving the terminal. You give it a resource type and,
+optionally, a path to a field. It prints what that field is for, what type it takes and which fields are nested
+under it.
+
+<KeyIdea>
+`kubectl explain` is the API reference of the cluster you are connected to. It tells you the exact name, place and
+type of any field, for that cluster's version and for every custom resource installed in it.
+</KeyIdea>
+
+It is easy to confuse with two neighbours, so fix the difference now:
+
+| Command | Answers | Looks at |
+|---------|---------|----------|
+| `kubectl explain pod.spec` | What **may** I write here? | The type's schema |
+| `kubectl describe pod web` | What is **happening** to this object? | One live object and its events |
+| `kubectl get pod web -o yaml` | What **is** written in this object? | One live object |
+
+## What it is
+
+The whole command is one argument and a few flags:
+
+```bash
+kubectl explain TYPE[.field[.field]...] [--recursive] [--api-version=group/version]
+```
+
+`TYPE` is anything `kubectl get` accepts as a resource name: the plural (`pods`), the singular (`pod`) or a short
+name (`po`). After it comes the **field path**: field names joined by dots.
+
+<Diagram id="field-path" />
+
+The path follows the YAML you would write. Where the manifest indents one level, the path gets one more dot:
+
+```yaml
+spec:                     # pod.spec
+  containers:             # pod.spec.containers
+    - name: web
+      livenessProbe:      # pod.spec.containers.livenessProbe
+        httpGet:          # pod.spec.containers.livenessProbe.httpGet
+          port: 8080      # pod.spec.containers.livenessProbe.httpGet.port
+```
+
+Two rules catch most people once:
+
+- **Lists have no index.** `containers` is a list, but you write `pod.spec.containers.image`, never
+  `containers[0].image`. The path describes the type of every item, not one item of one object.
+- **Names are exact.** Field names are camelCase and case sensitive. `pod.spec.nodeselector` fails with
+  `field "nodeselector" does not exist`; `pod.spec.nodeSelector` works.
+
+### Reading the output
+
+```text
+$ kubectl explain pod.spec.tolerations
+KIND:       Pod
+VERSION:    v1
+
+FIELD: tolerations <[]Toleration>
+
+DESCRIPTION:
+    If specified, the pod's tolerations.
+    The pod this Toleration is attached to tolerates any taint that matches the
+    triple <key,value,effect> using the matching operator <operator>.
+
+FIELDS:
+  effect	<string>
+  enum: NoExecute, NoSchedule, PreferNoSchedule
+    Effect indicates the taint effect to match. Empty means match all taint
+    effects. ...
+
+  key	<string>
+    Key is the taint key that the toleration applies to. ...
+
+  operator	<string>
+  enum: Equal, Exists
+    Operator represents a key's relationship to the value. ...
+
+  tolerationSeconds	<integer>
+    ...
+
+  value	<string>
+    ...
+```
+
+(Descriptions are shortened here, and the exact layout differs a little between kubectl versions.)
+
+| Part | What it tells you |
+|------|-------------------|
+| `GROUP`, `KIND`, `VERSION` | What goes at the top of the manifest. `GROUP: apps` and `VERSION: v1` mean `apiVersion: apps/v1`. Core types such as Pod show no group, so it is just `apiVersion: v1`. |
+| `FIELD` | The field you asked about and its type |
+| `DESCRIPTION` | What the field does, often with its default and its limits |
+| `FIELDS` | Everything you may write one level below, each with its type |
+| `-required-` | The server rejects the object if this field is missing |
+| `enum:` | The only values the field accepts, spelled exactly |
+
+The type in angle brackets tells you what shape of YAML to write:
+
+| Type | Write | Example |
+|------|-------|---------|
+| `<string>`, `<integer>`, `<boolean>` | A plain value | `replicas: 3` |
+| `<[]string>` | A list of values | `command: ["sleep", "3600"]` |
+| `<[]Container>` | A list of objects: each item starts with `-` | `containers:` then `- name: web` |
+| `<map[string]string>` | Free key and value pairs | `labels:` then `app: web` |
+| `<PodSpec>`, `<Probe>`, `<Object>` | A nested object: explain it to see its fields | `spec:` |
+| `<IntOrString>` | A number or a string | `maxSurge: 1` or `maxSurge: 25%` |
+| `<Quantity>` | A number with a unit | `memory: 128Mi`, `cpu: 500m` |
+
+## How it works
+
+<Diagram id="explain-flow" />
+
+kubectl has no field documentation built in. Every time you run `kubectl explain`, it does three things:
+
+1. **Finds the type.** It uses the API server's discovery information (the same data behind `kubectl api-resources`)
+   to turn `po`, `pod` or `pods` into a precise group, version and kind. Discovery results are cached under
+   `~/.kube/cache`, so this is usually instant.
+2. **Fetches the schema.** The API server publishes an OpenAPI v3 document for every group and version, for example
+   `/openapi/v3/api/v1` for core types and `/openapi/v3/apis/apps/v1` for Deployments. kubectl downloads the one it
+   needs. This is the same schema the server uses when it validates the manifests you apply.
+3. **Walks the path.** Starting at the kind, it follows your field names one by one through the schema and prints
+   the description, type and children of the place where it ends up.
+
+Three consequences follow from that design, and each one matters in practice:
+
+- **The answer always matches the cluster.** The website documents the newest release. `kubectl explain` documents
+  the API server you are talking to, so a field that was added or removed between versions shows up (or does not)
+  exactly as that cluster will accept it. In an exam with several clusters, it answers for the current context.
+- **Custom resources work.** When a CustomResourceDefinition is installed, the API server adds its schema to the
+  same OpenAPI documents. `kubectl explain` then works on the new type like on any built-in one. How good the text is
+  depends on the author: descriptions exist only if the CRD's schema contains them.
+- **It needs a reachable cluster.** With no connection there is nothing to read from, and the command fails. It does
+  not need special rights, though: every authenticated user may read discovery and the OpenAPI documents.
+
+<DeepDive title="What explain cannot tell you">
+- **`-required-` is not the whole truth.** It marks fields the schema requires. Some rules are enforced in code after
+  the schema check and are not marked. The classic case: a container's `image` is not marked required, yet a Pod
+  without one is rejected. When a field is obviously essential, set it even without the marker.
+- **Rules between fields.** That a toleration with `operator: Exists` must not set `value`, or that a field cannot be
+  changed after creation, is written in the description at best. Read the description when a field behaves oddly.
+- **Defaults are prose.** There is no separate "default" line. Look for "Defaults to ..." in the description.
+- **Open-ended fields stop early.** Some custom resources keep part of their schema open (any content allowed). There
+  explain shows `<Object>` with no fields beneath it, and only the project's own documentation helps.
+- **OpenAPI v2.** Older kubectl versions read the single, large `/openapi/v2` document instead, and
+  `--output=plaintext-openapiv2` still asks for that rendering. The content is the same; only the layout differs.
+</DeepDive>
+
+## Flags and variants
+
+| You want | Command |
+|----------|---------|
+| The top level of a type | `kubectl explain deployment` |
+| One field and its children, with descriptions | `kubectl explain deployment.spec.strategy` |
+| The whole tree below a point, names and types only | `kubectl explain deployment.spec.strategy --recursive` |
+| The tree, but only a few levels deep (recent kubectl) | `kubectl explain pod --recursive --max-depth=2` |
+| Another API version of the same kind | `kubectl explain hpa.spec --api-version=autoscaling/v1` |
+| The names and short names you can explain | `kubectl api-resources` |
+
+`--recursive` trades descriptions for overview. Its output is an indented tree, where indentation means nesting:
+
+```text
+$ kubectl explain deployment.spec.strategy --recursive
+GROUP:      apps
+KIND:       Deployment
+VERSION:    v1
+
+FIELD: strategy <DeploymentStrategy>
+
+DESCRIPTION:
+    The deployment strategy to use to replace existing pods with new ones.
+
+FIELDS:
+  rollingUpdate	<RollingUpdateDeployment>
+    maxSurge	<IntOrString>
+    maxUnavailable	<IntOrString>
+  type	<string>
+  enum: Recreate, RollingUpdate
+```
+
+<Callout kind="warning" title="Recursive on a whole Pod is a wall of text">
+`kubectl explain pod --recursive` prints well over a thousand lines. Start as deep as you can
+(`pod.spec.containers.securityContext --recursive`), or pipe the output into `grep` or `less`.
+</Callout>
+
+Without `--api-version`, explain shows the version the API server prefers for that kind. When a kind exists in
+several versions with different fields, check the `VERSION` line before you copy field names into a manifest that
+uses another `apiVersion`.
+
+## Using it
+
+<Diagram id="manifest-sources" />
+
+`kubectl explain` does not write YAML for you. Its place is in the middle of the exam workflow: a dry run writes the
+skeleton, explain supplies the fields the generator has no flag for, and you apply the result.
+
+<Example title="Add a toleration to a Pod you generated">
+The task: run a Pod `batch` with image `busybox:1.37` that may be scheduled on nodes tainted
+`dedicated=batch:NoSchedule`. `kubectl run` has no flag for tolerations.
+
+```bash
+kubectl run batch --image=busybox:1.37 --dry-run=client -o yaml -- sleep 3600 > batch.yaml
+kubectl explain pod.spec.tolerations
+```
+
+The first line of `FIELD` says `<[]Toleration>`, so it is a list, and it sits directly under `spec`, next to
+`containers`. The `FIELDS` section gives the names, and the `enum:` lines the spelling of the values. Add to
+`batch.yaml`:
+
+```yaml
+spec:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: batch
+      effect: NoSchedule
+```
+
+```bash
+kubectl apply -f batch.yaml
+```
+</Example>
+
+<Example title="Find a field when you only remember part of its name">
+You must make a Deployment's Pods wait 30 seconds before they are killed, and you remember only that the field has
+"grace" in its name. Search the tree, then read the one field:
+
+```bash
+kubectl explain deployment.spec.template.spec --recursive | grep -i grace
+#   terminationGracePeriodSeconds	<integer>
+#         terminationGracePeriodSeconds	<integer>      (several more, deeper in)
+kubectl explain deployment.spec.template.spec.terminationGracePeriodSeconds
+```
+
+There are several matches, and the indentation tells them apart. The one indented by only two spaces sits directly
+under the Pod spec: that is the one you want. The deeper ones belong to the containers' probes. The description
+confirms the unit (seconds) and the default (30).
+</Example>
+
+<Example title="Write a custom resource you have never seen">
+An operator installed a CRD and the task asks for one of its objects. Find the type, then explore it like a built-in
+one. Here with the Gateway API's HTTPRoute:
+
+```bash
+kubectl api-resources --api-group=gateway.networking.k8s.io     # names and short names
+kubectl explain httproute                                       # GROUP and VERSION for apiVersion
+kubectl explain httproute.spec --recursive | less               # the shape of the spec
+kubectl explain httproute.spec.rules.backendRefs                # the details you need
+```
+
+The header shows `GROUP: gateway.networking.k8s.io` and `VERSION: v1`, so the manifest starts with
+`apiVersion: gateway.networking.k8s.io/v1` and `kind: HTTPRoute`.
+</Example>
+
+<Example title="Build a JSONPath query from the status fields">
+`status` is documented too, which helps when a task asks for a value from a live object. To print how often each
+container of Pod `web` restarted:
+
+```bash
+kubectl explain pod.status.containerStatuses          # shows restartCount <integer>
+kubectl get pod web -o jsonpath='{.status.containerStatuses[*].restartCount}'
+```
+
+The JSONPath is the explain path with a leading dot, plus `[*]` (or an index) wherever explain showed a list type.
+</Example>
+
+## Tricks
+
+<Trick title="Search the tree with grep">
+`kubectl explain pod.spec --recursive | grep -i -A5 affinity` finds a field by a fragment of its name and shows what
+is nested below it. Add `-B5` when you need to see the parent as well, or use `| less` and type `/affinity` to jump
+between matches with `n`.
+</Trick>
+
+<Trick title="Read the apiVersion off the header">
+Unsure whether a NetworkPolicy is `networking.k8s.io/v1` or a CronJob is `batch/v1`? `kubectl explain cronjob | head -4`
+prints `GROUP`, `KIND` and `VERSION`. Join group and version with a slash; core types have no group.
+</Trick>
+
+<Trick title="Explain the Pod inside the workload">
+Deployments, StatefulSets, DaemonSets and Jobs all embed a Pod at `spec.template`. Whatever you learned as
+`pod.spec.X` lives at `deployment.spec.template.spec.X`, and for a CronJob at
+`cronjob.spec.jobTemplate.spec.template.spec.X`. Explain the short Pod path to read the docs, then place the field
+at the long path.
+</Trick>
+
+<Trick title="Type less">
+Short names work everywhere in explain: `po`, `deploy`, `sts`, `ds`, `svc`, `pvc`, `netpol`, `cm`, `hpa`. With the
+usual `alias k=kubectl`, `k explain netpol.spec.ingress.from` is quick to type. Shell completion fills in the
+resource name, but not the field path.
+</Trick>
+
+<Trick title="Let the server check your file">
+After editing, `kubectl apply -f file.yaml --dry-run=server` sends the manifest through the same schema that explain
+printed, without creating anything. A misplaced or misspelled field is reported with its path.
+</Trick>
+
+## Common mistakes
+
+- **An index in the path.** `pod.spec.containers[0].image` is not a field path. Leave the index out.
+- **Wrong case or number.** `pod.spec.container`, `pod.spec.nodeselector` and `deployment.spec.Replicas` all fail with
+  `field ... does not exist`. Run explain one level up and copy the name from the `FIELDS` list.
+- **Asking the wrong tool.** explain never shows the values of an object in the cluster. For that, use
+  `kubectl get -o yaml` or `kubectl describe`.
+- **Reading the wrong version.** The fields under `hpa.spec` differ between `autoscaling/v1` and `autoscaling/v2`.
+  Make sure the `VERSION` line matches the `apiVersion` in your file, or pass `--api-version`.
+- **Expecting descriptions from `--recursive`.** It prints names and types only. Use it to locate a field, then
+  explain that field without the flag.
+- **Trusting `-required-` alone.** A missing marker does not mean the object is valid without the field (see the deep
+  dive above). A server-side dry run gives the final answer.
+
+## Recap
+
+- `kubectl explain` prints field documentation from the OpenAPI schema of the cluster you are connected to, CRDs
+  included.
+- A path is the resource type, then field names joined by dots: exact camelCase, no list indexes.
+- The output gives the `apiVersion` parts, each field's type, `-required-` fields and allowed `enum` values.
+- `--recursive` shows the tree without descriptions; `--api-version` picks the version.
+- In the exam: generate the skeleton with a dry run, look up the missing fields with explain, apply.
