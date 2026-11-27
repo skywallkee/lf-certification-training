@@ -1,0 +1,508 @@
+---
+id: cka-services-loadbalancer
+title: "Services: LoadBalancer"
+summary: "How type LoadBalancer puts one public address in front of your Pods, who actually builds the load balancer, why EXTERNAL-IP stays pending on a bare cluster, and the fields and commands worth knowing for the exam."
+minutes: 16
+competencies:
+  - cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types
+  - cka/troubleshooting/troubleshoot-services-networking
+docs:
+  - title: "Kubernetes docs: Service, type LoadBalancer"
+    url: https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer
+  - title: "Kubernetes docs: Create an External Load Balancer"
+    url: https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/
+  - title: "Kubernetes docs: Using Source IP"
+    url: https://kubernetes.io/docs/tutorials/services/source-ip/
+  - title: "Kubernetes docs: Cloud Controller Manager"
+    url: https://kubernetes.io/docs/concepts/architecture/cloud-controller/
+  - title: "Kubernetes API reference: Service"
+    url: https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/
+mock: false
+diagrams:
+  lb-path:
+    title: "The path of a request through a LoadBalancer Service"
+    caption: "The cloud load balancer lives outside the cluster. It sends each connection to the Service's node port on one of the nodes, and that node's Service rules pick a ready Pod, which may be on another node."
+    nodes:
+      - { id: user, label: "Client", sub: "on the internet", icon: internet, col: 0, row: 1 }
+      - { id: lb, label: "Cloud load balancer", sub: "203.0.113.10:80", icon: gateway, col: 1, row: 1, tone: warning }
+      - { id: node-a, label: "Node A", sub: "nodePort :31080", icon: node, col: 2, row: 0 }
+      - { id: node-b, label: "Node B", sub: "nodePort :31080", icon: node, col: 2, row: 2 }
+      - { id: pod-1, label: "web Pod", sub: "10.244.1.7:8080", icon: pod, col: 3, row: 0, tone: success }
+      - { id: pod-2, label: "web Pod", sub: "10.244.2.4:8080", icon: pod, col: 3, row: 2, tone: success }
+    edges:
+      - { from: user, to: lb, label: ":80" }
+      - { from: lb, to: node-a, label: ":31080" }
+      - { from: lb, to: node-b, label: ":31080" }
+      - { from: node-a, to: pod-1, label: ":8080" }
+      - { from: node-b, to: pod-2, label: ":8080" }
+      - { from: node-a, to: pod-2, label: "second hop", dashed: true }
+    groups:
+      - { id: cluster, label: "Your cluster", nodes: [node-a, node-b, pod-1, pod-2] }
+  provisioning:
+    title: "Who builds the load balancer"
+    caption: "Kubernetes itself has no load balancer. A controller that knows your cloud watches for Services of type LoadBalancer, asks the cloud for one, and writes the address back into the Service's status."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl apply", icon: user, col: 0, row: 0 }
+      - { id: api, label: "API server", sub: "Service web", icon: control-plane, col: 1, row: 0 }
+      - { id: ccm, label: "Cloud controller", sub: "service controller", icon: process, col: 2, row: 0, tone: primary }
+      - { id: cloud, label: "Cloud API", sub: "AWS, Azure, GCP", icon: internet, col: 3, row: 0, tone: muted }
+      - { id: status, label: "Service status", sub: "ingress 203.0.113.10", icon: file, col: 1, row: 1, tone: success }
+      - { id: lb, label: "Load balancer", sub: "203.0.113.10", icon: gateway, col: 3, row: 1, tone: warning }
+    edges:
+      - { from: you, to: api, label: "apply" }
+      - { from: api, to: ccm, label: "watch" }
+      - { from: ccm, to: cloud, label: "create" }
+      - { from: cloud, to: lb, label: "provisions" }
+      - { from: ccm, to: status, label: "writes address", dashed: true }
+  traffic-policy-local:
+    title: "externalTrafficPolicy: Local"
+    caption: "With Local, a node only delivers to Pods that run on it and keeps the client's address. The load balancer health-checks every node and stops sending to nodes that have no local Pod."
+    nodes:
+      - { id: client, label: "Client", sub: "198.51.100.7", icon: internet, col: 0, row: 1 }
+      - { id: lb, label: "Cloud load balancer", sub: "health-checks nodes", icon: gateway, col: 1, row: 1, tone: warning }
+      - { id: node-a, label: "Node A", sub: "healthz: 200", icon: node, col: 2, row: 0, tone: success }
+      - { id: node-b, label: "Node B", sub: "healthz: 503", icon: node, col: 2, row: 2, tone: muted }
+      - { id: pod, label: "web Pod", sub: "sees 198.51.100.7", icon: pod, col: 3, row: 0, tone: success }
+    edges:
+      - { from: client, to: lb }
+      - { from: lb, to: node-a, label: "traffic" }
+      - { from: lb, to: node-b, label: "no local Pod", dashed: true }
+      - { from: node-a, to: pod, label: "no SNAT" }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Services: LoadBalancer"
+      narration: >-
+        A NodePort Service opens a port on every node, but your users still need one address to call. A LoadBalancer
+        Service asks your cloud for that address. In this lesson you will see what it adds, who really builds the
+        load balancer, and why the external IP so often says pending.
+      visual:
+        kind: title
+        heading: "Services: LoadBalancer"
+        subheading: "One public address in front of your Pods"
+    - id: problem
+      title: "Why NodePort is not enough"
+      narration: >-
+        With NodePort, clients must know the address of a node. Nodes are replaced, so those addresses change. The
+        port is an odd high number instead of 80 or 443. And if the node a client picked goes down, nothing sends
+        that client anywhere else.
+      visual:
+        kind: points
+        heading: "The gaps NodePort leaves"
+        items:
+          - "Clients need a node's address"
+          - "Nodes come and go, addresses change"
+          - "Ports are 30000 to 32767, not 80 or 443"
+          - "No failover when a node dies"
+    - id: path
+      title: "The path of a request"
+      narration: >-
+        Here is a client on the internet. It calls one stable address, on a normal port, that belongs to a load
+        balancer outside your cluster. The load balancer forwards the connection to the Service's node port on one of
+        your nodes. From there it is an ordinary Service: the node's rules pick a ready Pod. That Pod may even be on
+        a different node, which costs a second hop.
+      visual:
+        kind: diagram
+        diagram: lb-path
+        steps:
+          - [user]
+          - [lb, user-lb]
+          - [node-a, node-b, lb-node-a, lb-node-b, cluster]
+          - [pod-1, pod-2, node-a-pod-1, node-b-pod-2]
+          - [node-a-pod-2]
+    - id: provisioning
+      title: "Who builds the load balancer"
+      narration: >-
+        Kubernetes does not contain a load balancer. You create a Service with type LoadBalancer, and the API server
+        simply stores it. A cloud controller is watching for Services like this one. It calls your cloud's API, and
+        the cloud provisions a real load balancer. Then the controller writes the new address into the Service's
+        status, and that is the external IP you see.
+      visual:
+        kind: diagram
+        diagram: provisioning
+        steps:
+          - [api]
+          - [you, you-api]
+          - [ccm, api-ccm]
+          - [cloud, ccm-cloud, lb, cloud-lb]
+          - [status, ccm-status]
+    - id: pending
+      title: "Why it says pending"
+      narration: >-
+        So what happens on a cluster with no cloud controller, such as a plain kubeadm cluster? The Service is
+        created, and it gets a cluster IP and a node port as usual. But nobody builds a load balancer, so the
+        external IP stays pending forever. This is not an error, and the Service still works through its node port.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl -n shop expose deployment web --type=LoadBalancer --port=80 --target-port=8080"
+            out: "service/web exposed"
+          - cmd: "kubectl -n shop get svc web"
+            out: "NAME   TYPE           CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE\nweb    LoadBalancer   10.96.0.20    <pending>     80:31080/TCP   2m"
+          - cmd: "kubectl -n shop describe svc web | grep -A3 Events"
+            out: "Events:  <none>"
+          - cmd: "curl -s http://192.168.1.11:31080"
+            out: "<h1>hello from web</h1>"
+    - id: manifest
+      title: "Reading the manifest"
+      narration: >-
+        The manifest is a normal Service with one changed line: the type. Port is what the load balancer listens on,
+        and target port is where the container listens. The node port in between is picked for you. External traffic
+        policy decides whether a node may pass traffic on to Pods on other nodes. And source ranges limit which
+        client addresses the load balancer accepts.
+      visual:
+        kind: code
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: web
+            namespace: shop
+          spec:
+            type: LoadBalancer
+            selector:
+              app: web
+            ports:
+              - port: 80
+                targetPort: 8080
+            externalTrafficPolicy: Local
+            loadBalancerSourceRanges:
+              - 198.51.100.0/24
+        steps: ["7", "11-12", "10-12", "13", "14-15"]
+    - id: traffic-policy
+      title: "Keeping the client's address"
+      narration: >-
+        By default a node may forward to any Pod in the cluster, and to do that it replaces the client's address with
+        its own. Set external traffic policy to Local, and the load balancer starts health-checking every node. A
+        node that runs a ready Pod answers healthy and receives traffic. A node with no local Pod answers unhealthy
+        and is skipped. Now the Pod sees the real client address, because nothing was rewritten on the way.
+      visual:
+        kind: diagram
+        diagram: traffic-policy-local
+        steps:
+          - [client, lb, client-lb]
+          - [lb]
+          - [node-a, lb-node-a]
+          - [node-b, lb-node-b]
+          - [pod, node-a-pod]
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Create it with one expose command and type LoadBalancer. Pending on a cluster without a cloud is expected, so
+        do not lose time on it. Test through the node port, which you can read from the ports column. To change an
+        existing Service, patch its type instead of deleting it. And when it does not answer at all, check the
+        endpoints first, exactly as with any other Service.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl expose ... --type=LoadBalancer"
+          - "<pending> without a cloud is normal"
+          - "PORT(S) 80:31080 means node port 31080"
+          - "kubectl patch svc to change the type"
+          - "No answer? Look at the endpoints first"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        A LoadBalancer Service is a NodePort Service plus a load balancer that someone else builds. A cloud
+        controller provisions it and writes the address into the Service's status. Without such a controller the
+        external IP stays pending, but the node port works. Use Local traffic policy when the application needs the
+        client's address. Now try it yourself in a lab.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "LoadBalancer = NodePort + an external load balancer"
+          - "A controller builds it and fills in status"
+          - "No controller: <pending>, node port still works"
+          - "externalTrafficPolicy: Local keeps the client IP"
+---
+
+## Why LoadBalancer Services exist
+
+A `NodePort` Service makes your application reachable from outside the cluster, but it leaves the hard part to the
+client:
+
+- The client has to know **a node's IP address**. Nodes are replaced during upgrades and autoscaling, so the
+  address it knew yesterday may be gone today.
+- The port is a high number from 30000 to 32767, not 80 or 443.
+- If the node the client picked goes down, nothing redirects the client to a healthy node.
+
+What you really want is **one stable address on a normal port** that spreads connections over healthy nodes. That
+is a load balancer, and building one is different on every platform: an AWS NLB, an Azure Load Balancer, a Google
+Cloud forwarding rule, or a pair of virtual IPs announced on a bare-metal network.
+
+Kubernetes does not try to be that load balancer. Instead, `type: LoadBalancer` is a **request**: "whoever runs
+this cluster, please put a load balancer in front of this Service and tell me its address."
+
+<KeyIdea>
+A LoadBalancer Service is a NodePort Service plus a request for an external load balancer. Kubernetes records the
+request; something outside the core (a cloud controller, MetalLB, k3s ServiceLB) has to fulfil it. If nothing
+does, the Service still works as a NodePort and its `EXTERNAL-IP` stays `<pending>`.
+</KeyIdea>
+
+## What a LoadBalancer Service is made of
+
+<Diagram id="lb-path" />
+
+Each Service type builds on the one before, so a LoadBalancer Service has three ways in at the same time:
+
+| Layer | Address in this lesson's example | Who can use it |
+|-------|----------------------------------|----------------|
+| ClusterIP | `10.96.0.20:80` and the DNS name `web.shop` | Pods inside the cluster |
+| NodePort | `<any node IP>:31080` | Anything that can reach a node |
+| Load balancer | `203.0.113.10:80` | Whoever the load balancer is exposed to, usually the internet |
+
+You can read all three from one line of `kubectl get svc`:
+
+```text
+NAME   TYPE           CLUSTER-IP    EXTERNAL-IP    PORT(S)        AGE
+web    LoadBalancer   10.96.0.20    203.0.113.10   80:31080/TCP   3m
+```
+
+`80:31080/TCP` means "Service port 80, node port 31080". The load balancer's address is not part of the spec you
+wrote. It appears in the **status**, filled in by whoever built the load balancer:
+
+```yaml
+status:
+  loadBalancer:
+    ingress:
+      - ip: 203.0.113.10        # some clouds (AWS) give a hostname here instead of an ip
+```
+
+The fields that only matter for this type:
+
+| Field | What it does | Default |
+|-------|--------------|---------|
+| `spec.type: LoadBalancer` | Asks for an external load balancer | `ClusterIP` |
+| `spec.externalTrafficPolicy` | `Cluster`: any node forwards to any Pod. `Local`: a node only delivers to its own Pods and keeps the client IP | `Cluster` |
+| `spec.loadBalancerSourceRanges` | Client CIDRs allowed through the load balancer (where the provider supports it) | everyone |
+| `spec.loadBalancerClass` | Hands the Service to a specific implementation instead of the cluster's default one. Cannot be changed once set | unset |
+| `spec.allocateLoadBalancerNodePorts` | Set to `false` to skip node ports, for load balancers that send straight to Pod IPs | `true` |
+| `spec.healthCheckNodePort` | The node port the load balancer probes when the policy is `Local` | allocated for you |
+| `status.loadBalancer.ingress` | The address (IP or hostname) once the load balancer exists | empty |
+
+<Callout kind="note" title="loadBalancerIP is deprecated">
+Older manifests ask for a specific address with `spec.loadBalancerIP`. The field has been deprecated since
+Kubernetes 1.24 because it cannot express dual-stack and providers treated it differently. Today a fixed address is
+requested through a provider-specific annotation.
+</Callout>
+
+## How it really works
+
+<Diagram id="provisioning" />
+
+When you apply the Service, the API server does only what it does for a NodePort Service: it allocates a cluster IP
+and a node port and stores the object. kube-proxy on every node programs the rules for both. Nothing in the control
+plane you installed with kubeadm knows how to create a load balancer.
+
+The missing piece is the **service controller** inside the **cloud-controller-manager**, the component that links
+a cluster to one specific cloud. Its loop is simple:
+
+1. Watch the API server for Services with `type: LoadBalancer`.
+2. Call the cloud's API to create a load balancer whose listeners match the Service's `ports` and whose targets are
+   the cluster's nodes on the Service's node port.
+3. Write the load balancer's address into `status.loadBalancer.ingress`.
+4. Keep it in sync: when nodes join or leave, or the Service's ports change, update the load balancer.
+
+Provisioning is **asynchronous**. `kubectl apply` returns at once, `EXTERNAL-IP` shows `<pending>`, and the address
+appears seconds or minutes later. `kubectl describe svc` shows the progress as events: `EnsuringLoadBalancer`, then
+`EnsuredLoadBalancer`.
+
+So the cloud load balancer is only a front door for the node port. From the node onward, the packet takes exactly
+the path described in the Services lesson: kernel rules written by kube-proxy pick a ready Pod from the
+EndpointSlice and rewrite the destination to it.
+
+<DeepDive title="Cluster and Local: what happens to the client's address">
+With the default `externalTrafficPolicy: Cluster`, the load balancer may hand a connection to a node that runs none
+of the Pods. That node forwards it to a Pod on another node (the "second hop" in the first diagram). For the reply
+to come back the same way, the node replaces the packet's source address with its own (SNAT). The Pod therefore
+sees a **node IP**, never the real client.
+
+With `externalTrafficPolicy: Local`, a node delivers only to Pods running on itself, so no SNAT is needed and the
+Pod sees the real client IP. To keep traffic away from nodes with no local Pod, Kubernetes allocates a
+`healthCheckNodePort`; kube-proxy answers on it with HTTP 200 when the node has at least one ready local endpoint
+and 503 when it has none, and the load balancer is configured to probe it.
+
+The price of `Local` is balance: the load balancer spreads connections per **node**, so a node with one Pod gets
+the same share as a node with three. Spread the Pods evenly (topology spread constraints or anti-affinity) when you
+use it.
+</DeepDive>
+
+<Diagram id="traffic-policy-local" />
+
+<DeepDive title="Calling the external IP from inside the cluster">
+A Pod that calls `203.0.113.10` does not usually leave the cluster and come back. By default kube-proxy also
+installs rules for the load balancer's IP on every node, so the connection is short-circuited straight to a Pod,
+as if the Pod had called the ClusterIP. That is efficient, but it skips anything the load balancer itself does,
+such as TLS termination or the PROXY protocol. For those load balancers the provider sets
+`status.loadBalancer.ingress[].ipMode: Proxy`, which tells kube-proxy to leave the IP alone and let the traffic
+travel through the real load balancer.
+</DeepDive>
+
+<DeepDive title="Deleting: the finalizer that protects your bill">
+The controller adds the finalizer `service.kubernetes.io/load-balancer-cleanup` to the Service. When you delete the
+Service, it stays in `Terminating` until the cloud load balancer has been removed, and only then disappears. This
+is why you should delete LoadBalancer Services **before** tearing down a cluster: if the cluster dies first,
+nobody is left to remove the load balancers and they keep costing money.
+</DeepDive>
+
+## Where it works and where it stays pending
+
+| Cluster | What fulfils `type: LoadBalancer` |
+|---------|-----------------------------------|
+| Managed cloud (EKS, AKS, GKE) | The cloud's controller: a real cloud load balancer per Service |
+| kubeadm on bare VMs or metal | **Nothing by default.** `EXTERNAL-IP` stays `<pending>` until you install something like MetalLB |
+| k3s | Built-in ServiceLB: uses the nodes' own addresses as the external IP |
+| kind | The separate `cloud-provider-kind` tool |
+| minikube | `minikube tunnel`, while it runs |
+
+<Callout kind="warning" title="Pending is not broken">
+On a cluster without a load balancer implementation, `<pending>` never goes away, and there is no error event
+either: nobody is even trying. The Service is fully usable through `<node IP>:<node port>` and, from inside the
+cluster, through its name. Do not spend exam time "fixing" a pending external IP unless the task explicitly asks
+for an address.
+</Callout>
+
+Two more things to weigh before using this type everywhere:
+
+- **One load balancer per Service.** Ten public Services mean ten cloud load balancers and ten bills. For many HTTP
+  applications behind one address, use one LoadBalancer Service in front of an Ingress controller or a Gateway, and
+  route by host name and path there.
+- **It works at layer 4.** A LoadBalancer Service forwards TCP or UDP connections. It knows nothing about URLs,
+  host names or cookies.
+
+By default the load balancer is public. Every cloud has an annotation that makes it **internal** (reachable only
+from your private network) instead. They are provider-specific, so you look them up rather than memorise them:
+
+```yaml
+metadata:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"          # AWS
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"         # Azure
+    networking.gke.io/load-balancer-type: "Internal"                        # GKE
+```
+
+## Using it
+
+<Example title="Expose a Deployment through a load balancer">
+The Deployment `web` in namespace `shop` runs Pods labelled `app: web` that listen on 8080. Publish it on port 80.
+
+```bash
+kubectl -n shop expose deployment web --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n shop get svc web --watch        # wait for EXTERNAL-IP, Ctrl+C to stop
+```
+
+On a cloud cluster the address arrives after a short wait and `curl http://<EXTERNAL-IP>` answers. On a cluster
+with no implementation it stays `<pending>`; prove the Service through its node port instead:
+
+```bash
+kubectl -n shop get svc web                              # PORT(S) shows 80:31080/TCP
+kubectl get nodes -o wide                                # pick any INTERNAL-IP
+curl -s http://192.168.1.11:31080
+```
+</Example>
+
+<Example title="Turn an existing Service into a LoadBalancer, keep the client IP, limit who may call">
+A ClusterIP Service `web` already exists. Change its type in place; the cluster IP and the DNS name stay the same,
+so clients inside the cluster notice nothing.
+
+```bash
+kubectl -n shop patch svc web -p '{"spec":{"type":"LoadBalancer","externalTrafficPolicy":"Local"}}'
+```
+
+The declarative form, with the source range added:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: shop
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
+  externalTrafficPolicy: Local
+  loadBalancerSourceRanges:
+    - 198.51.100.0/24
+```
+
+Check the result:
+
+```bash
+kubectl -n shop get svc web -o yaml | grep -E 'type:|externalTrafficPolicy|healthCheckNodePort'
+```
+
+`healthCheckNodePort` appears only because the policy is `Local`.
+</Example>
+
+<Example title="Read the address in a script">
+Use JSONPath on the status. Ask for both fields, because a provider fills in either `ip` or `hostname`:
+
+```bash
+kubectl -n shop get svc web \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+```
+
+An empty line means the load balancer has not been provisioned (yet).
+</Example>
+
+## Tricks
+
+<Trick title="Two commands that create it, and how they differ">
+`kubectl expose deployment web --type=LoadBalancer --port=80 --target-port=8080` copies the **Deployment's
+selector**, so it always matches the Pods. `kubectl create service loadbalancer web --tcp=80:8080` needs no
+Deployment, but it always sets the selector to `app: <service name>`; it only works when the Pods carry exactly
+that label. Add `--dry-run=client -o yaml` to either one to get a manifest to edit.
+</Trick>
+
+<Trick title="Read the node port from the PORT(S) column">
+`80:31080/TCP` is `port:nodePort`. You do not need `-o yaml` to find the node port for a quick test. If a task
+demands a specific node port, set `nodePort` under `ports` in the manifest, exactly as for a NodePort Service.
+</Trick>
+
+<Trick title="Change the type instead of recreating">
+`kubectl patch svc web -p '{"spec":{"type":"LoadBalancer"}}'` or `kubectl edit svc web` changes the type in place.
+Going back down to `ClusterIP` works the same way and releases the node port and the load balancer.
+</Trick>
+
+<Trick title="Debug from the inside out">
+When the external address does not answer, test each layer from the innermost one: endpoints
+(`kubectl get endpointslices -l kubernetes.io/service-name=web`), then the ClusterIP from a Pod, then
+`<node IP>:<node port>`, and only then the load balancer. The first layer that fails is where the fault is. If
+everything works up to the node port, the problem is outside Kubernetes: a firewall or security group that blocks
+the node port range, or the load balancer's health checks.
+</Trick>
+
+## Common mistakes
+
+- **Waiting for an external IP on a cluster that cannot provide one.** `<pending>` with no events means there is
+  no load balancer implementation. Use the node port.
+- **Expecting an error.** Kubernetes accepts `type: LoadBalancer` on any cluster. A missing implementation is
+  silent.
+- **Using `Local` and losing traffic.** With `externalTrafficPolicy: Local`, a node without a ready local Pod
+  drops traffic sent to its node port. If you test `<node IP>:<node port>` by hand, pick a node that runs a Pod
+  (`kubectl get pods -o wide`).
+- **Surprise at the Pod logs.** With the default `Cluster` policy the application logs node IPs as clients. That
+  is SNAT, not a bug; switch to `Local` if the application needs the real address.
+- **One load balancer for every small service.** It works, and it is billed per load balancer. Put HTTP
+  applications behind a shared Ingress controller or Gateway.
+- **Deleting the cluster first.** Delete LoadBalancer Services before the cluster, or the cloud load balancers are
+  orphaned.
+
+## Recap
+
+- `type: LoadBalancer` = ClusterIP + NodePort + a **request** for an external load balancer.
+- A controller outside the core (the cloud-controller-manager, MetalLB, ServiceLB) builds it and writes the
+  address into `status.loadBalancer.ingress`.
+- No such controller means `EXTERNAL-IP` stays `<pending>`; the node port and the cluster IP still work.
+- `externalTrafficPolicy: Local` keeps the client IP and avoids the second hop, at the cost of even balancing.
+- In the exam: `kubectl expose --type=LoadBalancer`, read the node port from `PORT(S)`, and debug from the
+  endpoints outward.
