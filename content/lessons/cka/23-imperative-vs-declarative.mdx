@@ -1,0 +1,584 @@
+---
+id: cka-imperative-vs-declarative
+title: "Imperative vs declarative: two ways to tell Kubernetes what you want"
+summary: "Give orders step by step, or describe the result and let kubectl work out the steps. How each style works underneath, what breaks when you mix them, and which one wins you time in the exam."
+minutes: 20
+competencies:
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+  - cka/workloads-scheduling/application-deployments-perform-rolling-update
+docs:
+  - title: "Kubernetes docs: Kubernetes Object Management"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/object-management/
+  - title: "Kubernetes docs: Managing Kubernetes Objects Using Imperative Commands"
+    url: https://kubernetes.io/docs/tasks/manage-kubernetes-objects/imperative-command/
+  - title: "Kubernetes docs: Imperative Management Using Configuration Files"
+    url: https://kubernetes.io/docs/tasks/manage-kubernetes-objects/imperative-config/
+  - title: "Kubernetes docs: Declarative Management Using Configuration Files"
+    url: https://kubernetes.io/docs/tasks/manage-kubernetes-objects/declarative-config/
+  - title: "Kubernetes docs: Server-Side Apply"
+    url: https://kubernetes.io/docs/reference/using-api/server-side-apply/
+diagrams:
+  two-styles:
+    title: "Two ways to reach the same object"
+    caption: "Imperative: you say each step and kubectl sends it. Declarative: you describe the result in a file and kubectl works out which steps are needed. Both end as the same object in the API server."
+    nodes:
+      - { id: you, label: "You", sub: "know what you want", icon: user, col: 0, row: 1 }
+      - { id: cmd, label: "Commands", sub: "run, create, scale", icon: process, col: 1, row: 0, tone: warning }
+      - { id: file, label: "web.yaml", sub: "the result you want", icon: file, col: 1, row: 2, tone: primary }
+      - { id: apply, label: "kubectl apply", sub: "finds the difference", icon: process, col: 2, row: 2, tone: primary }
+      - { id: api, label: "API server", sub: "validates, stores", icon: control-plane, col: 3, row: 1 }
+      - { id: object, label: "Deployment web", sub: "the live object", icon: deployment, col: 4, row: 1, tone: success }
+    edges:
+      - { from: you, to: cmd, label: "say each step" }
+      - { from: you, to: file, label: "describe the result" }
+      - { from: file, to: apply, label: "-f" }
+      - { from: cmd, to: api, label: "one change each" }
+      - { from: apply, to: api, label: "only what differs" }
+      - { from: api, to: object }
+  reconcile:
+    title: "Inside the cluster, everything is declarative"
+    caption: "Whatever you typed, the API server only stores what you want (spec). A controller keeps comparing it with what exists (status) and acts until they match."
+    nodes:
+      - { id: spec, label: "Desired state", sub: "spec: replicas 3", icon: file, col: 0, row: 0, tone: primary }
+      - { id: controller, label: "Controller", sub: "compares, then acts", icon: process, col: 1, row: 0 }
+      - { id: status, label: "Actual state", sub: "status: 2 running", icon: pod, col: 2, row: 0, tone: warning }
+      - { id: action, label: "Create 1 Pod", sub: "closes the gap", icon: pod, col: 1, row: 1, tone: success }
+    edges:
+      - { from: spec, to: controller, label: "wants" }
+      - { from: status, to: controller, label: "has" }
+      - { from: controller, to: action, label: "acts" }
+      - { from: action, to: status, label: "now 3", dashed: true }
+  apply-merge:
+    title: "How kubectl apply decides what to change"
+    caption: "kubectl apply compares three things: your file, the copy of your previous file stored on the object, and the live object. It sends only the differences, so fields that others own are left alone."
+    nodes:
+      - { id: file, label: "Your file", sub: "what you want now", icon: file, col: 0, row: 0, tone: primary }
+      - { id: last, label: "last-applied", sub: "what you asked before", icon: config, col: 0, row: 1, tone: muted }
+      - { id: live, label: "Live object", sub: "what the cluster has", icon: deployment, col: 0, row: 2 }
+      - { id: kubectl, label: "kubectl apply", sub: "compares all three", icon: process, col: 1, row: 1, tone: primary }
+      - { id: patch, label: "Patch", sub: "set these, clear those", icon: file, col: 2, row: 1, tone: success }
+      - { id: api, label: "API server", sub: "merges the patch", icon: control-plane, col: 3, row: 1 }
+    edges:
+      - { from: file, to: kubectl, label: "set" }
+      - { from: last, to: kubectl, label: "what to clear" }
+      - { from: live, to: kubectl, label: "compare" }
+      - { from: kubectl, to: patch }
+      - { from: patch, to: api, label: "PATCH" }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Imperative vs declarative"
+      narration: >-
+        There are two ways to tell Kubernetes what you want. You can give orders, one step at a time. Or you can
+        describe the result, and let the tools work out the steps. In this lesson you will see how both styles work
+        underneath, what goes wrong when you mix them, and which one saves you time in the exam.
+      visual:
+        kind: title
+        heading: "Imperative vs declarative"
+        subheading: "Give orders, or describe the result"
+    - id: taxi
+      title: "Directions or an address"
+      narration: >-
+        Think of a taxi. The imperative way is to give directions: turn left, go straight, stop here. It works, but
+        you must know where you are right now, and nobody else can tell where you were going. The declarative way is
+        to give the address. The driver works out the route from wherever the car happens to be. And you can hand the
+        same address to any driver, any day.
+      visual:
+        kind: points
+        heading: "Two ways to get there"
+        items:
+          - "Imperative: you give each step"
+          - "You must know the current state, and no record is left"
+          - "Declarative: you describe the destination"
+          - "The tool finds the route from the current state"
+          - "The description can be saved, reviewed and reused"
+    - id: two-styles
+      title: "Both roads lead to the API server"
+      narration: >-
+        Here you are, and you want a Deployment called web. The imperative road is a series of commands: create it,
+        scale it, change its image. Each command sends one change to the API server. The declarative road starts with
+        a file that describes the Deployment you want. You hand it to kubectl apply, which compares it with the
+        cluster and sends only what differs. Either way, the result is the same live object.
+      visual:
+        kind: diagram
+        diagram: two-styles
+        steps:
+          - [you]
+          - [cmd, you-cmd]
+          - [api, cmd-api]
+          - [file, you-file]
+          - [apply, file-apply, apply-api]
+          - [object, api-object]
+    - id: three-techniques
+      title: "Three techniques, not two"
+      narration: >-
+        The documentation actually names three techniques. Imperative commands work on live objects and need no
+        file at all. Imperative object configuration uses a file, but you still choose the verb: create, replace or
+        delete. Declarative object configuration uses kubectl apply, and kubectl chooses the verb for you. So a YAML
+        file alone does not make you declarative: the verb does.
+      visual:
+        kind: points
+        heading: "The three techniques"
+        items:
+          - "Imperative commands: run, create, expose, scale, set, edit"
+          - "Imperative with files: create -f, replace -f, delete -f"
+          - "Declarative with files: apply -f, diff -f"
+          - "The verb decides the style, not the YAML"
+    - id: reconcile
+      title: "Kubernetes itself is always declarative"
+      narration: >-
+        Here is the part most people miss. Whatever you type, the API server only stores a desired state, in the
+        spec of the object. A controller keeps comparing that with the actual state. When they differ, it acts, here
+        by creating one more Pod. Then the actual state matches again. So even an imperative scale command only
+        edits the desired state; the controllers do the real work.
+      visual:
+        kind: diagram
+        diagram: reconcile
+        steps:
+          - [spec]
+          - [spec]
+          - [controller, status, spec-controller, status-controller]
+          - [action, controller-action]
+          - [action-status]
+    - id: imperative-demo
+      title: "The imperative style"
+      narration: >-
+        Let us do it with commands. First, create a Deployment with three replicas. Then scale it to five. Then roll
+        out a new image. Each command is quick, and that is why this style is perfect for small tasks. But run the
+        create command a second time and it fails, because the object already exists.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl create deployment web --image=nginx:1.28 --replicas=3"
+            out: "deployment.apps/web created"
+          - cmd: "kubectl scale deployment web --replicas=5"
+            out: "deployment.apps/web scaled"
+          - cmd: "kubectl set image deployment/web nginx=nginx:1.29"
+            out: "deployment.apps/web image updated"
+          - cmd: "kubectl get deployment web"
+            out: "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    5/5     5            5           2m"
+          - cmd: "kubectl create deployment web --image=nginx:1.28 --replicas=3"
+            out: "error: failed to create deployment: deployments.apps \"web\" already exists"
+    - id: declarative-demo
+      title: "The declarative style"
+      narration: >-
+        Now the same Deployment as a file. It says what should exist: a Deployment named web. Three replicas. And
+        this image. You run kubectl apply on the file, and you can run it again as often as you like. To change
+        something, you edit the file and apply again.
+      visual:
+        kind: code
+        heading: "web.yaml, then: kubectl apply -f web.yaml"
+        lang: yaml
+        code: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: web
+          spec:
+            replicas: 3
+            selector:
+              matchLabels:
+                app: web
+            template:
+              metadata:
+                labels:
+                  app: web
+              spec:
+                containers:
+                  - name: nginx
+                    image: nginx:1.28
+        steps: ["1-16", "2-4", "6", "16"]
+    - id: how-apply-works
+      title: "How apply knows what to change"
+      narration: >-
+        How does apply know what to change? It looks at three things. Your file says what you want now. An
+        annotation on the object, called last applied configuration, remembers what you asked for last time. And the
+        live object shows what the cluster has. From these, kubectl builds a patch: set what differs from your file,
+        and clear what you removed from it. The API server merges that patch, so fields that someone else set stay
+        untouched.
+      visual:
+        kind: diagram
+        diagram: apply-merge
+        steps:
+          - [kubectl]
+          - [kubectl]
+          - [file, file-kubectl]
+          - [last, last-kubectl]
+          - [live, live-kubectl]
+          - [patch, kubectl-patch]
+          - [api, patch-api]
+    - id: mixing
+      title: "What happens when you mix them"
+      narration: >-
+        Mixing the styles is where people get hurt. Apply the file, which asks for three replicas. Later, someone
+        scales to five by hand. The file still says three. So the next apply quietly brings it back to three. The file
+        always wins for the fields it names, so make your change in the file.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl apply -f web.yaml"
+            out: "deployment.apps/web created"
+          - cmd: "kubectl scale deployment web --replicas=5"
+            out: "deployment.apps/web scaled"
+          - cmd: "grep replicas web.yaml"
+            out: "  replicas: 3"
+          - cmd: "kubectl apply -f web.yaml && kubectl get deployment web"
+            out: "deployment.apps/web configured\nNAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    3/3     3            3           6m"
+    - id: exam-hybrid
+      title: "The exam workflow: generate, edit, apply"
+      narration: >-
+        In the exam, combine the two. Let an imperative command write the YAML for you, with dry run client and
+        output YAML. Open the file and add what the command cannot set. Then apply it. Finally, check the result.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl create deployment web --image=nginx:1.29 --replicas=3 --dry-run=client -o yaml > web.yaml"
+          - cmd: "vim web.yaml"
+            out: "# add resources, probes, volumes ..."
+          - cmd: "kubectl apply -f web.yaml"
+            out: "deployment.apps/web created"
+          - cmd: "kubectl get deployment web"
+            out: "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    3/3     3            3           20s"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        A few habits save minutes. For a one line task, use an imperative command and move on. When an object needs
+        fields that no command sets, generate the YAML and edit it. Preview a change with kubectl diff before you
+        apply it. And when kubectl edit refuses your change to a Pod, it saves your copy in the temp folder: use
+        replace with force on that file.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "One-line task? Imperative command, then verify"
+          - "Complex object? --dry-run=client -o yaml, edit, apply"
+          - "kubectl diff -f shows what apply would change"
+          - "Edit refused? kubectl replace --force -f /tmp/kubectl-edit-*.yaml"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Imperative means you give the steps, and declarative means you describe the result. Inside the cluster,
+        everything is declarative: controllers move the actual state toward the desired state. Apply compares your
+        file, your last file and the live object, and patches only the difference. Pick one style per object, because
+        the file wins on the next apply. Now try it yourself in the practice questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Imperative: the steps. Declarative: the result"
+          - "The cluster always works from desired state"
+          - "apply = file + last-applied + live object, sent as a patch"
+          - "One style per object: the file wins on the next apply"
+---
+
+## Why there are two styles
+
+Every change you make to a cluster ends up as a request to the API server. What differs is how much of the thinking
+you do yourself.
+
+Think of a taxi. You can give **directions**: turn left, go straight for two streets, stop here. That works, but only
+if you know exactly where the car is right now, and afterwards nobody can tell where you meant to go. Or you can give
+the **address**. The driver works out the route from wherever the car happens to be, and you can hand the same address
+to any driver on any day.
+
+- **Imperative** is the directions. You tell Kubernetes which operation to perform: *create* this, *scale* that,
+  *delete* this. You are responsible for knowing the current state and for choosing the right next step.
+- **Declarative** is the address. You write down what should exist, in a file, and `kubectl apply` compares it with
+  the cluster and performs whatever operations are needed: create, change or nothing at all.
+
+<KeyIdea>
+Imperative: you say **what to do**. Declarative: you say **what you want**, and the tool works out what to do. The
+exam rewards being fluent in both: commands for speed, files for anything you must get exactly right or change later.
+</KeyIdea>
+
+## What the two styles are
+
+<Diagram id="two-styles" />
+
+The Kubernetes documentation splits this into **three techniques**, and the middle one is the one that confuses
+people:
+
+| Technique | Typical commands | You keep | Who chooses the operation |
+|-----------|------------------|----------|---------------------------|
+| Imperative commands | `kubectl run`, `create deployment`, `expose`, `scale`, `set image`, `edit`, `label`, `delete` | Nothing: the cluster is the only record | You |
+| Imperative object configuration | `kubectl create -f`, `replace -f`, `delete -f` | A file per object | You |
+| Declarative object configuration | `kubectl apply -f`, `kubectl diff -f` | Files or whole directories | kubectl, per object |
+
+Notice that **a YAML file does not make you declarative; the verb does**. `kubectl create -f web.yaml` is still an
+order ("create this"), and it fails if `web` already exists. `kubectl apply -f web.yaml` is a statement ("this should
+exist, like this"), and it succeeds whether `web` is missing, outdated or already correct.
+
+That last property has a name: **idempotent**. Running the same `apply` twice gives the same result as running it
+once, which is what makes it safe in scripts, pipelines and GitOps tools.
+
+```bash
+kubectl create -f web.yaml     # second run: Error from server (AlreadyExists)
+kubectl apply  -f web.yaml     # second run: deployment.apps/web unchanged
+```
+
+## How it works underneath
+
+### Kubernetes itself is always declarative
+
+<Diagram id="reconcile" />
+
+Here is the part the comparison tables leave out. The choice between imperative and declarative is only about **how
+you talk to the API server**. Inside the cluster there is only one model: every object has a `spec` (what you want)
+and a `status` (what exists), and controllers work in a loop to make the second match the first.
+
+`kubectl scale deployment web --replicas=5` does not start two Pods. It changes one number, `spec.replicas`, and
+returns. The Deployment controller, the ReplicaSet controller, the scheduler and the kubelet then notice the gap and
+close it. That is also why Kubernetes heals itself: if a Pod dies, nobody has to give a new order, because the desired
+state still says five.
+
+So an imperative command is a quick way to **edit desired state**. A declarative file is a way to **own desired
+state**: keep it, review it, version it and apply it again.
+
+<DeepDive title="What each kubectl verb sends to the API server">
+| You type | kubectl sends | If the object exists | If it does not exist |
+|----------|---------------|----------------------|----------------------|
+| `kubectl create ...` or `create -f` | `POST` (create) | Fails: AlreadyExists | Creates it |
+| `kubectl replace -f` | `PUT` (update the whole object) | Overwrites it with the file | Fails: NotFound |
+| `kubectl apply -f` | `GET`, then `PATCH` or `POST` | Patches only what differs | Creates it |
+| `kubectl scale`, `set image`, `label`, `edit` | A change to a few fields | Changes those fields | Fails: NotFound |
+| `kubectl delete` | `DELETE` | Deletes it | Fails: NotFound (unless `--ignore-not-found`) |
+
+`replace` and `apply` look similar and are not. `replace` sends the **whole object** as it is in your file, so
+anything that is in the live object but not in the file is dropped, including changes made by other people or tools.
+`apply` sends a **patch**, so everything it does not mention survives.
+</DeepDive>
+
+### How `kubectl apply` decides what to change
+
+<Diagram id="apply-merge" />
+
+To be able to send only the difference, `kubectl apply` needs to know what you asked for last time. It stores a copy
+of your file on the object itself, in the annotation `kubectl.kubernetes.io/last-applied-configuration`. On every run
+it compares three things:
+
+1. **Your file**: what you want now.
+2. **The last-applied annotation**: what you asked for last time.
+3. **The live object**: what the cluster has, including defaults and fields set by controllers.
+
+From them it works out a patch with two simple rules:
+
+- **Set** every field in the file whose value differs from the live object.
+- **Clear** every field that is in last-applied but no longer in the file: you removed it, so it should go.
+
+Anything else is left alone. A field that is only in the live object (a default, a `status`, an annotation added by a
+controller, a replica count managed by an autoscaler) was never yours, so `apply` does not touch it.
+
+You can read the stored copy at any time:
+
+```bash
+kubectl apply view-last-applied deployment/web
+```
+
+<DeepDive title="Server-side apply: the same idea, tracked per field">
+The annotation approach is called **client-side apply**, because kubectl does the comparison. Its weakness is that it
+only remembers what *kubectl apply* did. It does not know that someone else scaled the Deployment, so it can silently
+overwrite their change.
+
+**Server-side apply** (`kubectl apply --server-side`) moves the merge into the API server. Instead of one annotation,
+the server records an owner for every field in `metadata.managedFields`: each writer is a **field manager**. If you
+apply a different value for a field that another manager owns, you get a **conflict** error instead of a silent
+overwrite. You then decide: change your file to match, drop the field from your file, or take the field over with
+`--force-conflicts`.
+
+```bash
+kubectl apply --server-side -f web.yaml
+kubectl get deployment web --show-managed-fields -o yaml   # who owns which field
+```
+
+Client-side apply is still kubectl's default and is all you need for the exam, but controllers and GitOps tools
+increasingly use server-side apply.
+</DeepDive>
+
+## When to use which
+
+| | Imperative commands | Imperative with files | Declarative (`apply`) |
+|---|---|---|---|
+| Speed for a single small change | Fastest | Slow | Medium |
+| Record of what you intended | None | The file | The file |
+| Review and version control | No | Yes | Yes |
+| Safe to run again | No (create fails) | No | Yes |
+| Keeps changes made by others | Yes (touches few fields) | **No**: `replace` overwrites | Yes |
+| Works on a whole directory | No | One verb for all files | Yes, mixed create and update |
+| Every field available | No, only what flags offer | Yes | Yes |
+| Best for | Exam tasks, experiments, quick fixes | Recreating an object from a saved file | Real clusters, teams, automation |
+
+In production the answer is almost always declarative: files in Git, applied by a pipeline. In the exam the answer is
+"whatever is fastest and correct", which usually means imperative commands for simple objects and generated YAML for
+the rest.
+
+<Callout kind="warning" title="Pick one style per object">
+The styles do not mix well on the same object. A change made with `kubectl scale` or `kubectl edit` lives only in the
+cluster. If the file also sets that field, the next `kubectl apply` puts the file's value back without any warning.
+</Callout>
+
+<Flow label="How a manual change gets lost" steps={["apply file: replicas 3", "scale by hand to 5", "file still says 3", "next apply: back to 3"]} />
+
+## Using it
+
+<Example title="Imperative: create, change and expose a Deployment in four commands">
+Run `nginx` with three replicas, scale it, roll out a newer image and make it reachable inside the cluster.
+
+```bash
+kubectl create deployment web --image=nginx:1.28 --replicas=3
+kubectl scale deployment web --replicas=5
+kubectl set image deployment/web nginx=nginx:1.29     # container name = image name by default
+kubectl expose deployment web --port=80
+```
+
+Fast, and nothing to clean up. But nothing records what you did either: to rebuild `web` on another cluster you would
+have to remember all four commands, in order.
+</Example>
+
+<Example title="Declarative: the same Deployment as a file">
+Describe the result once:
+
+```yaml
+# web.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28
+```
+
+```bash
+kubectl apply -f web.yaml          # deployment.apps/web created
+kubectl apply -f web.yaml          # deployment.apps/web unchanged
+```
+
+To change it, **edit the file**, look at what would change, then apply:
+
+```bash
+sed -i 's/nginx:1.28/nginx:1.29/' web.yaml
+kubectl diff -f web.yaml           # shows the image line with - and +
+kubectl apply -f web.yaml          # deployment.apps/web configured
+```
+
+`apply` takes a directory too: `kubectl apply -f manifests/` creates what is missing and updates what changed, and
+`-R` goes into sub-directories.
+</Example>
+
+<Example title="The exam hybrid: let a command write the file">
+Task: a Deployment `api` with two replicas of `nginx:1.29`, where each container requests 100m of CPU. No imperative
+flag sets resource requests on `create deployment`, so generate the manifest and add them.
+
+```bash
+kubectl create deployment api --image=nginx:1.29 --replicas=2 --dry-run=client -o yaml > api.yaml
+```
+
+`--dry-run=client` builds the object without sending it, and `-o yaml` prints it. Open `api.yaml`, find the empty
+`resources: {}` and fill it in:
+
+```yaml
+        resources:
+          requests:
+            cpu: 100m
+```
+
+```bash
+kubectl apply -f api.yaml
+kubectl get deployment api -o jsonpath='{.spec.template.spec.containers[0].resources}'
+```
+
+You typed four lines of YAML instead of twenty, and the selector and labels cannot be wrong.
+</Example>
+
+<Example title="Change something that cannot be changed in place">
+Most fields of a running Pod are immutable. If a task asks you to change one (a command, a volume, an environment
+variable), neither `edit` nor `apply` can do it. Save the Pod, fix the file, and replace it:
+
+```bash
+kubectl get pod worker -o yaml > worker.yaml
+vim worker.yaml                              # make the change
+kubectl replace --force -f worker.yaml       # deletes the Pod, then creates it from the file
+```
+
+`replace --force` is imperative on purpose: it says "delete and create", which is exactly what an immutable field
+needs. For Pods owned by a Deployment, change the Deployment instead and let it roll out new Pods.
+</Example>
+
+## Tricks
+
+<Trick title="Know which objects have a generator">
+`kubectl create` can write these for you: `deployment`, `service`, `configmap`, `secret`, `namespace`,
+`serviceaccount`, `role`, `rolebinding`, `clusterrole`, `clusterrolebinding`, `job`, `cronjob`, `ingress`, `quota`,
+`priorityclass` and `poddisruptionbudget`. `kubectl run` makes a Pod, `kubectl expose` a Service and
+`kubectl autoscale` a HorizontalPodAutoscaler. For kinds with no generator (PersistentVolume, PersistentVolumeClaim,
+NetworkPolicy, StorageClass, DaemonSet, StatefulSet) copy an example from the documentation, which you may open
+during the exam.
+</Trick>
+
+<Trick title="Save the typing with a variable">
+Set this once at the start of the exam and every generator command gets shorter:
+
+```bash
+export do="--dry-run=client -o yaml"
+kubectl run tmp --image=busybox:1.37 $do -- sleep 3600 > tmp.yaml
+```
+</Trick>
+
+<Trick title="When kubectl edit refuses, use the copy it saved">
+If you change an immutable field in `kubectl edit`, kubectl rejects the change but tells you it stored your version,
+with a line such as `A copy of your changes has been stored to "/tmp/kubectl-edit-1234.yaml"`. Do not start over:
+
+```bash
+kubectl replace --force -f /tmp/kubectl-edit-1234.yaml
+```
+</Trick>
+
+<Trick title="Preview before you apply">
+`kubectl diff -f web.yaml` shows exactly what `apply` would change on the live object, without changing anything.
+`kubectl apply --dry-run=server -f web.yaml` goes one step further: the API server validates the object and runs
+admission, but does not store it. Use it to catch a typo in a field name before it costs you a task.
+</Trick>
+
+<Trick title="Imperative edits are fine when no file exists">
+If an object was created imperatively and no manifest is kept, `kubectl edit`, `scale` and `set image` are the right
+tools: there is no file to fall out of date. The trap only exists once a file claims to be the truth.
+</Trick>
+
+## Common mistakes
+
+- **Running `kubectl create` twice.** The second run fails with `AlreadyExists`. If you are fixing a file and trying
+  again, use `kubectl apply -f`, or `kubectl replace --force -f` when the fix touches an immutable field.
+- **Editing the cluster, then applying the old file.** `kubectl edit` and `kubectl scale` do not update your YAML.
+  The next `apply` reverts every field the file names. Change the file first, then apply.
+- **Using `replace` where `apply` was meant.** `replace` overwrites the whole object from the file and fails if the
+  object is missing. It also drops fields that others set, such as replicas managed by an autoscaler.
+- **`apply` on an object made with `create`.** It works, but kubectl warns that the last-applied annotation is
+  missing and adds it. From then on removing a field from the file clears it; fields removed before that point stay.
+  To avoid the warning, create with `kubectl create --save-config` or simply use `apply` from the start.
+- **Expecting a deleted file to delete the object.** `apply` only looks at the files you give it. Removing
+  `web.yaml` from a directory leaves `web` running: delete it with `kubectl delete -f web.yaml` before removing the
+  file, or `kubectl delete deployment web` after.
+- **Setting `replicas` in a file when an autoscaler owns it.** Every `apply` resets the count. Leave `replicas` out
+  of the manifest and `apply` will keep whatever the autoscaler chose.
+
+## Recap
+
+- **Imperative** = you give the steps (`run`, `create`, `scale`, `set`, `edit`). **Declarative** = you describe the
+  result in a file and `kubectl apply` works out the steps.
+- A file is not enough: `create -f` and `replace -f` are still imperative. Only `apply` is declarative.
+- Inside the cluster everything is declarative: controllers move actual state toward `spec`, whatever you typed.
+- `apply` compares your file, the last-applied annotation and the live object, and patches only the difference.
+- In the exam: imperative for one-liners, `--dry-run=client -o yaml` plus `apply` for the rest, and never let a
+  hand-made change and a file disagree.
