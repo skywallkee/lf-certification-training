@@ -1,0 +1,571 @@
+---
+id: cka-cluster-architecture
+title: "Cluster architecture: who does what in a Kubernetes cluster"
+summary: "A map of the control plane and the nodes: what each component does, how they cooperate through the API server to turn a manifest into running containers, how kubeadm runs them, and how to find and check each one."
+minutes: 22
+competencies:
+  - cka/cluster-architecture-installation-configuration/create-manage-kubernetes-clusters-kubeadm
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Cluster Architecture"
+    url: https://kubernetes.io/docs/concepts/architecture/
+  - title: "Kubernetes docs: Kubernetes Components"
+    url: https://kubernetes.io/docs/concepts/overview/components/
+  - title: "Kubernetes docs: Communication between Nodes and the Control Plane"
+    url: https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/
+  - title: "Kubernetes docs: Create static Pods"
+    url: https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/
+  - title: "Kubernetes docs: kubeadm implementation details"
+    url: https://kubernetes.io/docs/reference/setup-tools/kubeadm/implementation-details/
+  - title: "Kubernetes docs: Ports and Protocols"
+    url: https://kubernetes.io/docs/reference/networking/ports-and-protocols/
+diagrams:
+  cluster-overview:
+    title: "The parts of a cluster"
+    caption: "The control plane decides, the nodes run. Every arrow ends at the API server: it is the only component the others talk to, and the only one that talks to etcd."
+    nodes:
+      - { id: user, label: "kubectl", sub: "you, or a pipeline", icon: user, col: 0, row: 1 }
+      - { id: etcd, label: "etcd", sub: "cluster state :2379", icon: database, col: 1, row: 0, tone: warning }
+      - { id: api, label: "kube-apiserver", sub: "the front door :6443", icon: control-plane, col: 1, row: 1, tone: primary }
+      - { id: cm, label: "controller-manager", sub: "keeps counts right", icon: process, col: 1, row: 2 }
+      - { id: sched, label: "kube-scheduler", sub: "picks a node", icon: process, col: 2, row: 0 }
+      - { id: kubelet, label: "kubelet", sub: "node agent :10250", icon: process, col: 3, row: 1, tone: success }
+      - { id: proxy, label: "kube-proxy", sub: "Service rules", icon: proxy, col: 3, row: 2, tone: success }
+      - { id: runtime, label: "Container runtime", sub: "containerd", icon: container, col: 4, row: 1, tone: success }
+      - { id: pods, label: "Pods", sub: "your containers", icon: pod, col: 4, row: 0 }
+    edges:
+      - { from: user, to: api, label: "HTTPS" }
+      - { from: api, to: etcd, label: "read, write", both: true }
+      - { from: cm, to: api, label: "watch, fix" }
+      - { from: sched, to: api, label: "watch, bind" }
+      - { from: kubelet, to: api, label: "watch, report" }
+      - { from: proxy, to: api, label: "watch" }
+      - { from: kubelet, to: runtime, label: "CRI" }
+      - { from: runtime, to: pods, label: "runs" }
+    groups:
+      - { id: control-plane, label: "Control plane", nodes: [etcd, api, cm, sched] }
+      - { id: worker, label: "Every node", nodes: [kubelet, proxy, runtime, pods] }
+  pod-startup:
+    title: "From kubectl to running containers"
+    caption: "Nobody gives orders. Each component watches the API server, notices something that is its job, does it and writes the result back. The numbers show the order."
+    nodes:
+      - { id: user, label: "kubectl", sub: "create deployment", icon: user, col: 0, row: 1 }
+      - { id: etcd, label: "etcd", sub: "stores every object", icon: database, col: 1, row: 0, tone: warning }
+      - { id: api, label: "kube-apiserver", sub: "checks, then saves", icon: control-plane, col: 1, row: 1, tone: primary }
+      - { id: cm, label: "controller-manager", sub: "creates 3 Pods", icon: process, col: 2, row: 0 }
+      - { id: sched, label: "kube-scheduler", sub: "sets nodeName", icon: process, col: 2, row: 2 }
+      - { id: kubelet, label: "kubelet", sub: "on the chosen node", icon: process, col: 3, row: 1, tone: success }
+      - { id: runtime, label: "containerd", sub: "pulls and starts", icon: container, col: 4, row: 1, tone: success }
+    edges:
+      - { from: user, to: api, label: "1 create" }
+      - { from: api, to: etcd, label: "2 save", both: true }
+      - { from: cm, to: api, label: "3 add Pods" }
+      - { from: sched, to: api, label: "4 bind" }
+      - { from: kubelet, to: api, label: "5 watch, 7 status", both: true }
+      - { from: kubelet, to: runtime, label: "6 start" }
+  static-pods:
+    title: "How a kubeadm control plane starts itself"
+    caption: "systemd starts the kubelet. The kubelet reads the manifests in /etc/kubernetes/manifests and starts the four control plane Pods through containerd, before any API server exists."
+    nodes:
+      - { id: systemd, label: "systemd", sub: "kubelet.service", icon: process, col: 0, row: 1, tone: muted }
+      - { id: kubelet, label: "kubelet", sub: "a host process", icon: process, col: 1, row: 1, tone: primary }
+      - { id: manifests, label: "Manifest folder", sub: "4 YAML files", icon: file, col: 1, row: 2, tone: muted }
+      - { id: runtime, label: "containerd", sub: "a host process", icon: container, col: 2, row: 1 }
+      - { id: etcd, label: "etcd", sub: "etcd-cp1", icon: database, col: 3, row: 0, tone: success }
+      - { id: api, label: "kube-apiserver", sub: "kube-apiserver-cp1", icon: control-plane, col: 3, row: 1, tone: success }
+      - { id: cm, label: "controller-manager", sub: "…-manager-cp1", icon: process, col: 3, row: 2, tone: success }
+      - { id: sched, label: "kube-scheduler", sub: "kube-scheduler-cp1", icon: process, col: 3, row: 3, tone: success }
+    edges:
+      - { from: systemd, to: kubelet, label: "starts" }
+      - { from: manifests, to: kubelet, label: "read", dashed: true }
+      - { from: kubelet, to: runtime, label: "CRI" }
+      - { from: runtime, to: etcd }
+      - { from: runtime, to: api }
+      - { from: runtime, to: cm }
+      - { from: runtime, to: sched }
+    groups:
+      - { id: static, label: "Static Pods", nodes: [etcd, api, cm, sched] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Cluster architecture"
+      narration: >-
+        A Kubernetes cluster looks like one big computer, but it is a handful of small programs that cooperate. In
+        this lesson you will meet each of them, see how they turn one command into running containers, and learn
+        where to find them when something breaks.
+      visual:
+        kind: title
+        heading: "Cluster architecture"
+        subheading: "Who does what in a Kubernetes cluster"
+    - id: problem
+      title: "Why a cluster has parts"
+      narration: >-
+        You want to say what should run, not where and how. Something has to remember that wish, even after a
+        restart. Something has to choose a machine with room for it. Something on that machine has to start the
+        containers. And something has to notice failures and repair them, without waking you up.
+      visual:
+        kind: points
+        heading: "The jobs a cluster must do"
+        items:
+          - "Accept what you want: the desired state"
+          - "Remember it reliably"
+          - "Choose a machine for each Pod"
+          - "Start the containers on that machine"
+          - "Notice failures and repair them"
+    - id: control-plane
+      title: "The control plane"
+      narration: >-
+        You talk to the cluster with kubectl. Every request goes to the API server, the front door of the cluster.
+        The API server keeps all cluster state in etcd, and it is the only component that talks to etcd. The scheduler
+        watches for Pods without a node and picks one for each. The controller manager runs the loops that keep
+        reality equal to what you asked for. Together, these four are the control plane.
+      visual:
+        kind: diagram
+        diagram: cluster-overview
+        steps:
+          - [user]
+          - [api, user-api]
+          - [etcd, api-etcd]
+          - [sched, sched-api]
+          - [cm, cm-api]
+          - [control-plane]
+    - id: nodes
+      title: "What runs on every node"
+      narration: >-
+        Now the machines that do the work. On every node runs the kubelet, an agent that watches the API server for
+        Pods assigned to its node. The kubelet does not run containers itself: it asks a container runtime, usually
+        containerd. The runtime starts your containers. Next to them, kube-proxy turns Services into network rules.
+        These parts run on every node, including the control plane nodes.
+      visual:
+        kind: diagram
+        diagram: cluster-overview
+        steps:
+          - [worker]
+          - [kubelet, kubelet-api]
+          - [runtime, kubelet-runtime]
+          - [pods, runtime-pods]
+          - [proxy, proxy-api]
+          - [worker, control-plane]
+    - id: flow
+      title: "From kubectl to running containers"
+      narration: >-
+        Follow one command through the cluster: you create a Deployment with three replicas. The API server checks
+        the request and saves the Deployment in etcd. The controller manager sees a Deployment with no Pods and
+        creates three Pod objects. The scheduler sees three Pods without a node and writes a node name into each. The
+        kubelet on that node sees its new Pod. It asks containerd to pull the image and start the containers, and
+        reports the status back. Notice that nobody gave an order: every component only watched the API server and
+        did its own job.
+      visual:
+        kind: diagram
+        diagram: pod-startup
+        steps:
+          - [user, api, user-api]
+          - [etcd, api-etcd]
+          - [cm, cm-api]
+          - [sched, sched-api]
+          - [kubelet, kubelet-api]
+          - [runtime, kubelet-runtime]
+    - id: static-pods
+      title: "How kubeadm runs the control plane"
+      narration: >-
+        Here is a puzzle: the control plane runs as Pods, but Pods need a control plane. On a kubeadm cluster the
+        answer starts with systemd, which starts the kubelet as a normal service. The kubelet reads a folder of
+        manifest files on the node's own disk. For each file it asks containerd to start a Pod, with no API server
+        involved. Those are the static Pods: etcd, the API server, the controller manager and the scheduler.
+      visual:
+        kind: diagram
+        diagram: static-pods
+        steps:
+          - [static]
+          - [systemd, kubelet, systemd-kubelet]
+          - [manifests, manifests-kubelet]
+          - [runtime, kubelet-runtime]
+          - [etcd, api, cm, sched, runtime-etcd, runtime-api, runtime-cm, runtime-sched]
+    - id: find
+      title: "Find every component"
+      narration: >-
+        On an unfamiliar cluster, look around first. List the nodes to see which one is the control plane. List the
+        Pods in the kube-system namespace: the names that end with a node name are static Pods. On the control plane
+        node, the manifest folder shows where they come from. And the kubelet itself is not a Pod, so ask systemd
+        about it.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get nodes"
+            out: "NAME     STATUS   ROLES           AGE   VERSION\ncp1      Ready    control-plane   12d   v1.37.0\nnode01   Ready    <none>          12d   v1.37.0\nnode02   Ready    <none>          12d   v1.37.0"
+          - cmd: "kubectl -n kube-system get pods"
+            out: "NAME                          READY   STATUS    RESTARTS   AGE\ncoredns-7c65d6cfc9-4xk2p      1/1     Running   0          12d\ncoredns-7c65d6cfc9-tq8wz      1/1     Running   0          12d\netcd-cp1                      1/1     Running   0          12d\nkube-apiserver-cp1            1/1     Running   0          12d\nkube-controller-manager-cp1   1/1     Running   0          12d\nkube-proxy-6ldfn              1/1     Running   0          12d\nkube-proxy-h9s7c              1/1     Running   0          12d\nkube-proxy-zr2mv              1/1     Running   0          12d\nkube-scheduler-cp1            1/1     Running   0          12d"
+          - cmd: "ls /etc/kubernetes/manifests"
+            out: "etcd.yaml  kube-apiserver.yaml  kube-controller-manager.yaml  kube-scheduler.yaml"
+          - cmd: "systemctl is-active kubelet containerd"
+            out: "active\nactive"
+    - id: failures
+      title: "What breaks when a part is down"
+      narration: >-
+        Knowing each job tells you what a failure looks like. Without the API server, kubectl stops working, but
+        running Pods keep running. Without the scheduler, new Pods stay Pending with no node. Without the controller
+        manager, nothing is repaired or scaled. Without a kubelet, that node turns Not Ready. And without kube-proxy,
+        new Services do not work from that node.
+      visual:
+        kind: points
+        heading: "Symptom, then suspect"
+        items:
+          - "The parts fail in different ways"
+          - "kubectl refused: API server (or etcd)"
+          - "Pods Pending, no node: scheduler"
+          - "Deployment makes no Pods: controller manager"
+          - "Node NotReady: kubelet or runtime"
+          - "New Service unreachable: kube-proxy"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        To change a control plane setting, edit its manifest file, and the kubelet restarts the Pod by itself. If
+        kubectl stops answering after that, use crictl on the node to see the containers and their logs. For a
+        broken node, read the kubelet's log with journalctl. And to check health, ask the API server's readyz
+        endpoint, not the old component statuses.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "Edit the manifest file; the kubelet restarts the Pod"
+          - "API down? crictl ps and crictl logs on the node"
+          - "Node NotReady? journalctl -u kubelet"
+          - "Health: kubectl get --raw='/readyz?verbose'"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The control plane decides and the nodes run. Everything goes through the API server, and only the API server
+        talks to etcd. Components do not call each other: they watch and reconcile. On kubeadm, the control plane is
+        four static Pods started by the kubelet. Now try the practice questions, and then meet each component in its
+        own lesson.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Control plane decides; nodes run"
+          - "API server is the hub; only it talks to etcd"
+          - "Watch and reconcile, never direct orders"
+          - "kubeadm: four static Pods, started by the kubelet"
+---
+
+## Why a cluster has parts
+
+You have twenty containers and five machines. Someone has to decide which container runs where, start it there,
+notice when a machine dies, and start replacements somewhere else. Doing that by hand does not scale, and doing it
+with one big program on one machine gives you a single thing whose failure stops everything.
+
+Kubernetes splits the work into a few small programs with one job each. You tell the cluster **what** you want
+(the *desired state*: "three replicas of this image"), and those programs work together, continuously, to make the
+real world match. The split is not an implementation detail you can ignore: in the CKA exam, almost every
+troubleshooting task comes down to knowing which program is responsible for the thing that is not happening.
+
+<KeyIdea>
+A cluster is a **control plane** that decides and **nodes** that run. The components never give each other orders:
+each one watches the API server, does its own small job, and writes the result back. The API server is the hub,
+and the only component that talks to etcd.
+</KeyIdea>
+
+## What a cluster is made of
+
+<Diagram id="cluster-overview" />
+
+A cluster has two kinds of machine. **Control plane nodes** run the programs that manage the cluster. **Worker
+nodes** (usually just called nodes) run your Pods. In a small cluster one machine can be both.
+
+### Control plane components
+
+| Component | Its one job | Listens on |
+|-----------|-------------|-----------|
+| `kube-apiserver` | Serves the Kubernetes API over HTTPS. Authenticates, authorises and validates every request, then reads or writes etcd. Everything else is its client. | 6443 |
+| `etcd` | A consistent key-value store that holds every object in the cluster. If it is lost without a backup, the cluster is lost. | 2379 (clients), 2380 (peers) |
+| `kube-scheduler` | Finds Pods that have no node yet and chooses a node for each. It only writes the choice down; it starts nothing. | 10259 |
+| `kube-controller-manager` | Runs dozens of controllers in one process: Deployment, ReplicaSet, Node, Job, EndpointSlice, ServiceAccount and more. Each compares desired and actual state and corrects the difference. | 10257 |
+| `cloud-controller-manager` | Optional. Talks to a cloud provider's API: load balancers for Services, node addresses, routes. Absent on bare kubeadm clusters. | 10258 |
+
+### Node components
+
+These run on **every** node, control plane nodes included:
+
+| Component | Its one job | Listens on |
+|-----------|-------------|-----------|
+| `kubelet` | The node agent. Registers the node, watches for Pods assigned to it, tells the runtime to start and stop containers, runs probes, and reports Pod and node status. | 10250 |
+| Container runtime | Pulls images and runs containers. Usually containerd, sometimes CRI-O. The kubelet talks to it over the Container Runtime Interface (CRI), a local socket. | a Unix socket |
+| `kube-proxy` | Watches Services and EndpointSlices and writes the kernel rules (iptables, nftables or IPVS) that send Service traffic to Pods. Optional: some network plugins replace it. | 10256 (health) |
+
+### Addons
+
+Addons are ordinary workloads that the cluster needs to be useful. They are **not** part of the control plane, and
+they run as normal Pods that the scheduler places:
+
+- **A network plugin (CNI)** such as Calico, Cilium or Flannel, which gives Pods their IP addresses and connects
+  them across nodes. Until one is installed, nodes stay `NotReady`.
+- **CoreDNS**, the cluster DNS, which turns Service names into IP addresses.
+- Optional extras such as metrics-server.
+
+<Callout kind="note" title="Old names you will still see">
+Control plane nodes used to be called *master* nodes, and you will meet that word in older articles, flags and
+labels. Worker nodes were once called *minions*. The components are the same.
+</Callout>
+
+## How the parts work together
+
+<Diagram id="pod-startup" />
+
+Follow one command, `kubectl create deployment web --image=nginx --replicas=3`, through the cluster:
+
+1. **kubectl** sends an HTTPS request to the API server. The API server authenticates you, checks that you are
+   allowed to create Deployments, and validates the object.
+2. The **API server** saves the Deployment in **etcd** and answers `deployment.apps/web created`. At this moment
+   nothing is running, and kubectl is already done.
+3. The **Deployment controller** (inside the controller manager) is watching Deployments. It sees one with no
+   ReplicaSet and creates it. The **ReplicaSet controller** sees a ReplicaSet that wants three Pods and has none, and
+   creates three Pod objects. They are `Pending`, with an empty `spec.nodeName`.
+4. The **scheduler** is watching for Pods without a node. For each one it filters out the nodes that cannot run it,
+   scores the rest, and writes the winner into `spec.nodeName` (this is called *binding*).
+5. The **kubelet** on each chosen node is watching for Pods whose `nodeName` is its own. It sees the new Pod.
+6. The kubelet asks the **container runtime** to create the Pod's sandbox, the runtime calls the **CNI plugin** to
+   give it a network and an IP, then pulls the image and starts the containers.
+7. The kubelet writes the Pod's status (`Running`, its IP, its conditions) back through the API server. Other
+   watchers react in turn: the EndpointSlice controller adds the Pod to its Services, and kube-proxy on every node
+   updates its rules.
+
+Two things in this story explain most of Kubernetes' behaviour:
+
+- **Nobody calls anybody.** The scheduler never contacts a kubelet, and the controller manager never contacts the
+  scheduler. Each component only reads and writes objects through the API server. That is why you can restart any
+  of them, or run several copies, without the others noticing.
+- **The loops never stop.** A controller does not run once per command. It keeps comparing desired and actual state
+  for as long as the cluster lives. Delete one of the three Pods and the ReplicaSet controller creates a fourth,
+  and the whole sequence from step 4 repeats. This is *reconciliation*, and it is where self-healing comes from.
+
+<DeepDive title="Why everything goes through the API server">
+- **One place to secure.** Authentication, authorisation (RBAC), admission control and audit logging happen in the
+  API server. Because nothing else may touch etcd, no component can bypass them.
+- **One place to validate.** A request passes, in order: authentication, authorisation, mutating admission, schema
+  validation, validating admission, and only then is it written to etcd.
+- **Watches instead of polling.** Clients open a long-lived *watch* and the API server streams every change to
+  them. A component that restarts first lists the current objects and then watches from there, so it never needs a
+  history of events. This design is called *level-triggered*: components act on the current state, not on messages
+  they might have missed.
+- **Safe concurrent writes.** Every object carries a `resourceVersion`. If two components update the same object at
+  once, the second write is rejected with a conflict and the component retries with fresh data.
+- **Freedom to change the store.** Only the API server knows how objects are laid out in etcd, so storage formats
+  and API versions can change without touching the other components.
+</DeepDive>
+
+<DeepDive title="How the control plane knows a node is alive">
+- Each kubelet renews a small **Lease** object named after its node, in the `kube-node-lease` namespace, every
+  10 seconds by default. It also updates the Node's status, but far less often.
+- The **node controller** (in the controller manager) watches those Leases. If a node stops renewing for the grace
+  period (under a minute by default), it marks the Node's `Ready` condition `Unknown` and taints the node
+  `node.kubernetes.io/unreachable`.
+- Pods tolerate that taint for 300 seconds by default. After that they are evicted, and their controllers create
+  replacements on healthy nodes. This is why Pods on a dead node take about five minutes to come back elsewhere.
+- Look at the heartbeats with `kubectl -n kube-node-lease get leases`.
+</DeepDive>
+
+<DeepDive title="More than one control plane node">
+- In a highly available cluster, three (or five) control plane nodes each run the full set of components behind a
+  load balancer.
+- Every **API server** is active at the same time; they are stateless and any of them can serve any request.
+- **etcd** members form one cluster and need a majority (*quorum*) to accept writes: three members survive the loss
+  of one, five survive two. That is why control planes come in odd sizes.
+- The **scheduler** and **controller manager** must not act twice, so only one copy of each is active. The copies
+  elect a leader through a Lease in `kube-system`; the others wait and take over if it stops renewing. See who leads
+  with `kubectl -n kube-system get lease kube-scheduler kube-controller-manager`.
+</DeepDive>
+
+## How the components are run
+
+The same components can be packaged in different ways, and where you look for them depends on how the cluster was
+built:
+
+| Cluster type | Where the control plane runs | What you see in `kube-system` |
+|--------------|------------------------------|-------------------------------|
+| **kubeadm** (the CKA's focus) | Static Pods on the control plane nodes | `etcd-`, `kube-apiserver-`, `kube-controller-manager-` and `kube-scheduler-` Pods, one per control plane node |
+| **Managed** (EKS, AKS, GKE) | On machines the provider owns and hides | Only addons and node agents; `kubectl get nodes` lists workers only |
+| **Single binary** (k3s, k0s) | Inside one process on the server node | No control plane Pods at all |
+| **By hand** ("the hard way") | systemd services on the control plane hosts | No control plane Pods; use `systemctl` and `journalctl` |
+
+<Callout kind="note" title="The practice labs here run k3s">
+The labs in this app boot k3s to start quickly, so `kubectl -n kube-system get pods` shows no `kube-apiserver` Pod
+there. The components and their jobs are the same; only the packaging differs. Everything below describes kubeadm.
+</Callout>
+
+### kubeadm and static Pods
+
+<Diagram id="static-pods" />
+
+kubeadm runs the control plane as Pods, which raises a chicken-and-egg question: Pods are created through the API
+server, so who creates the API server's Pod? The answer is the **static Pod**.
+
+- The **kubelet** and the **container runtime** are ordinary host processes, started by systemd. They are the only
+  components that are never Pods.
+- The kubelet watches a folder on the node's own disk, set by `staticPodPath` in `/var/lib/kubelet/config.yaml`.
+  With kubeadm it is `/etc/kubernetes/manifests`.
+- For every Pod manifest in that folder, the kubelet starts the Pod directly through the runtime. It needs no API
+  server and no scheduler to do so. If the file changes, it recreates the Pod; if the file is removed, it stops the
+  Pod.
+- Once the API server is up, the kubelet creates a read-only **mirror Pod** for each static Pod, so that you can see
+  it with kubectl. Its name is the Pod name plus the node name: `kube-apiserver-cp1`.
+
+kubeadm also installs two addons as normal workloads: **kube-proxy** as a DaemonSet (one Pod per node) and
+**CoreDNS** as a Deployment. And it taints control plane nodes with `node-role.kubernetes.io/control-plane:NoSchedule`,
+which is why your own Pods land on the workers.
+
+<Callout kind="warning" title="A mirror Pod is only a reflection">
+`kubectl delete pod kube-scheduler-cp1` appears to work, but the kubelet recreates the mirror Pod at once and the
+real container was never touched. `kubectl edit` on it changes nothing either. To change or stop a static Pod, edit
+or move its **file** on the node.
+</Callout>
+
+## Using it
+
+<Example title="Find every component on a kubeadm cluster">
+You are dropped into a cluster you have never seen. Map it before changing anything.
+
+```bash
+kubectl get nodes -o wide                    # roles, IPs, runtime of each node
+kubectl -n kube-system get pods -o wide      # which component runs on which node
+```
+
+```text
+NAME                          READY   STATUS    NODE
+coredns-7c65d6cfc9-4xk2p      1/1     Running   node01      Deployment (addon)
+etcd-cp1                      1/1     Running   cp1         static Pod
+kube-apiserver-cp1            1/1     Running   cp1         static Pod
+kube-controller-manager-cp1   1/1     Running   cp1         static Pod
+kube-proxy-6ldfn              1/1     Running   node01      DaemonSet (addon)
+kube-scheduler-cp1            1/1     Running   cp1         static Pod
+```
+
+A name that ends in a node name is a static Pod; a name with a random suffix belongs to a Deployment or DaemonSet.
+Then, on the control plane node (`ssh cp1`):
+
+```bash
+ls /etc/kubernetes/manifests                 # the four static Pod manifests
+systemctl status kubelet containerd          # the two host services
+sudo crictl ps                               # containers as the runtime sees them
+```
+</Example>
+
+<Example title="Read how a component is configured">
+Every setting of a kubeadm control plane component is a command-line flag in its manifest. To find the Service IP
+range, the etcd data directory and the folder the kubelet watches:
+
+```bash
+sudo grep service-cluster-ip-range /etc/kubernetes/manifests/kube-apiserver.yaml
+#     - --service-cluster-ip-range=10.96.0.0/12
+sudo grep data-dir /etc/kubernetes/manifests/etcd.yaml
+#     - --data-dir=/var/lib/etcd
+sudo grep staticPodPath /var/lib/kubelet/config.yaml
+# staticPodPath: /etc/kubernetes/manifests
+```
+
+Without a shell on the node, read the same flags from the mirror Pod:
+`kubectl -n kube-system get pod kube-apiserver-cp1 -o yaml`.
+</Example>
+
+<Example title="Prove what the scheduler does by stopping it">
+On a practice cluster, take the scheduler away and watch what happens. Moving the manifest out of the folder stops
+the static Pod.
+
+```bash
+sudo mv /etc/kubernetes/manifests/kube-scheduler.yaml /tmp/
+kubectl run probe --image=nginx
+kubectl get pod probe -o wide
+```
+
+```text
+NAME    READY   STATUS    RESTARTS   AGE   IP       NODE
+probe   0/1     Pending   0          20s   <none>   <none>
+```
+
+The API server accepted the Pod and etcd stored it, but `NODE` is empty: nobody is binding Pods. Existing Pods are
+unaffected. Put the file back and the Pod starts within seconds:
+
+```bash
+sudo mv /tmp/kube-scheduler.yaml /etc/kubernetes/manifests/
+kubectl get pod probe -o wide --watch
+```
+</Example>
+
+### What breaks when a component is down
+
+Use this table backwards in the exam: start from the symptom and it names the suspect.
+
+| Component down | What you see | What keeps working |
+|----------------|--------------|--------------------|
+| `kube-apiserver` | `kubectl` fails with "connection refused" on port 6443 | Running Pods and existing Service rules |
+| `etcd` | The API server cannot read or write: requests time out or fail, and the API server soon restarts | Running Pods |
+| `kube-scheduler` | New Pods stay `Pending` with no node and no events | Everything already scheduled |
+| `kube-controller-manager` | Deployments create no Pods, scaling does nothing, deleted Pods are not replaced, dead nodes are not noticed | Running Pods; bare Pods can still be scheduled |
+| `kubelet` (one node) | The node becomes `NotReady`; its Pods are evicted after about five minutes | Its containers keep running until someone stops them |
+| Container runtime (one node) | The node becomes `NotReady`; nothing new starts there | Other nodes |
+| `kube-proxy` (one node) | Services created or changed later do not work from that node | Rules that were already written |
+| CoreDNS | Names such as `web.shop` do not resolve | Connections by IP address |
+| CNI plugin | Nodes `NotReady`, or new Pods stuck in `ContainerCreating` | Pods that use the host network, such as the control plane |
+
+## Tricks
+
+<Trick title="Change a control plane setting by editing the file">
+Edit `/etc/kubernetes/manifests/kube-apiserver.yaml` and save. The kubelet notices the change and recreates the Pod;
+there is nothing to apply. Copy the file somewhere **outside** the manifest folder first: a backup left inside it
+is started as a second static Pod. After saving, expect `kubectl` to fail for up to a minute while the API server
+restarts.
+</Trick>
+
+<Trick title="When kubectl is dead, use crictl">
+If the API server is the broken part, kubectl cannot help you fix it. On the control plane node, ask the runtime
+directly:
+
+```bash
+sudo crictl ps -a --name kube-apiserver      # is it running, or exited and restarting?
+sudo crictl logs <container-id>              # why it exited
+```
+
+The same logs are in `/var/log/pods/` and `/var/log/containers/`. A typo in a flag shows up there within seconds.
+</Trick>
+
+<Trick title="The kubelet's logs live in journald">
+The kubelet is not a Pod, so `kubectl logs` cannot show its output. For a `NotReady` node, go to that node and run
+`systemctl status kubelet`, then `sudo journalctl -u kubelet --since "10 min ago"`. If the static Pod never appears
+at all, the kubelet's log says why, for example a YAML error in the manifest.
+</Trick>
+
+<Trick title="Ask the API server how it is">
+`kubectl get --raw='/readyz?verbose'` lists every internal check of the API server, including its connection to etcd.
+`kubectl get componentstatuses` still exists but has been deprecated since v1.19; do not rely on it.
+</Trick>
+
+<Trick title="Find the control plane node quickly">
+`kubectl get nodes` shows `control-plane` in the ROLES column, and `kubectl get pods -A -o wide | grep apiserver` shows
+the node the API server runs on. `kubectl cluster-info` prints the API server's address.
+</Trick>
+
+## Common mistakes
+
+- **Looking for a kubelet Pod.** The kubelet and the container runtime are systemd services on the host. Use
+  `systemctl` and `journalctl`, on the node in question.
+- **Deleting or editing the mirror Pod.** It comes straight back and nothing changes. Work on the file in
+  `/etc/kubernetes/manifests` on the node that runs it.
+- **Leaving a backup in the manifest folder.** The kubelet reads every file there, so `kube-apiserver.yaml.bak` can
+  start a second, conflicting API server. Keep backups in `/tmp` or your home directory.
+- **Working on the wrong machine.** Static Pod manifests exist only on control plane nodes, and each node has its
+  own kubelet. Check your prompt (`hostname`) before editing or restarting anything.
+- **Thinking the scheduler starts Pods.** It only fills in `spec.nodeName`. If a Pod has a node but does not start,
+  the scheduler has done its work: look at the kubelet, the image and the events in `kubectl describe pod`.
+- **Assuming a dead control plane kills the applications.** Running Pods keep running and serving traffic. What
+  you lose is change: no new Pods, no repairs, no kubectl.
+
+## Recap
+
+- The **control plane** (API server, etcd, scheduler, controller manager) decides; the **nodes** (kubelet, container
+  runtime, kube-proxy) run the Pods.
+- Everything goes through the **API server**, and only the API server talks to **etcd**.
+- Components **watch and reconcile**; they never call each other. That is what makes the cluster self-healing.
+- On kubeadm the control plane is four **static Pods** from `/etc/kubernetes/manifests`, started by the kubelet,
+  which is itself a systemd service.
+- To troubleshoot, match the symptom to the component, then use `kubectl`, `crictl` or `journalctl` where it runs.
