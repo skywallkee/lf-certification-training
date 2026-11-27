@@ -1,0 +1,549 @@
+---
+id: cka-kube-proxy
+title: "Kube Proxy: the component that makes Service IPs work"
+summary: "What kube-proxy does on every node, how it turns Services and EndpointSlices into kernel rules, the proxy modes, and how to inspect and fix it under exam pressure."
+minutes: 20
+competencies:
+  - cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types
+  - cka/troubleshooting/troubleshoot-cluster-components
+  - cka/troubleshooting/troubleshoot-services-networking
+docs:
+  - title: "Kubernetes docs: Virtual IPs and Service proxies"
+    url: https://kubernetes.io/docs/reference/networking/virtual-ips/
+  - title: "Kubernetes docs: kube-proxy command reference"
+    url: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/
+  - title: "Kubernetes docs: kube-proxy configuration (v1alpha1)"
+    url: https://kubernetes.io/docs/reference/config-api/kube-proxy-config.v1alpha1/
+  - title: "Kubernetes docs: Debug Services"
+    url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/
+  - title: "Kubernetes docs: Kubernetes components"
+    url: https://kubernetes.io/docs/concepts/overview/components/
+diagrams:
+  where-it-runs:
+    title: "One kube-proxy per node, all watching the same API server"
+    caption: "A DaemonSet puts one kube-proxy Pod on every node. Each one watches Services and EndpointSlices and writes the same rules into its own node's kernel."
+    nodes:
+      - { id: api, label: "API server", sub: "Services, slices", icon: control-plane, col: 1, row: 0, tone: muted }
+      - { id: proxy-a, label: "kube-proxy", sub: "Pod, host network", icon: process, col: 0, row: 1 }
+      - { id: proxy-b, label: "kube-proxy", sub: "Pod, host network", icon: process, col: 1, row: 1 }
+      - { id: proxy-c, label: "kube-proxy", sub: "Pod, host network", icon: process, col: 2, row: 1 }
+      - { id: rules-a, label: "Kernel rules", sub: "same on every node", icon: proxy, col: 0, row: 2, tone: primary }
+      - { id: rules-b, label: "Kernel rules", sub: "same on every node", icon: proxy, col: 1, row: 2, tone: primary }
+      - { id: rules-c, label: "Kernel rules", sub: "same on every node", icon: proxy, col: 2, row: 2, tone: primary }
+    edges:
+      - { from: api, to: proxy-a, label: "watch" }
+      - { from: api, to: proxy-b, label: "watch" }
+      - { from: api, to: proxy-c, label: "watch" }
+      - { from: proxy-a, to: rules-a, label: "writes" }
+      - { from: proxy-b, to: rules-b, label: "writes" }
+      - { from: proxy-c, to: rules-c, label: "writes" }
+    groups:
+      - { id: node-a, label: "controlplane", nodes: [proxy-a, rules-a] }
+      - { id: node-b, label: "node01", nodes: [proxy-b, rules-b] }
+      - { id: node-c, label: "node02", nodes: [proxy-c, rules-c] }
+  packet-path:
+    title: "What the kernel does with one new connection (iptables mode)"
+    caption: "The packet to the Service IP walks three chains on the client's own node. The last one rewrites the destination to a real Pod address; kube-proxy itself never touches the packet."
+    nodes:
+      - { id: client, label: "Client Pod", sub: "to 10.96.0.20:80", icon: pod, col: 0, row: 1 }
+      - { id: services, label: "KUBE-SERVICES", sub: "match IP and port", icon: proxy, col: 1, row: 1, tone: primary }
+      - { id: svc, label: "KUBE-SVC-…", sub: "pick one at random", icon: proxy, col: 2, row: 1, tone: primary }
+      - { id: sep-1, label: "KUBE-SEP-…", sub: "DNAT 10.244.1.7", icon: proxy, col: 3, row: 0, tone: primary }
+      - { id: sep-2, label: "KUBE-SEP-…", sub: "DNAT 10.244.1.9", icon: proxy, col: 3, row: 1, tone: primary }
+      - { id: sep-3, label: "KUBE-SEP-…", sub: "DNAT 10.244.2.4", icon: proxy, col: 3, row: 2, tone: primary }
+      - { id: pod-1, label: "web Pod", sub: "10.244.1.7:8080", icon: pod, col: 4, row: 0, tone: success }
+      - { id: pod-2, label: "web Pod", sub: "10.244.1.9:8080", icon: pod, col: 4, row: 1, tone: success }
+      - { id: pod-3, label: "web Pod", sub: "10.244.2.4:8080", icon: pod, col: 4, row: 2, tone: success }
+    edges:
+      - { from: client, to: services, label: "packet" }
+      - { from: services, to: svc }
+      - { from: svc, to: sep-1, label: "1 in 3", dashed: true }
+      - { from: svc, to: sep-2, label: "1 in 3" }
+      - { from: svc, to: sep-3, label: "1 in 3", dashed: true }
+      - { from: sep-1, to: pod-1, dashed: true }
+      - { from: sep-2, to: pod-2 }
+      - { from: sep-3, to: pod-3, dashed: true }
+    groups:
+      - { id: kernel, label: "Kernel of the client's node", nodes: [services, svc, sep-1, sep-2, sep-3] }
+  nodeport-hop:
+    title: "A node port answers on every node"
+    caption: "node01 runs no web Pod, but its rules still accept the connection and forward it to a Pod on node02. On the way it replaces the source address with its own, so the reply comes back the same way."
+    nodes:
+      - { id: user, label: "Outside client", sub: "to node01:30080", icon: user, col: 0, row: 0 }
+      - { id: rules, label: "Kernel rules", sub: "KUBE-NODEPORTS", icon: proxy, col: 1, row: 0, tone: primary }
+      - { id: pod, label: "web Pod", sub: "10.244.2.4:8080", icon: pod, col: 2, row: 0, tone: success }
+      - { id: proxy-1, label: "kube-proxy", sub: "wrote the rules", icon: process, col: 1, row: 1, tone: muted }
+      - { id: proxy-2, label: "kube-proxy", sub: "same rules here", icon: process, col: 2, row: 1, tone: muted }
+    edges:
+      - { from: user, to: rules, label: ":30080" }
+      - { from: rules, to: pod, label: "DNAT + SNAT" }
+      - { from: proxy-1, to: rules, label: "writes", dashed: true }
+    groups:
+      - { id: node01, label: "node01 (no web Pod)", nodes: [rules, proxy-1] }
+      - { id: node02, label: "node02", nodes: [pod, proxy-2] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Kube Proxy"
+      narration: >-
+        A Service gives your Pods one stable IP address, but that address is not real. No machine owns it, and no
+        program listens on it. In this lesson you will meet kube-proxy, the component on every node that makes
+        those addresses work, and you will learn how to inspect it and fix it.
+      visual:
+        kind: title
+        heading: "Kube Proxy"
+        subheading: "The component that makes Service IPs work"
+    - id: problem
+      title: "The problem it solves"
+      narration: >-
+        A Service IP is virtual, so something has to catch packets sent to it. Those packets must end up at a real
+        Pod, and Pods change all the time. The answer has to be the same on every node, because a client can run
+        anywhere. And it has to be fast, so it cannot pass through a slow program in the middle.
+      visual:
+        kind: points
+        heading: "Who delivers traffic for a virtual IP?"
+        items:
+          - "A Service IP belongs to no network card"
+          - "Packets must reach a real Pod, and Pods change"
+          - "Every node needs the same answer"
+          - "It must be fast: no program in the middle"
+    - id: what-it-is
+      title: "What kube-proxy is"
+      narration: >-
+        Here is the API server, which stores every Service and every EndpointSlice. A DaemonSet runs one kube-proxy
+        Pod on each node, including the control plane node. Each of them keeps a watch open on the API server. And
+        each one writes forwarding rules into the kernel of its own node, so all nodes end up with the same rules.
+      visual:
+        kind: diagram
+        diagram: where-it-runs
+        steps:
+          - [api]
+          - [proxy-a, proxy-b, proxy-c, node-a, node-b, node-c]
+          - [api-proxy-a, api-proxy-b, api-proxy-c]
+          - [rules-a, rules-b, rules-c, proxy-a-rules-a, proxy-b-rules-b, proxy-c-rules-c]
+    - id: packet-path
+      title: "How one connection is forwarded"
+      narration: >-
+        Now follow one connection in the default mode, iptables. A client Pod sends a packet to the Service IP on
+        port 80. In the kernel of the client's own node, the first chain matches that IP and port. It jumps to a
+        chain for this one Service, which picks a backend at random. The chosen endpoint chain rewrites the
+        destination to a real Pod address. From there the packet is ordinary Pod traffic, carried by the network
+        plugin.
+      visual:
+        kind: diagram
+        diagram: packet-path
+        steps:
+          - [kernel]
+          - [client, client-services]
+          - [services]
+          - [svc, services-svc, svc-sep-1, svc-sep-2, svc-sep-3]
+          - [sep-1, sep-2, sep-3]
+          - [pod-1, pod-2, pod-3, sep-1-pod-1, sep-2-pod-2, sep-3-pod-3]
+    - id: control-not-data
+      title: "It writes rules, it does not carry traffic"
+      narration: >-
+        This is the idea to remember. Your packets never pass through the kube-proxy process, because the kernel
+        does the forwarding. So if kube-proxy stops, existing Services keep working. What breaks is change: new
+        Services get no rules, and dead Pods stay in the old ones. That is why a broken kube-proxy often shows up
+        late, as traffic that fails only some of the time.
+      visual:
+        kind: points
+        heading: "Control path, not data path"
+        items:
+          - "The kernel forwards; kube-proxy only programs it"
+          - "kube-proxy down: existing rules keep working"
+          - "But new Services and Pod changes are not applied"
+          - "Symptom: stale rules, some connections fail"
+    - id: modes
+      title: "The proxy modes"
+      narration: >-
+        The rules can be written in three ways on Linux. Iptables is the default today, and it picks a backend at
+        random. Nftables is its successor: it is faster to update and will become the default in a later release.
+        IPVS is deprecated, so do not choose it for a new cluster. Some clusters have no kube-proxy at all, because
+        a network plugin such as Cilium does the same job.
+      visual:
+        kind: points
+        heading: "mode: in the kube-proxy configuration"
+        items:
+          - "Three modes on Linux: iptables, nftables, ipvs"
+          - "iptables: the default, random backend"
+          - "nftables: the successor and future default"
+          - "ipvs: deprecated since v1.35"
+          - "No kube-proxy at all: Cilium and others replace it"
+    - id: nodeport
+      title: "Node ports"
+      narration: >-
+        Node ports are kube-proxy's work too. A client outside the cluster calls port 30080 on node01, which runs
+        no web Pod. The rules on node01 still accept the connection and forward it to a Pod on another node. No
+        process listens on that port, so you will not find it in a list of open sockets.
+      visual:
+        kind: diagram
+        diagram: nodeport-hop
+        steps:
+          - [proxy-1, proxy-2, proxy-1-rules, node01, node02]
+          - [user, user-rules]
+          - [rules, rules-pod, pod]
+    - id: config
+      title: "Where its configuration lives"
+      narration: >-
+        On a kubeadm cluster the settings live in a ConfigMap called kube-proxy, in the kube-system namespace.
+        Inside it is a KubeProxyConfiguration. The mode field chooses how rules are written, and empty means the
+        default. The cluster CIDR tells it which addresses belong to Pods. Running Pods do not reload this file, so
+        restart the DaemonSet after you change it.
+      visual:
+        kind: code
+        heading: "ConfigMap kube-proxy, key config.conf"
+        lang: yaml
+        code: |
+          apiVersion: kubeproxy.config.k8s.io/v1alpha1
+          kind: KubeProxyConfiguration
+          mode: ""
+          clusterCIDR: 10.244.0.0/16
+          metricsBindAddress: 127.0.0.1:10249
+          healthzBindAddress: 0.0.0.0:10256
+        steps: ["1-6", "1-2", "3", "4", "1-6"]
+    - id: inspect
+      title: "Inspect kube-proxy"
+      narration: >-
+        Start with the DaemonSet: desired and ready should both equal the number of nodes. List the Pods with their
+        nodes to find the one that matters. Read its logs when it is not running. Then, on the node, look for the
+        rules of your Service by name.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl -n kube-system get ds kube-proxy"
+            out: "NAME         DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE\nkube-proxy   3         3         3       3            3           kubernetes.io/os=linux   12d"
+          - cmd: "kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide"
+            out: "NAME               READY   STATUS    RESTARTS   AGE   IP             NODE\nkube-proxy-4xk2p   1/1     Running   0          12d   192.168.1.10   controlplane\nkube-proxy-9d7mz   1/1     Running   0          12d   192.168.1.11   node01\nkube-proxy-tq5wl   1/1     Running   0          12d   192.168.1.12   node02"
+          - cmd: "kubectl -n kube-system logs kube-proxy-9d7mz | grep -i proxier"
+            out: "I1127 09:14:02.118374       1 server_linux.go:214] \"Using iptables Proxier\""
+          - cmd: "sudo iptables-save | grep shop/web"
+            out: "-A KUBE-SERVICES -d 10.96.0.20/32 -p tcp -m comment --comment \"shop/web cluster IP\" -m tcp --dport 80 -j KUBE-SVC-OI3ES3UZPSOHBDZQ\n-A KUBE-SEP-EQTZ7ECNTNFMRWQG -p tcp -m comment --comment \"shop/web\" -m tcp -j DNAT --to-destination 10.244.1.7:8080"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Look for kube-proxy as a DaemonSet in kube-system, not as a static Pod manifest. After you edit the
+        ConfigMap, restart the DaemonSet, or nothing changes. Check the Service's endpoints before you blame
+        kube-proxy, because an empty list is a selector problem. And when you test a node port, use the node's IP
+        address, not localhost.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "It is a DaemonSet, not a static Pod"
+          - "ConfigMap changed? rollout restart ds kube-proxy"
+          - "Endpoints first: empty means selector, not proxy"
+          - "Test node ports on the node IP, not localhost"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        One kube-proxy runs on every node and watches Services and EndpointSlices. It writes kernel rules, and the
+        kernel forwards each connection to a ready Pod. Iptables is the default mode, nftables is next, and IPVS is
+        on its way out. On kubeadm it is a DaemonSet with a ConfigMap, both in kube-system. Now try the practice
+        questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "One per node, watching Services and EndpointSlices"
+          - "It writes rules; the kernel forwards"
+          - "iptables today, nftables next, ipvs deprecated"
+          - "kubeadm: DaemonSet + ConfigMap in kube-system"
+---
+
+## Why kube-proxy exists
+
+A Service gives a group of Pods one stable address, the ClusterIP. But that address is **virtual**. No network
+interface on any machine has it, no process listens on it, and no router outside the cluster knows it exists. If you
+send a packet to `10.96.0.20` on a plain Linux machine, it goes nowhere.
+
+Something has to make that address behave like a real one, on every node, and keep up as Pods come and go. That
+something is **kube-proxy**. It runs on each node, watches the cluster's Services and their backends, and programs
+the node's kernel so that a connection to a Service IP is redirected to one of the Pods behind it.
+
+<KeyIdea>
+kube-proxy turns Service objects into kernel forwarding rules on every node. It **writes** the rules; the kernel
+**forwards** the traffic. Your packets never pass through the kube-proxy process.
+</KeyIdea>
+
+## What it is
+
+<Diagram id="where-it-runs" />
+
+kube-proxy is one of the three components that run on **every node**, next to the kubelet and the container runtime.
+On a cluster built with kubeadm it looks like this:
+
+- **A DaemonSet** named `kube-proxy` in the `kube-system` namespace, so there is exactly one Pod per node. Its
+  tolerations let it run on control plane nodes as well: those nodes also need to reach Services.
+- **A host network Pod.** The Pod uses `hostNetwork: true` and runs privileged, because its job is to change the
+  node's own network rules. That is why a kube-proxy Pod's IP is the node's IP.
+- **A ConfigMap** named `kube-proxy`, also in `kube-system`. Its key `config.conf` holds a `KubeProxyConfiguration`
+  (mode, Pod CIDR, ports), and `kubeconfig.conf` says how to reach the API server.
+- **A ServiceAccount** named `kube-proxy`, bound to the `system:node-proxier` ClusterRole, which lets it watch
+  Services, EndpointSlices and Nodes. It only reads from the API server; it never writes Service data.
+
+It is just as useful to know what kube-proxy is **not**, because the name misleads:
+
+| Job | Who does it |
+|-----|-------------|
+| Give a Service its ClusterIP | The API server, from the service CIDR |
+| List the ready Pods behind a Service | The EndpointSlice controller, in the controller manager |
+| Resolve the name `web.shop.svc` to the ClusterIP | CoreDNS |
+| Carry a packet from one Pod to another, across nodes | The CNI network plugin |
+| Enforce NetworkPolicies | The CNI network plugin |
+| Redirect a connection for a Service IP or node port to a Pod | **kube-proxy's rules, in the kernel** |
+| `kubectl proxy` (a local tunnel to the API server) | kubectl. It has nothing to do with kube-proxy |
+
+## How it works
+
+kube-proxy is a small control loop:
+
+<Flow label="From a change in the cluster to a rule in the kernel" steps={["A Service or Pod changes", "The EndpointSlice is updated", "kube-proxy's watch receives it", "kube-proxy rewrites the node's rules", "New connections use the new rules"]} />
+
+Every kube-proxy sees the same Services and EndpointSlices, so every node ends up with the same rules. That matters
+because the redirect happens **on the node where the connection starts**: the client's node rewrites the packet
+before it leaves, and from then on it is plain Pod-to-Pod traffic that the network plugin delivers.
+
+<Diagram id="packet-path" />
+
+In the default `iptables` mode, a new connection to `10.96.0.20:80` is handled by three kinds of chains in the
+kernel's NAT table:
+
+1. **`KUBE-SERVICES`** has one rule per Service port. The rule that matches the destination IP, protocol and port
+   jumps to that Service's own chain.
+2. **`KUBE-SVC-<hash>`** has one rule per ready backend and picks one at random.
+3. **`KUBE-SEP-<hash>`** (a Service endpoint) does the work: a DNAT rule that rewrites the destination to the Pod's
+   address, such as `10.244.1.9:8080`.
+
+The kernel's connection tracking remembers the choice, so the rest of the connection goes to the same Pod and the
+replies are translated back. The client believes it is talking to `10.96.0.20` the whole time.
+
+<DeepDive title="How three rules give each Pod a one in three chance">
+The rules in a `KUBE-SVC` chain are tried in order, and each has a probability:
+
+```text
+-A KUBE-SVC-OI3E… -m statistic --mode random --probability 0.33333 -j KUBE-SEP-AAAA…
+-A KUBE-SVC-OI3E… -m statistic --mode random --probability 0.50000 -j KUBE-SEP-BBBB…
+-A KUBE-SVC-OI3E…                                                  -j KUBE-SEP-CCCC…
+```
+
+The first rule takes a third of the connections. The second takes half of what is left, which is another third. The
+last rule takes everything that remains. With more Pods the chain grows, and so does the work the kernel does for
+each new connection, which is one of the reasons the nftables mode exists.
+</DeepDive>
+
+<DeepDive title="What happens when kube-proxy stops">
+- **Nothing, at first.** The rules live in the kernel, not in the process. Existing Services keep answering, and you
+  can restart or upgrade kube-proxy without dropping traffic.
+- **Then the rules go stale.** A new Service gets no rules on that node, so connections to it hang. A Pod that was
+  replaced is still in the old rules, so some connections go to an address where nobody answers.
+- **Only that node is affected.** Each node has its own kube-proxy and its own rules. "The Service works from Pods on
+  node01 but not from Pods on node02" points straight at node02's kube-proxy.
+</DeepDive>
+
+<DeepDive title="A Service with no endpoints is refused, not ignored">
+When a Service has a ClusterIP but no ready endpoints, kube-proxy installs a rule that **rejects** connections to it.
+The client gets `connection refused` at once. When the rules for a Service are missing completely (kube-proxy is not
+running on that node, or has not synced), the packet has nowhere to go and the client usually **hangs until it times
+out**. The difference is a useful first clue: refused points at the Service's endpoints, a hang points at kube-proxy
+or the network.
+</DeepDive>
+
+### Traffic from outside: node ports
+
+<Diagram id="nodeport-hop" />
+
+kube-proxy also implements `NodePort` (and so the node side of `LoadBalancer`). For a Service with node port 30080,
+every node gets a rule that sends connections to its own port 30080 into the same `KUBE-SVC` chain. Three
+consequences follow:
+
+- **Every node answers**, whether or not it runs a backend Pod, because every node has the rule.
+- **Nothing listens on the port.** It is a kernel rule, not a socket, so `ss -tlnp` on the node does not show 30080.
+- **The source address is replaced.** When the node forwards to a Pod on another node it also rewrites the source to
+  its own address (SNAT), so the reply returns through it. The Pod therefore sees the node's IP, not the client's.
+  `externalTrafficPolicy: Local` on the Service tells kube-proxy to use only Pods on the receiving node: the client
+  IP is kept, and nodes without a local Pod stop answering.
+
+## Proxy modes
+
+How the rules are written into the kernel is the **proxy mode**: the `mode` field of the configuration, or the
+`--proxy-mode` flag.
+
+| Mode | How it works | Status (Kubernetes v1.37) |
+|------|--------------|---------------------------|
+| `iptables` | iptables chains, random backend | The default on Linux when `mode` is empty |
+| `nftables` | nftables rules in a table named `kube-proxy`, random backend. Faster updates on large clusters; needs kernel 5.13 or later | Stable. Announced as the future default |
+| `ipvs` | The kernel's IPVS load balancer, with schedulers such as round robin | Deprecated since v1.35; do not use it for new clusters |
+| `kernelspace` | Windows nodes only | The only mode on Windows |
+
+<Callout kind="warning" title="Do not rely on the default">
+An empty `mode` means "whatever this version recommends", and the documentation says that will change from
+`iptables` to `nftables` in a future release. On a cluster you run for real, write the mode down explicitly so that
+an upgrade cannot switch it underneath you. If the chosen mode cannot be used on a node (missing kernel support, for
+example), kube-proxy exits with an error instead of falling back.
+</Callout>
+
+<Callout kind="note" title="Clusters without a kube-proxy DaemonSet">
+kube-proxy is the standard implementation, not the only one. Some network plugins, Cilium among them, replace it with
+eBPF programs, and such clusters are installed without the DaemonSet. Distributions can also package it differently:
+k3s, which runs the labs in this app, builds kube-proxy into its agent process, so you will not find a `kube-proxy`
+DaemonSet there. An empty `kubectl -n kube-system get ds kube-proxy` is therefore not always a fault. On a kubeadm
+cluster, as in the exam, expect the DaemonSet.
+</Callout>
+
+## Using it
+
+<Example title="Check kube-proxy on a kubeadm cluster">
+Work from the outside in: the DaemonSet, then the Pod on the node you care about, then its logs.
+
+```bash
+kubectl -n kube-system get ds kube-proxy                       # DESIRED = READY = number of nodes
+kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide  # which Pod is on which node
+kubectl -n kube-system logs kube-proxy-9d7mz                   # the Pod on the node with the problem
+kubectl -n kube-system describe pod kube-proxy-9d7mz           # events, if it does not start
+```
+
+A healthy log names the mode early on, with a line such as `"Using iptables Proxier"`, and has no repeating errors
+about reaching the API server.
+</Example>
+
+<Example title="Find out which mode a cluster uses">
+Three ways, from the least to the most typing:
+
+```bash
+# 1. The configuration (an empty mode means the default, iptables)
+kubectl -n kube-system get configmap kube-proxy -o yaml | grep -n "mode:"
+
+# 2. The logs
+kubectl -n kube-system logs ds/kube-proxy | grep -i proxier
+
+# 3. Ask the running process, from a shell on the node
+curl http://localhost:10249/proxyMode
+```
+
+Port 10249 is kube-proxy's metrics port, bound to localhost by default. Port 10256 is its health check:
+`curl http://localhost:10256/healthz`.
+</Example>
+
+<Example title="See the rules for one Service">
+The Service `web` in namespace `shop` has ClusterIP `10.96.0.20` and three Pods. On any node (use `ssh`), in
+iptables mode:
+
+```bash
+sudo iptables-save | grep shop/web
+```
+
+```text
+-A KUBE-SERVICES -d 10.96.0.20/32 -p tcp -m comment --comment "shop/web cluster IP" -m tcp --dport 80 -j KUBE-SVC-OI3ES3UZPSOHBDZQ
+-A KUBE-SEP-EQTZ7ECNTNFMRWQG -p tcp -m comment --comment "shop/web" -m tcp -j DNAT --to-destination 10.244.1.7:8080
+-A KUBE-SEP-LB2HZ4QWZ6YTDKN3 -p tcp -m comment --comment "shop/web" -m tcp -j DNAT --to-destination 10.244.1.9:8080
+-A KUBE-SEP-V5MOCTPKXBXQLH2A -p tcp -m comment --comment "shop/web" -m tcp -j DNAT --to-destination 10.244.2.4:8080
+```
+
+Every rule carries the Service's `namespace/name` as a comment, which is why the `grep` works. One `KUBE-SERVICES`
+rule and one `DNAT` rule per ready Pod means kube-proxy has done its job on this node. In the other modes, look with
+`sudo nft list table ip kube-proxy` (nftables) or `sudo ipvsadm -Ln` (IPVS).
+</Example>
+
+<Example title="Repair a kube-proxy that will not start">
+Pods on `node01` cannot reach any Service, not even DNS. The other nodes are fine.
+
+```bash
+kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide
+```
+
+```text
+NAME               READY   STATUS             RESTARTS      NODE
+kube-proxy-4xk2p   0/1     CrashLoopBackOff   5 (40s ago)   controlplane
+kube-proxy-9d7mz   0/1     CrashLoopBackOff   5 (35s ago)   node01
+```
+
+All the Pods are failing, so the cause is shared: the DaemonSet or the ConfigMap, not one node. (The other nodes
+still work only because their old rules are still in the kernel.) The logs say why:
+
+```bash
+kubectl -n kube-system logs kube-proxy-9d7mz
+# ... failed to read config file "/var/lib/kube-proxy/configuration.conf": no such file or directory
+```
+
+The ConfigMap's key is `config.conf`, so the path in the DaemonSet's command is wrong. Fix it there:
+
+```bash
+kubectl -n kube-system edit ds kube-proxy
+#   - --config=/var/lib/kube-proxy/config.conf
+kubectl -n kube-system rollout status ds kube-proxy
+```
+
+Editing the DaemonSet's Pod template starts a rollout by itself. Finish by testing a Service from a Pod on `node01`.
+</Example>
+
+<Example title="Change the proxy mode">
+Set the mode in the ConfigMap, then restart the Pods so that they read it:
+
+```bash
+kubectl -n kube-system edit configmap kube-proxy        # in config.conf, set   mode: "nftables"
+kubectl -n kube-system rollout restart ds kube-proxy
+kubectl -n kube-system rollout status ds kube-proxy
+kubectl -n kube-system logs ds/kube-proxy | grep -i proxier
+```
+
+A ConfigMap change alone does nothing: kube-proxy reads its configuration once, when it starts.
+</Example>
+
+## Tricks
+
+<Trick title="It is a DaemonSet, not a static Pod">
+The API server, scheduler, controller manager and etcd are static Pods with manifests in `/etc/kubernetes/manifests`
+on the control plane node. kube-proxy is **not** there. Do not waste time looking for its manifest on disk: use
+`kubectl -n kube-system get ds kube-proxy -o yaml`, and its settings are in the ConfigMap.
+</Trick>
+
+<Trick title="Check the endpoints before you blame kube-proxy">
+Most broken Services are not a kube-proxy problem. Run
+`kubectl get endpointslices -l kubernetes.io/service-name=<name>` first. No addresses means the selector or the
+readiness probe is wrong, and kube-proxy is correctly forwarding to nothing. Suspect kube-proxy when the endpoints
+are right but the Service fails **from one node only**, or when **every** Service fails, DNS included.
+</Trick>
+
+<Trick title="Refused or hanging tells you where to look">
+`connection refused` straight away: rules exist, and the Service has no ready endpoints or the Pod is not listening
+on `targetPort`. A hang that ends in a timeout: no rule matched (kube-proxy on that node) or the packet was lost on
+the way to the Pod (network plugin, NetworkPolicy).
+</Trick>
+
+<Trick title="Test node ports on the node's IP">
+`curl http://<node-ip>:30080` works in every mode. `curl http://localhost:30080` on the node works only in iptables
+mode, and not in nftables mode, so it can fail on a healthy cluster. Find the address with `kubectl get nodes -o wide`.
+</Trick>
+
+<Trick title="Put the addon back with kubeadm">
+If the DaemonSet or its ConfigMap has been deleted, there is no need to rebuild them by hand. On the control plane
+node, `sudo kubeadm init phase addon kube-proxy --kubeconfig /etc/kubernetes/admin.conf` installs them again
+(add `--pod-network-cidr` if the cluster was created with one).
+</Trick>
+
+## Common mistakes
+
+- **Editing the ConfigMap and stopping there.** The running Pods keep the old configuration until
+  `kubectl -n kube-system rollout restart ds kube-proxy`.
+- **Thinking traffic flows through kube-proxy.** It does not, so kube-proxy's CPU and memory are not a bottleneck for
+  your application, and restarting it does not drop connections.
+- **Expecting it to connect Pods.** Pod-to-Pod connectivity by Pod IP is the network plugin's job. If Pods cannot
+  reach each other directly by IP, kube-proxy is not the cause.
+- **Confusing it with `kubectl proxy`.** That command opens a local tunnel to the API server from your workstation.
+- **Looking for a listening node port.** `ss -tlnp` shows nothing on 30080 even when the NodePort works. Look at the
+  rules, or just `curl` the port.
+- **Flushing iptables to "reset" a node.** `iptables -F` removes kube-proxy's rules along with everything else.
+  kube-proxy writes them again on its next sync, but until then Services on that node are down.
+
+## Recap
+
+- One kube-proxy runs on **every node** and watches Services and EndpointSlices in the API server.
+- It **writes kernel rules**; the kernel on the client's node redirects each new connection to a ready Pod.
+- Modes: `iptables` (default), `nftables` (the successor), `ipvs` (deprecated). ClusterIP and NodePort both rely on
+  these rules.
+- On kubeadm: DaemonSet `kube-proxy` plus ConfigMap `kube-proxy` in `kube-system`. Restart the DaemonSet after a
+  configuration change.
+- Debug in order: endpoints, kube-proxy Pod on the node, its logs, then the rules for the Service.
