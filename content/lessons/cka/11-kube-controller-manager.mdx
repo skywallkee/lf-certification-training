@@ -1,0 +1,661 @@
+---
+id: cka-kube-controller-manager
+title: "Kube Controller Manager: the loops that keep the cluster as you declared it"
+summary: "What the kube-controller-manager is, how its control loops turn a Deployment into Pods and react to a dead node, how leader election works, and how to find and fix it when nothing gets created any more."
+minutes: 22
+competencies:
+  - cka/troubleshooting/troubleshoot-cluster-components
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+  - cka/cluster-architecture-installation-configuration/implement-configure-highly-available-control
+docs:
+  - title: "Kubernetes docs: Controllers"
+    url: https://kubernetes.io/docs/concepts/architecture/controller/
+  - title: "Kubernetes docs: kube-controller-manager reference"
+    url: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/
+  - title: "Kubernetes docs: Nodes (heartbeats and the node controller)"
+    url: https://kubernetes.io/docs/concepts/architecture/nodes/
+  - title: "Kubernetes docs: Taints and Tolerations (taint based evictions)"
+    url: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  - title: "Kubernetes docs: Leases"
+    url: https://kubernetes.io/docs/concepts/architecture/leases/
+  - title: "Kubernetes docs: kubeadm implementation details"
+    url: https://kubernetes.io/docs/reference/setup-tools/kubeadm/implementation-details/
+diagrams:
+  manager-overview:
+    title: "One process, many control loops"
+    caption: "Every controller is a loop inside the same process. Each one watches the API server and writes back to it. None of them talks to etcd, to a kubelet or to another controller directly."
+    nodes:
+      - { id: user, label: "You", sub: "kubectl apply", icon: user, col: 0, row: 0 }
+      - { id: api, label: "API server", sub: "the only way in", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: etcd, label: "etcd", sub: "stored objects", icon: database, col: 2, row: 0, tone: muted }
+      - { id: deploy, label: "Deployment", sub: "controller", icon: deployment, col: 0, row: 1 }
+      - { id: rs, label: "ReplicaSet", sub: "controller", icon: replicaset, col: 1, row: 1 }
+      - { id: nodelife, label: "Node lifecycle", sub: "controller", icon: node, col: 2, row: 1 }
+      - { id: slices, label: "EndpointSlice", sub: "controller", icon: service, col: 0, row: 2 }
+      - { id: namespace, label: "Namespace", sub: "controller", icon: cluster, col: 1, row: 2 }
+      - { id: more, label: "About 40 more", sub: "Job, CronJob, PV...", icon: process, col: 2, row: 2, tone: muted }
+    edges:
+      - { from: user, to: api, label: "desired state" }
+      - { from: api, to: etcd, both: true }
+      - { from: api, to: rs, label: "watch and write", both: true }
+    groups:
+      - { id: manager, label: "kube-controller-manager", nodes: [deploy, rs, nodelife, slices, namespace, more] }
+  reconcile-chain:
+    title: "From one Deployment to running Pods"
+    caption: "Controllers never call each other. Each one reacts to an object that the one before it wrote to the API server, which is why you can follow the whole chain with kubectl get."
+    nodes:
+      - { id: user, label: "You", sub: "create deployment", icon: user, col: 0, row: 0 }
+      - { id: deployment, label: "Deployment web", sub: "replicas: 3", icon: deployment, col: 1, row: 0 }
+      - { id: replicaset, label: "ReplicaSet", sub: "web-5d8f, wants 3", icon: replicaset, col: 2, row: 0 }
+      - { id: pods, label: "3 Pods", sub: "Pending, no node yet", icon: pod, col: 3, row: 0 }
+      - { id: kubelet, label: "kubelet", sub: "starts containers", icon: node, col: 4, row: 0, tone: success }
+      - { id: deploy-ctrl, label: "Deployment", sub: "controller", icon: process, col: 1, row: 1, tone: primary }
+      - { id: rs-ctrl, label: "ReplicaSet", sub: "controller", icon: process, col: 2, row: 1, tone: primary }
+      - { id: scheduler, label: "kube-scheduler", sub: "picks a node", icon: process, col: 3, row: 1, tone: muted }
+    edges:
+      - { from: user, to: deployment, label: "creates" }
+      - { from: deployment, to: deploy-ctrl, label: "seen by", dashed: true }
+      - { from: deploy-ctrl, to: replicaset, label: "creates" }
+      - { from: replicaset, to: rs-ctrl, label: "seen by", dashed: true }
+      - { from: rs-ctrl, to: pods, label: "creates" }
+      - { from: scheduler, to: pods, label: "binds" }
+      - { from: pods, to: kubelet, label: "run by" }
+    groups:
+      - { id: manager, label: "kube-controller-manager", nodes: [deploy-ctrl, rs-ctrl] }
+  node-failure:
+    title: "What happens when a node stops answering"
+    caption: "With the defaults, Pods on a dead node are replaced after roughly six minutes: 50 seconds to decide the node is gone, then the 300 seconds that every Pod tolerates the unreachable taint."
+    nodes:
+      - { id: silent, label: "Node goes silent", sub: "no Lease renewals", icon: node, col: 0, row: 0, tone: warning }
+      - { id: grace, label: "Grace period", sub: "50 s, checked every 5", icon: process, col: 1, row: 0 }
+      - { id: unknown, label: "Ready: Unknown", sub: "taint: unreachable", icon: policy, col: 2, row: 0, tone: warning }
+      - { id: toleration, label: "Pods tolerate it", sub: "for 300 s by default", icon: pod, col: 3, row: 0 }
+      - { id: evict, label: "Pods deleted", sub: "taint eviction ctrl", icon: process, col: 3, row: 1 }
+      - { id: replace, label: "New Pods created", sub: "ReplicaSet controller", icon: replicaset, col: 2, row: 1, tone: primary }
+      - { id: healthy, label: "Running again", sub: "on a healthy node", icon: pod, col: 1, row: 1, tone: success }
+    edges:
+      - { from: silent, to: grace }
+      - { from: grace, to: unknown, label: "node lifecycle" }
+      - { from: unknown, to: toleration }
+      - { from: toleration, to: evict, label: "time is up" }
+      - { from: evict, to: replace }
+      - { from: replace, to: healthy, label: "scheduler" }
+  leader-election:
+    title: "Three copies, one leader"
+    caption: "Every control plane node runs a controller manager, but only the holder of the Lease runs the loops. If it stops renewing, a standby takes the Lease and starts working."
+    nodes:
+      - { id: api, label: "API server", sub: "objects to reconcile", icon: control-plane, col: 0, row: 0, tone: muted }
+      - { id: lease, label: "Lease", sub: "kube-system", icon: file, col: 1, row: 0, tone: primary }
+      - { id: cp-1, label: "cp-1: leader", sub: "runs every loop", icon: process, col: 0, row: 1, tone: success }
+      - { id: cp-2, label: "cp-2: standby", sub: "waits, does nothing", icon: process, col: 1, row: 1 }
+      - { id: cp-3, label: "cp-3: standby", sub: "waits, does nothing", icon: process, col: 2, row: 1 }
+    edges:
+      - { from: cp-1, to: lease, label: "holds, renews" }
+      - { from: cp-1, to: api, label: "reconciles" }
+      - { from: cp-2, to: lease, label: "watches", dashed: true }
+      - { from: cp-3, to: lease, label: "watches", dashed: true }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Kube Controller Manager"
+      narration: >-
+        You tell Kubernetes what you want, and somehow it happens and keeps happening. The component that does most
+        of that work is the kube controller manager. In this lesson you will see what it is, how its control loops
+        work, what happens when a node dies, and how to fix it when it breaks.
+      visual:
+        kind: title
+        heading: "Kube Controller Manager"
+        subheading: "The loops that keep the cluster as you declared it"
+    - id: problem
+      title: "Why it exists"
+      narration: >-
+        The API server only stores what you ask for. It does not create a single Pod. Something has to notice that
+        you want three replicas and only two exist. Something has to notice that a node has died. And it has to keep
+        checking, forever, because clusters drift all the time.
+      visual:
+        kind: points
+        heading: "Storing a wish is not the same as granting it"
+        items:
+          - "The API server stores objects, nothing more"
+          - "It never creates a Pod by itself"
+          - "Someone must compare wanted with actual"
+          - "Someone must notice failures"
+          - "And keep doing it, forever"
+    - id: what-it-is
+      title: "One process, many loops"
+      narration: >-
+        You send your desired state to the API server, which saves it in etcd. The controller manager is one process
+        that runs dozens of small programs called controllers. There is one for Deployments, one for ReplicaSets,
+        one for node health, and many more. Each controller watches the API server and writes back to it, and that
+        is the only thing it ever talks to.
+      visual:
+        kind: diagram
+        diagram: manager-overview
+        steps:
+          - [user, api, etcd, user-api, api-etcd]
+          - [manager]
+          - [deploy, rs, nodelife, slices, namespace, more]
+          - [api-rs]
+    - id: control-loop
+      title: "The control loop"
+      narration: >-
+        Every controller runs the same loop. First it observes the objects it cares about. Then it compares what
+        the spec asks for with what really exists. If they differ, it acts, by creating, updating or deleting
+        something through the API server. Then it starts again, so a missed event or a failed attempt is simply
+        corrected on the next pass.
+      visual:
+        kind: points
+        heading: "Observe, compare, act, repeat"
+        items:
+          - "The same loop in every controller"
+          - "Observe: watch the objects it owns"
+          - "Compare: spec against reality"
+          - "Act: create, update or delete through the API"
+          - "Repeat: mistakes heal on the next pass"
+    - id: chain
+      title: "From a Deployment to Pods"
+      narration: >-
+        Here is what happens when you create a Deployment with three replicas. The Deployment controller sees it and
+        creates a ReplicaSet. The ReplicaSet controller sees that ReplicaSet, counts zero Pods, and creates three.
+        Those Pods have no node yet, so the scheduler, which is a separate component, picks one for each. Finally
+        the kubelet on that node starts the containers. Notice that no controller ever called another one: each just
+        reacted to an object.
+      visual:
+        kind: diagram
+        diagram: reconcile-chain
+        steps:
+          - [user, deployment, user-deployment]
+          - [manager, deploy-ctrl, deployment-deploy-ctrl, replicaset, deploy-ctrl-replicaset]
+          - [rs-ctrl, replicaset-rs-ctrl, pods, rs-ctrl-pods]
+          - [scheduler, scheduler-pods]
+          - [kubelet, pods-kubelet]
+    - id: node-failure
+      title: "When a node dies"
+      narration: >-
+        Now a worker node loses power, and its kubelet stops renewing its Lease. The node lifecycle controller
+        checks every five seconds, and after fifty seconds of silence it gives up. It marks the node's Ready
+        condition as Unknown and adds the unreachable taint. Every Pod tolerates that taint for three hundred
+        seconds by default. When the time is up, the Pods are deleted. The ReplicaSet controller sees too few Pods
+        and creates new ones. The scheduler places them on a healthy node, about six minutes after the failure.
+      visual:
+        kind: diagram
+        diagram: node-failure
+        steps:
+          - [silent]
+          - [grace, silent-grace]
+          - [unknown, grace-unknown]
+          - [toleration, unknown-toleration]
+          - [evict, toleration-evict]
+          - [replace, evict-replace]
+          - [healthy, replace-healthy]
+    - id: manifest
+      title: "Where it runs and how it is configured"
+      narration: >-
+        On a kubeadm cluster the controller manager is a static Pod, described by a file in the manifests directory
+        of the control plane node. The container starts one binary with a list of flags. The kubeconfig flag tells
+        it how to reach the API server, and with which identity. The controllers flag switches individual loops on
+        or off. The signing files let it issue certificates for new kubelets, and the service account key signs
+        tokens. Save the file, and the kubelet restarts the Pod for you.
+      visual:
+        kind: code
+        heading: "/etc/kubernetes/manifests/kube-controller-manager.yaml"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: kube-controller-manager
+            namespace: kube-system
+          spec:
+            hostNetwork: true
+            containers:
+              - name: kube-controller-manager
+                image: registry.k8s.io/kube-controller-manager:v1.37.0
+                command:
+                  - kube-controller-manager
+                  - --kubeconfig=/etc/kubernetes/controller-manager.conf
+                  - --leader-elect=true
+                  - --controllers=*,bootstrapsigner,tokencleaner
+                  - --cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt
+                  - --cluster-signing-key-file=/etc/kubernetes/pki/ca.key
+                  - --service-account-private-key-file=/etc/kubernetes/pki/sa.key
+                  - --use-service-account-credentials=true
+        steps: ["1-5", "11-12", "13", "15", "16-18"]
+    - id: leader-election
+      title: "Three copies, one leader"
+      narration: >-
+        A highly available control plane runs one controller manager on every control plane node. If all of them
+        acted at once, they would fight over the same objects. So they compete for a Lease object in the kube system
+        namespace, and only the holder runs the loops. The others stand by and watch the Lease. If the leader stops
+        renewing it, a standby takes over within seconds.
+      visual:
+        kind: diagram
+        diagram: leader-election
+        steps:
+          - [cp-1, cp-2, cp-3]
+          - [api]
+          - [lease, cp-1-lease, cp-1-api]
+          - [cp-2-lease, cp-3-lease]
+    - id: troubleshoot
+      title: "Fixing a broken controller manager"
+      narration: >-
+        The classic symptom is a Deployment that stays at zero of three ready, with no events at all. Look at the
+        control plane Pods in the kube system namespace, and you find the controller manager crashing. Its logs
+        usually name the problem, here a kubeconfig path that does not exist. Fix the path in the static Pod
+        manifest and wait for the kubelet to restart it. Then watch the Deployment fill up without doing anything
+        else.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get deployment web"
+            out: "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    0/3     0            0           2m"
+          - cmd: "kubectl -n kube-system get pods -l tier=control-plane"
+            out: "NAME                                   READY   STATUS             RESTARTS      AGE\netcd-controlplane                      1/1     Running            0             12d\nkube-apiserver-controlplane            1/1     Running            0             12d\nkube-controller-manager-controlplane   0/1     CrashLoopBackOff   4 (20s ago)   2m\nkube-scheduler-controlplane            1/1     Running            0             12d"
+          - cmd: "kubectl -n kube-system logs kube-controller-manager-controlplane"
+            out: "E1127 stat /etc/kubernetes/controller-manager-XXXX.conf: no such file or directory"
+          - cmd: "sudo vim /etc/kubernetes/manifests/kube-controller-manager.yaml"
+            out: "# set --kubeconfig=/etc/kubernetes/controller-manager.conf and save"
+          - cmd: "kubectl get deployment web"
+            out: "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    3/3     3            3           4m"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        When objects are accepted but nothing is created, suspect the controller manager before anything else. The
+        From column of an event names the controller that acted, so events show you which loop is working. Copy the
+        manifest to another directory before you edit it, because the kubelet runs every file it finds in the
+        manifests directory. And if the API server cannot show you the Pod, ask the container runtime with
+        c r i c t l instead.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "Accepted but nothing created? Check kube-controller-manager"
+          - "Events name the controller in the From column"
+          - "Back up manifests outside /etc/kubernetes/manifests"
+          - "No Pod in kubectl? crictl ps -a and crictl logs"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The controller manager is one process full of control loops. Each loop observes, compares and acts, only
+        through the API server. Controllers form chains by reacting to each other's objects, as with Deployment,
+        ReplicaSet and Pod. A dead node costs about six minutes with the default settings. On kubeadm it is a static
+        Pod, so you fix it by editing its manifest on the control plane node.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "One process, dozens of control loops"
+          - "Observe, compare, act: only through the API server"
+          - "Deployment → ReplicaSet → Pods is a chain of loops"
+          - "Dead node: 50 s grace + 300 s toleration"
+          - "Static Pod: fix the manifest, the kubelet restarts it"
+---
+
+## Why the controller manager exists
+
+Kubernetes is **declarative**: you describe the state you want, and the cluster is supposed to get there and stay
+there. But the API server, the component you talk to, only validates your objects and stores them in etcd. It does
+not start a container, replace a crashed Pod or notice that a node has lost power.
+
+That work is done by **controllers**. A controller is a small program that watches one kind of object and keeps
+nudging the cluster until reality matches what the object asks for. The **kube-controller-manager** is the control
+plane component that runs almost all of the built-in controllers, together, in one process.
+
+<KeyIdea>
+The API server stores what you want. The kube-controller-manager is what makes it true, and makes it true again
+every time something drifts. Without it the cluster accepts every command and does nothing about it.
+</KeyIdea>
+
+The idea is borrowed from a thermostat. You set a temperature (the desired state), the thermostat measures the room
+(the current state) and switches the heating on or off until the two agree. It never "finishes": it keeps measuring.
+Each controller is a thermostat for one kind of Kubernetes object.
+
+## What it is made of
+
+<Diagram id="manager-overview" />
+
+The kube-controller-manager is a single binary and a single process, but inside it run about fifty independent
+controllers. Each one owns one job. These are the ones worth knowing for the CKA:
+
+| Controller | Watches | What it does |
+|------------|---------|--------------|
+| Deployment | Deployments | Creates and scales ReplicaSets to roll out a new version or roll back |
+| ReplicaSet | ReplicaSets, Pods | Creates or deletes Pods until the count matches `replicas` |
+| StatefulSet, DaemonSet, Job, CronJob | Their own kind, Pods | The same idea for the other workload types |
+| Node lifecycle | Nodes, Leases | Marks silent nodes `NotReady` or `Unknown` and taints them |
+| Taint eviction | Nodes, Pods | Deletes Pods that do not tolerate a `NoExecute` taint |
+| EndpointSlice | Services, Pods | Keeps the list of ready Pod addresses behind every Service |
+| Namespace | Namespaces | Deletes everything inside a namespace that is being deleted |
+| ServiceAccount | Namespaces | Creates the `default` ServiceAccount in every new namespace |
+| Garbage collector | Every object | Deletes objects whose owner is gone (Pods of a deleted ReplicaSet) |
+| PersistentVolume binder | PVs, PVCs | Binds a claim to a matching volume |
+| CSR signing | CertificateSigningRequests | Signs approved requests with the cluster CA (new kubelets) |
+| Horizontal Pod Autoscaler | HPAs, metrics | Changes `replicas` to follow load |
+
+Three rules hold for every one of them, and they explain most of the component's behaviour:
+
+- **A controller only talks to the API server.** It never reads etcd, never calls a kubelet and never calls another
+  controller. It reads objects and writes objects.
+- **A controller owns one concern.** The ReplicaSet controller counts Pods; it has no idea what a rollout is. The
+  Deployment controller manages rollouts; it never creates a Pod.
+- **A controller never stops.** It does not run once per command. It reacts to every change, for as long as the
+  process lives.
+
+<Callout kind="note" title="What is not in it">
+The **kube-scheduler** (picks a node for each Pod) and the **kubelet** (starts the containers) are separate
+components. Controllers that need a cloud provider's API, such as the one that creates load balancers for
+`LoadBalancer` Services, run in a separate **cloud-controller-manager**. Operators you install later bring their own
+controllers, which run as ordinary Pods and follow exactly the same pattern.
+</Callout>
+
+## How it works
+
+### The control loop
+
+<Flow label="Every controller, all the time" steps={["Observe the objects", "Compare spec with reality", "Act through the API server", "Repeat"]} />
+
+Take the ReplicaSet controller. It observes ReplicaSets and the Pods that match their selectors. For each ReplicaSet
+it compares `spec.replicas` with the number of matching Pods. Too few: it creates Pods from the template. Too many:
+it deletes some. Equal: it does nothing. Then it writes what it saw into `status`, which is the `READY` column you
+read with `kubectl get`.
+
+The important property is that a controller reacts to the **state**, not to the event that caused it. It does not
+matter whether a Pod is missing because you deleted it, because its node burned down or because the controller
+manager itself was restarting at that moment. The loop sees "wanted 3, found 2" and creates one. This is why
+Kubernetes heals itself, and why a controller that was down for an hour simply catches up when it comes back.
+
+### Controllers form chains
+
+<Diagram id="reconcile-chain" />
+
+No controller does a whole job on its own. `kubectl create deployment web --image=nginx --replicas=3` sets off a
+chain in which each link only reacts to an object written by the link before:
+
+1. The API server stores the **Deployment**. Nothing else has happened yet.
+2. The **Deployment controller** sees a Deployment without a ReplicaSet and creates one, named after the Deployment
+   plus a hash of the Pod template.
+3. The **ReplicaSet controller** sees a ReplicaSet that wants three Pods and has none, and creates three Pods. They
+   are `Pending` and have no node.
+4. The **kube-scheduler** sees Pods without a node and binds each to one.
+5. The **kubelet** on that node sees a Pod bound to it and starts the containers.
+
+Because every step is an object in the API, you can watch the chain and find the broken link with `kubectl get` and
+`kubectl describe`. A Deployment with no ReplicaSet points at the controller manager. Pods that stay `Pending` with
+no node point at the scheduler. Pods with a node that never start point at the kubelet.
+
+<DeepDive title="How a controller watches without hammering the API server">
+- A controller does not poll. It opens a **watch** on the API server, receives every change as it happens, and keeps
+  a local, read-only copy of the objects in memory (an *informer* cache). Comparing is then a cheap local lookup.
+- All controllers in the process **share** those caches. Fifty controllers that all need Pods cause one watch on
+  Pods, not fifty. This is the main reason they are compiled into one binary instead of fifty.
+- A change does not run the logic directly. It puts the object's name on a **work queue**. Workers take names from
+  the queue and reconcile that one object. If a reconcile fails, the name goes back on the queue with an increasing
+  delay, which is why a controller retries forever without flooding the API server.
+- Two controllers never lock each other out. Every write carries the `resourceVersion` the controller last saw. If
+  the object changed in between, the API server answers `409 Conflict` and the controller reads it again and retries.
+- Ownership is recorded on the objects: each Pod has an `ownerReferences` entry that names its ReplicaSet. The
+  garbage collector uses those links, so deleting a Deployment removes its ReplicaSets and their Pods.
+- With `--use-service-account-credentials=true` (kubeadm sets it) each controller uses its **own** ServiceAccount in
+  `kube-system`, such as `replicaset-controller`, with only the permissions it needs. That is the name you see in
+  events and in audit logs.
+</DeepDive>
+
+### When a node dies
+
+<Diagram id="node-failure" />
+
+The node lifecycle controller is the reason workloads survive a dead machine, and its timing is a favourite source
+of confusion.
+
+1. Every kubelet renews a **Lease** object in the `kube-node-lease` namespace every 10 seconds. That is its heartbeat.
+2. The node lifecycle controller looks at every node every 5 seconds (`--node-monitor-period`). When a node has been
+   silent for 50 seconds (`--node-monitor-grace-period`), it sets the node's `Ready` condition to `Unknown` and adds
+   the taint `node.kubernetes.io/unreachable` with the effects `NoSchedule` and `NoExecute`. `kubectl get nodes` now
+   shows `NotReady`.
+3. Every Pod carries a toleration for that taint with `tolerationSeconds: 300`. The API server adds it when the Pod
+   is created, unless the Pod sets its own.
+4. After those 300 seconds the taint eviction controller deletes the Pods. Their ReplicaSet (or StatefulSet, or Job)
+   controller sees Pods missing and creates replacements, and the scheduler puts them on healthy nodes.
+
+So with defaults the gap is about **six minutes**: 50 seconds to decide, then 5 minutes of patience. It is deliberately
+slow, because a node that is only cut off for a minute should not have its workloads moved.
+
+<Callout kind="warning" title="Older courses mention --pod-eviction-timeout">
+Many guides still say the five minutes come from the controller manager flag `--pod-eviction-timeout`. That flag has
+been removed. The delay now lives on each Pod, as the `tolerationSeconds` of its `unreachable` and `not-ready`
+tolerations, so you can shorten it for one workload without touching the control plane.
+</Callout>
+
+Two details that follow from the same design:
+
+- **DaemonSet Pods are never evicted this way.** They tolerate both taints without a time limit, because a
+  replacement could only run on the same dead node anyway.
+- **A mass outage stops evictions.** If more than 55% of the nodes in a zone look unhealthy at once, the controller
+  assumes the control plane is the one that is cut off, and slows down or stops evicting rather than deleting
+  everything.
+
+### High availability: leader election
+
+<Diagram id="leader-election" />
+
+A highly available control plane runs one kube-controller-manager per control plane node. Two ReplicaSet controllers
+acting on the same ReplicaSet would both create the missing Pod, so only one instance may be active.
+
+They settle it with a **Lease** named `kube-controller-manager` in `kube-system`. With `--leader-elect=true` (the
+default) every instance tries to take the Lease. The winner writes its name into `holderIdentity`, starts its
+controllers and keeps renewing the Lease every couple of seconds. The others do nothing but watch. If the leader
+has not renewed for 15 seconds (`--leader-elect-lease-duration`), a standby takes the Lease and starts its own
+controllers from the current state of the cluster. Nothing is lost, because all state lives in the API server and
+none in the process.
+
+The kube-scheduler uses the same mechanism with its own Lease. The API server does not need it: every API server
+instance is active at the same time.
+
+## Where it runs and how it is configured
+
+On a cluster built with **kubeadm**, which is what the exam uses, the controller manager is a **static Pod**. The
+kubelet on the control plane node starts it straight from a file, without asking the API server:
+
+| What | Where |
+|------|-------|
+| Manifest | `/etc/kubernetes/manifests/kube-controller-manager.yaml` |
+| Pod | `kube-controller-manager-<node name>` in `kube-system` |
+| Identity and API server address | `/etc/kubernetes/controller-manager.conf` (user `system:kube-controller-manager`) |
+| Certificates and keys it uses | `/etc/kubernetes/pki/` (`ca.crt`, `ca.key`, `sa.key`) |
+| Health endpoint | `https://127.0.0.1:10257/healthz` |
+
+On a cluster installed "the hard way" it is a systemd service instead: look for
+`/etc/systemd/system/kube-controller-manager.service` and use `systemctl status` and `journalctl -u`.
+
+Configuration is nothing but command-line flags in that manifest. The ones you should recognise:
+
+| Flag | Meaning | Default or kubeadm value |
+|------|---------|--------------------------|
+| `--kubeconfig` | How to reach the API server and who to be | `/etc/kubernetes/controller-manager.conf` |
+| `--controllers` | Which controllers run: `*` is all default ones, `name` adds one, `-name` switches one off | `*,bootstrapsigner,tokencleaner` |
+| `--leader-elect` | Take part in leader election | `true` |
+| `--node-monitor-period` | How often node health is checked | `5s` |
+| `--node-monitor-grace-period` | Silence allowed before a node is marked unhealthy | `50s` |
+| `--cluster-signing-cert-file`, `--cluster-signing-key-file` | The CA that signs certificate requests | `ca.crt`, `ca.key` |
+| `--service-account-private-key-file` | Key that signs ServiceAccount tokens | `sa.key` |
+| `--root-ca-file` | CA published to every namespace as `kube-root-ca.crt` | `ca.crt` |
+| `--cluster-cidr`, `--allocate-node-cidrs` | Pod network range, and whether each node gets a slice of it | set from `--pod-network-cidr` |
+| `--bind-address` | Address the health and metrics port listens on | `127.0.0.1` |
+
+To change a flag, edit the manifest and save. The kubelet notices the changed file, stops the old Pod and starts a
+new one. There is nothing to `kubectl apply` and nothing to restart by hand.
+
+## What breaks when it is down
+
+Knowing the symptoms is what lets you name the faulty component in seconds. With the controller manager stopped:
+
+- Pods that are already running **keep running**, and Services keep working. The data path does not depend on it.
+- `kubectl create deployment` and `kubectl scale` **succeed**, but no ReplicaSet and no Pod appears. The Deployment
+  stays at `0/3` and `kubectl describe` shows **no events at all**.
+- A Pod you delete is **not replaced**.
+- A node that dies stays `Ready` in `kubectl get nodes`, and nothing is moved off it.
+- New Pods do not get into Service endpoints, and a rolling update never progresses.
+- A new namespace gets no `default` ServiceAccount, so creating a Pod in it fails with
+  `serviceaccount "default" not found`. A deleted namespace hangs in `Terminating`.
+- Jobs create no Pods, CronJobs never fire, and PersistentVolumeClaims stay `Pending`.
+
+Compare this with a broken **scheduler**: there the Pods *are* created, and stay `Pending` with no node.
+
+## Using it
+
+<Example title="Find the controller manager and read its settings">
+You are on the control plane node of a kubeadm cluster and want to know how the controller manager is configured.
+
+```bash
+kubectl -n kube-system get pods -l component=kube-controller-manager -o wide
+sudo grep -- '--' /etc/kubernetes/manifests/kube-controller-manager.yaml    # every flag, one per line
+kubectl -n kube-system get lease kube-controller-manager                     # who is the leader
+```
+
+```text
+NAME                      HOLDER                                              AGE
+kube-controller-manager   controlplane_3f1c9b9e-6a2f-4d0c-9c57-0d4b8c1c2f11   12d
+```
+
+The part of `HOLDER` before the underscore is the node whose instance is active. A flag that is not in the manifest
+has its default value; look defaults up on the kube-controller-manager reference page, not from memory.
+</Example>
+
+<Example title="Watch the controllers work">
+Events record which controller did what, so you can see the chain from the previous section with your own eyes.
+
+```bash
+kubectl create deployment web --image=nginx:1.29 --replicas=3
+kubectl get events --sort-by=.lastTimestamp | grep -E 'deployment-controller|replicaset-controller'
+```
+
+```text
+2s   Normal   ScalingReplicaSet   deployment/web        Scaled up replica set web-5d8f7c9b4 from 0 to 3
+2s   Normal   SuccessfulCreate    replicaset/web-5d8f7c9b4   Created pod: web-5d8f7c9b4-7xk2p
+```
+
+Now delete one Pod and watch the ReplicaSet controller replace it within a second:
+
+```bash
+kubectl delete pod web-5d8f7c9b4-7xk2p --wait=false
+kubectl get pods -l app=web --watch
+```
+</Example>
+
+<Example title="Repair a controller manager that will not start">
+A Deployment was scaled to 3 a few minutes ago and still shows `0/3`. `kubectl describe deployment web` shows no
+events. Work from the symptom to the file:
+
+```bash
+kubectl -n kube-system get pods                    # kube-controller-manager-controlplane: CrashLoopBackOff
+kubectl -n kube-system logs kube-controller-manager-controlplane --tail=20
+kubectl -n kube-system describe pod kube-controller-manager-controlplane   # image, command, mounts, events
+```
+
+The log or the events name the cause. The usual ones, all inside the manifest:
+
+| What you see | Cause |
+|--------------|-------|
+| `executable file not found in $PATH` | A typo in the binary name under `command` |
+| `unknown flag: --...` | A misspelled or removed flag |
+| `stat /etc/kubernetes/...: no such file or directory` | A wrong path in a flag, or a `hostPath` volume that points somewhere else |
+| `ErrImagePull` or `ImagePullBackOff` | A wrong image name or tag |
+| The Pod is missing from `kubectl get pods` entirely | The YAML is invalid, so the kubelet cannot create it at all |
+
+Fix the file and let the kubelet do the rest:
+
+```bash
+sudo cp /etc/kubernetes/manifests/kube-controller-manager.yaml /root/kcm.yaml.bak   # outside the manifests directory
+sudo vim /etc/kubernetes/manifests/kube-controller-manager.yaml
+watch kubectl -n kube-system get pods              # Running 1/1 after about half a minute
+kubectl get deployment web                         # 3/3, with nothing else to do
+```
+
+If the Pod never shows up in `kubectl`, ask the node directly:
+
+```bash
+sudo crictl ps -a | grep kube-controller-manager   # the container, even when it has exited
+sudo crictl logs <container id>
+sudo journalctl -u kubelet --since "5 min ago" | grep -i controller-manager   # YAML and mount errors
+```
+</Example>
+
+<Example title="Make one workload fail over faster">
+A stateless API should move off a dead node after 30 seconds instead of 5 minutes. Do not touch the controller
+manager: override the tolerations in the Pod template.
+
+```yaml
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+```
+
+The node still needs 50 seconds to be declared unreachable, so the Pods are replaced after about 80 seconds.
+</Example>
+
+## Tricks
+
+<Trick title="Accepted but nothing happens? It is the controller manager">
+If `kubectl` accepts an object and the cluster does nothing with it (no ReplicaSet, no Pods, no events), go straight
+to `kubectl -n kube-system get pods`. If instead Pods exist but stay `Pending` without a node, look at the scheduler.
+</Trick>
+
+<Trick title="Read the From column">
+`kubectl describe` prints which component wrote each event: `deployment-controller`, `replicaset-controller`,
+`job-controller`, `default-scheduler`, `kubelet`. The last component that wrote an event is the last link in the chain
+that worked; the next one is your suspect.
+</Trick>
+
+<Trick title="Keep backups out of the manifests directory">
+The kubelet runs **every** file in `/etc/kubernetes/manifests`, whatever its extension. A backup left there as
+`kube-controller-manager.yaml.bak` is a second static Pod definition and causes confusing restarts. Copy to `/root`
+or `/tmp` instead. Moving the manifest out of the directory is also the clean way to stop the component for a moment.
+</Trick>
+
+<Trick title="Ask the process whether it is healthy">
+On the control plane node, `curl -k https://127.0.0.1:10257/healthz` answers `ok` when the process is up, without
+any credentials. The Pod's liveness probe asks the same port.
+</Trick>
+
+<Trick title="Find flags without leaving the terminal">
+`kubectl -n kube-system get pod kube-controller-manager-controlplane -o yaml | grep -- '--'` shows the flags the
+running instance was started with, even when you are not on the control plane node.
+</Trick>
+
+## Common mistakes
+
+- **Editing the Pod instead of the manifest.** `kubectl edit pod kube-controller-manager-...` changes a read-only
+  mirror of the static Pod and has no effect. The file on the control plane node is the only source.
+- **Looking on the wrong node.** The manifest is on the control plane node. In the exam, `ssh` to it first, and use
+  `sudo`.
+- **Expecting instant failover.** A dead node is not noticed for 50 seconds and its Pods are not replaced for about
+  six minutes. Pods that stay `Running` on a `NotReady` node during that time are normal, not a bug.
+- **Blaming the controller manager for Pending Pods.** If the Pods exist, the controllers did their job. `Pending`
+  is a scheduling or resource question.
+- **Breaking the YAML while fixing a flag.** One wrong indent and the Pod disappears from `kubectl` entirely. Check
+  `journalctl -u kubelet` and compare with your backup.
+- **Forgetting the standbys.** With three control plane nodes, the logs of two instances only say that they are
+  waiting for the Lease. Read the logs of the one named in the Lease's `HOLDER`.
+
+## Recap
+
+- The kube-controller-manager is **one process running dozens of control loops**; each watches the API server and
+  writes back to it, and talks to nothing else.
+- Every loop does the same thing forever: **observe, compare spec with reality, act**. Reacting to state, not to
+  events, is what makes the cluster self-healing.
+- Controllers form **chains** through objects: Deployment → ReplicaSet → Pods, then the scheduler and the kubelet.
+- A dead node is marked after **50 seconds** and its Pods are replaced after the **300 second** toleration;
+  only the **Lease holder** among several instances is active.
+- On kubeadm it is a **static Pod**: diagnose with `kubectl -n kube-system logs` or `crictl logs`, fix
+  `/etc/kubernetes/manifests/kube-controller-manager.yaml`, and the kubelet restarts it.
