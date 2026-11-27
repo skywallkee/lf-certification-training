@@ -29,6 +29,17 @@ describe.skipIf(!url)("ingest into Postgres", () => {
     expect(counts.rows[0]).toEqual({ certs: 17, comps: curriculum.competencies.size, golden: 17 });
   });
 
+  it("applies a migration that drizzle skipped because a later one was already recorded", async () => {
+    // A database that recorded a later migration (from another branch) before lesson media existed.
+    await pool.query("ALTER TABLE lesson DROP COLUMN video, DROP COLUMN diagrams");
+    await pool.query("DELETE FROM drizzle.__drizzle_migrations WHERE created_at = (SELECT max(created_at) FROM drizzle.__drizzle_migrations)");
+    await pool.query("INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ('from-another-branch', 9999999999999)");
+    await migrateAndIngest(url!, curriculum);
+    const cols = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'lesson' AND column_name IN ('video', 'diagrams') ORDER BY 1");
+    expect(cols.rows.map((r) => r.column_name)).toEqual(["diagrams", "video"]);
+    await pool.query("DELETE FROM drizzle.__drizzle_migrations WHERE hash = 'from-another-branch'");
+  });
+
   it("is a no-op when nothing changed", async () => {
     const result = await migrateAndIngest(url!, curriculum);
     expect(result.inserted).toEqual([]);
