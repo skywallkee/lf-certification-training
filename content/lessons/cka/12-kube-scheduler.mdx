@@ -1,0 +1,596 @@
+---
+id: cka-kube-scheduler
+title: "kube-scheduler: who decides where a Pod runs"
+summary: "What the scheduler does and what it leaves to others, how it filters and scores nodes, where it runs in a kubeadm cluster, and how to read and fix a Pending Pod in the exam."
+minutes: 20
+competencies:
+  - cka/workloads-scheduling/configure-pod-admission-scheduling-limits
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Kubernetes Scheduler"
+    url: https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/
+  - title: "Kubernetes docs: Scheduling Framework"
+    url: https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/
+  - title: "Kubernetes docs: Scheduler Configuration"
+    url: https://kubernetes.io/docs/reference/scheduling/config/
+  - title: "Kubernetes docs: Assigning Pods to Nodes"
+    url: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  - title: "Kubernetes docs: Configure Multiple Schedulers"
+    url: https://kubernetes.io/docs/tasks/extend-kubernetes/configure-multiple-schedulers/
+mock: false
+diagrams:
+  scheduler-loop:
+    title: "From kubectl to a running container"
+    caption: "The scheduler only writes one field: the node name. It reads Pods from the API server and writes its decision back; the kubelet on the chosen node does the rest."
+    nodes:
+      - { id: user, label: "kubectl", sub: "create Pod web", icon: user, col: 0, row: 0 }
+      - { id: api, label: "API server", sub: "Pod web, node: none", icon: control-plane, col: 1, row: 0 }
+      - { id: etcd, label: "etcd", sub: "stores the Pod", icon: database, col: 2, row: 0, tone: muted }
+      - { id: sched, label: "kube-scheduler", sub: "filter, then score", icon: process, col: 0, row: 1, tone: primary }
+      - { id: bind, label: "Binding", sub: "web → node-2", icon: file, col: 1, row: 1, tone: warning }
+      - { id: kubelet, label: "kubelet", sub: "watches its Pods", icon: process, col: 2, row: 1 }
+      - { id: ctr, label: "Containers", sub: "started by runtime", icon: container, col: 2, row: 2, tone: success }
+    edges:
+      - { from: user, to: api, label: "create" }
+      - { from: api, to: etcd, label: "save" }
+      - { from: api, to: sched, label: "Pod, no node", dashed: true }
+      - { from: sched, to: bind, label: "decides" }
+      - { from: bind, to: api, label: "nodeName" }
+      - { from: api, to: kubelet, label: "Pod on node-2", dashed: true }
+      - { from: kubelet, to: ctr, label: "starts" }
+    groups:
+      - { id: node-2, label: "node-2", nodes: [kubelet, ctr] }
+  filter-score:
+    title: "Filter, then score"
+    caption: "Filtering is a hard yes or no per node. Scoring ranks only the nodes that passed, and the highest total wins."
+    nodes:
+      - { id: pod, label: "Pod web", sub: "requests 500m CPU", icon: pod, col: 0, row: 1 }
+      - { id: sched, label: "kube-scheduler", sub: "one Pod at a time", icon: process, col: 1, row: 1, tone: primary }
+      - { id: cp, label: "controlplane", sub: "taint: filtered out", icon: node, col: 2, row: 0, tone: muted }
+      - { id: node-1, label: "node-1", sub: "CPU full: filtered", icon: node, col: 2, row: 1, tone: muted }
+      - { id: node-2, label: "node-2", sub: "fits, score 62", icon: node, col: 2, row: 2 }
+      - { id: node-3, label: "node-3", sub: "fits, score 87", icon: node, col: 2, row: 3, tone: success }
+    edges:
+      - { from: pod, to: sched, label: "pending" }
+      - { from: sched, to: cp, label: "no", dashed: true }
+      - { from: sched, to: node-1, label: "no", dashed: true }
+      - { from: sched, to: node-2, label: "62" }
+      - { from: sched, to: node-3, label: "87: bind" }
+  queues:
+    title: "Where a pending Pod waits"
+    caption: "A Pod that fits nowhere is not retried in a tight loop. It is parked until the cluster changes in a way that could help, then tried again after a short backoff."
+    nodes:
+      - { id: active, label: "Active queue", sub: "highest priority 1st", icon: process, col: 0, row: 0, tone: primary }
+      - { id: cycle, label: "Scheduling cycle", sub: "filter and score", icon: process, col: 1, row: 0 }
+      - { id: bindc, label: "Binding cycle", sub: "volumes, then bind", icon: process, col: 2, row: 0, tone: success }
+      - { id: backoff, label: "Backoff queue", sub: "1s, doubling to 10s", icon: process, col: 0, row: 1, tone: muted }
+      - { id: unsched, label: "Unschedulable", sub: "waits for a change", icon: process, col: 1, row: 1, tone: warning }
+    edges:
+      - { from: active, to: cycle, label: "next" }
+      - { from: cycle, to: bindc, label: "fits" }
+      - { from: cycle, to: unsched, label: "no node fits" }
+      - { from: unsched, to: backoff, label: "event" }
+      - { from: backoff, to: active, label: "retry" }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "kube-scheduler"
+      narration: >-
+        Every Pod has to run on some node, and something has to choose which one. That is the only job of the
+        kube-scheduler. In this lesson you will see how it makes that choice, where it lives in the cluster, and how
+        to fix a Pod that is stuck in Pending.
+      visual:
+        kind: title
+        heading: "kube-scheduler"
+        subheading: "Who decides where a Pod runs"
+    - id: problem
+      title: "The problem it solves"
+      narration: >-
+        A cluster has many nodes, and they are not equal. Some are full, some are tainted, and some lack the disk or
+        the labels a Pod asks for. Someone has to match every new Pod to a node that can really run it. And that
+        choice should be made in one place, so two Pods never claim the same free space.
+      visual:
+        kind: points
+        heading: "Why a scheduler?"
+        items:
+          - "Many nodes, and they are not equal"
+          - "Full, tainted, or missing what the Pod needs"
+          - "Each new Pod needs a node that can run it"
+          - "One decision maker, so space is never promised twice"
+    - id: the-loop
+      title: "What the scheduler does"
+      narration: >-
+        You create a Pod with kubectl, and the API server saves it in etcd. The scheduler watches the API server for
+        Pods that have no node yet. It decides on a node and writes that decision back as a Binding, which sets the
+        node name on the Pod. The kubelet on that node sees a Pod with its name on it, and starts the containers.
+        Notice that the scheduler never talks to a node and never starts anything.
+      visual:
+        kind: diagram
+        diagram: scheduler-loop
+        steps:
+          - [user, api, etcd, user-api, api-etcd]
+          - [sched, api-sched]
+          - [bind, sched-bind, bind-api]
+          - [kubelet, api-kubelet, ctr, kubelet-ctr, node-2]
+          - [sched]
+    - id: filter-score
+      title: "Filter, then score"
+      narration: >-
+        For each Pod, the scheduler works in two phases. First it filters: nodes that cannot run the Pod are thrown
+        out, here a tainted control plane node and a node with no CPU left. Then it scores the nodes that passed,
+        using rules such as free resources and spreading. The highest total wins, and the Pod is bound to that node.
+      visual:
+        kind: diagram
+        diagram: filter-score
+        steps:
+          - [pod, sched, pod-sched]
+          - [cp, node-1, sched-cp, sched-node-1]
+          - [node-2, node-3, sched-node-2, sched-node-3]
+          - [node-3, sched-node-3]
+    - id: queue
+      title: "What happens to a Pod that does not fit"
+      narration: >-
+        Pending Pods wait in the active queue, highest priority first. The scheduler takes one Pod at a time and
+        runs the scheduling cycle. If a node is found, the binding happens in the background, so the next Pod does
+        not have to wait. If no node fits, the Pod is parked as unschedulable. When the cluster changes, for example
+        a node is added or a Pod is deleted, it goes through a short backoff and is tried again.
+      visual:
+        kind: diagram
+        diagram: queues
+        steps:
+          - [active]
+          - [cycle, active-cycle]
+          - [bindc, cycle-bindc]
+          - [unsched, cycle-unsched]
+          - [backoff, unsched-backoff, backoff-active]
+    - id: where-it-runs
+      title: "Where the scheduler runs"
+      narration: >-
+        In a kubeadm cluster the scheduler is a static Pod, described by a file on the control plane node. It is one
+        binary, kube-scheduler, started with a handful of flags. The kubeconfig flag is how it finds and signs in to
+        the API server. Leader elect makes sure only one scheduler is active when you run several control plane
+        nodes. If this file is broken, no Pod in the cluster gets a node.
+      visual:
+        kind: code
+        heading: "/etc/kubernetes/manifests/kube-scheduler.yaml"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: kube-scheduler
+            namespace: kube-system
+          spec:
+            containers:
+              - name: kube-scheduler
+                image: registry.k8s.io/kube-scheduler:v1.37.0
+                command:
+                  - kube-scheduler
+                  - --kubeconfig=/etc/kubernetes/scheduler.conf
+                  - --leader-elect=true
+                  - --bind-address=127.0.0.1
+        steps: ["1-5", "9-11", "12", "13", "1-14"]
+    - id: pending
+      title: "Reading a Pending Pod"
+      narration: >-
+        A Pod that has no node shows as Pending, with none in the node column. Describe it and read the events at
+        the bottom. A Failed Scheduling event means the scheduler tried, and it tells you how many nodes failed for
+        each reason.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get pod web -o wide"
+            out: "NAME   READY   STATUS    RESTARTS   AGE   IP       NODE\nweb    0/1     Pending   0          40s   <none>   <none>"
+          - cmd: "kubectl describe pod web | tail -n 4"
+            out: "Events:\n  Type     Reason            From               Message\n  Warning  FailedScheduling  default-scheduler  0/3 nodes are available:"
+          - cmd: "kubectl get events --field-selector reason=FailedScheduling"
+            out: "0/3 nodes are available: 1 node(s) had untolerated taint\n{node-role.kubernetes.io/control-plane: }, 2 Insufficient cpu."
+    - id: broken
+      title: "When the scheduler itself is down"
+      narration: >-
+        If a Pod is Pending and has no events at all, nobody even tried, so look at the scheduler itself. Here its
+        Pod is crash looping. The logs say why: the command in the manifest has a typo. Fix the file on the control
+        plane node, and the kubelet restarts the scheduler for you.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl describe pod web | tail -n 1"
+            out: "Events:  <none>"
+          - cmd: "kubectl -n kube-system get pods -l component=kube-scheduler"
+            out: "NAME                          READY   STATUS             RESTARTS\nkube-scheduler-controlplane   0/1     CrashLoopBackOff   6"
+          - cmd: "sudo crictl logs $(sudo crictl ps -a --name kube-scheduler -q | head -n 1)"
+            out: "exec: \"kube-schedulerr\": executable file not found in $PATH"
+          - cmd: "sudo vi /etc/kubernetes/manifests/kube-scheduler.yaml"
+            out: "# fix the command, save, and wait a few seconds"
+    - id: manual
+      title: "Scheduling a Pod by hand"
+      narration: >-
+        You can also skip the scheduler. Set node name in the Pod spec, and the kubelet on that node runs the Pod
+        straight away. No filters run, so taints and free resources are not checked. And node name can only be set
+        when the Pod is created, so for an existing Pod you delete it and create it again.
+      visual:
+        kind: code
+        heading: "A Pod that needs no scheduler"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: web
+          spec:
+            nodeName: node-2
+            containers:
+              - name: web
+                image: nginx:1.29-alpine
+        steps: ["1-9", "6", "6", "6"]
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Pending with a Failed Scheduling event means the scheduler said no, so fix the Pod or the nodes. Pending with
+        no events means no scheduler acted, so check the scheduler Pod and the scheduler name in the Pod spec. The
+        scheduler counts requests, not real usage, so compare the Pod's requests with what describe node shows as
+        allocated. And static Pod manifests live in one folder on the control plane node, so that is where you fix a
+        broken scheduler.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "FailedScheduling event: the scheduler said no"
+          - "No events at all: no scheduler acted"
+          - "Requests count, real usage does not"
+          - "Fix it in /etc/kubernetes/manifests"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The scheduler does one thing: it gives each new Pod a node name. It filters out nodes that cannot run the
+        Pod, then scores the rest and picks the best. It never starts containers, because that is the kubelet's job.
+        In kubeadm clusters it is a static Pod on the control plane node. Now try the practice questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "One job: set the node name on new Pods"
+          - "Filter first, then score, highest total wins"
+          - "The kubelet starts containers, not the scheduler"
+          - "A static Pod in kube-system on kubeadm clusters"
+          - "Pending? Read the events first"
+---
+
+## Why the scheduler exists
+
+When you create a Pod, you normally do not say where it should run. A cluster may have three nodes or five
+thousand, and they are not interchangeable: some are full, some are tainted for special workloads, some do not have
+the disk, the GPU or the labels the Pod asks for. Something has to look at every new Pod, look at every node, and
+match them.
+
+That something is **kube-scheduler**, one of the control plane components. It is deliberately a single decision
+maker: if several components placed Pods independently, two of them could promise the same free CPU to two
+different Pods.
+
+<KeyIdea>
+The scheduler has one job: for every Pod that has no node, pick a node and write its name into the Pod. It does not
+create Pods, start containers or move Pods that are already running.
+</KeyIdea>
+
+## What the scheduler does, and what it does not
+
+<Diagram id="scheduler-loop" />
+
+Follow one Pod from `kubectl` to a running container:
+
+1. You create the Pod. The API server validates it and saves it in etcd. Its `spec.nodeName` is empty, so its status
+   is `Pending`.
+2. The scheduler **watches** the API server for Pods whose `spec.nodeName` is empty and whose `spec.schedulerName`
+   is its own name (`default-scheduler` unless you say otherwise).
+3. It picks a node and posts a small **Binding** object to the API server. The API server sets `spec.nodeName` on
+   the Pod. That is the whole output of the scheduler: one field.
+4. The **kubelet** on that node watches for Pods carrying its node name. It pulls the images and asks the container
+   runtime to start the containers.
+
+Like every control plane component, the scheduler only ever talks to the API server. It never contacts a node, the
+kubelet or etcd directly.
+
+| Question | Who answers it |
+|----------|----------------|
+| How many Pods should exist? | Controllers (Deployment, ReplicaSet, DaemonSet, Job) in kube-controller-manager |
+| On which node does each Pod run? | **kube-scheduler** |
+| Who starts the containers and keeps them running? | The kubelet on that node, through the container runtime |
+| Who evicts Pods from a node under memory or disk pressure? | The kubelet (node-pressure eviction) |
+
+## How it picks a node
+
+<Diagram id="filter-score" />
+
+The scheduler handles **one Pod at a time**, in two phases.
+
+**Filtering** asks a yes or no question for every node: *can this Pod run here at all?* A node is thrown out if any
+filter says no. The filters you will meet in the exam:
+
+| Filter | A node fails when |
+|--------|-------------------|
+| `NodeResourcesFit` | The Pod's CPU, memory or other **requests** do not fit in what is still unreserved on the node |
+| `TaintToleration` | The node has a `NoSchedule` or `NoExecute` taint that the Pod does not tolerate |
+| `NodeAffinity` | The node's labels do not match the Pod's `nodeSelector` or required node affinity |
+| `NodeUnschedulable` | The node is cordoned (`kubectl cordon`, `kubectl drain`) |
+| `NodePorts` | A `hostPort` the Pod wants is already taken on the node |
+| `InterPodAffinity`, `PodTopologySpread` | Required Pod affinity, anti-affinity or spread rules would be broken |
+| `VolumeBinding`, `VolumeZone` | The Pod's volumes cannot be bound or attached on that node |
+
+**Scoring** then ranks the nodes that passed. Each scoring rule gives every node 0 to 100 points, the points are
+multiplied by the rule's weight and added up, and the node with the highest total wins (a random one on a tie). By
+default the scheduler prefers nodes with more free resources after placing the Pod (`LeastAllocated`), balanced CPU
+and memory use, nodes that already have the image, and placements that satisfy *preferred* affinity and spread
+rules.
+
+Filtering is strict and scoring is only a preference. That maps directly onto the Pod fields you will write:
+`nodeSelector`, `requiredDuringSchedulingIgnoredDuringExecution` and resource requests are filters;
+`preferredDuringSchedulingIgnoredDuringExecution` is a score.
+
+<Callout kind="warning" title="Requests, not usage">
+The scheduler never looks at how much CPU or memory a node is really using. It adds up the **requests** of the Pods
+already assigned to the node and compares them with the node's allocatable capacity. A node at 5% real CPU use can
+be "full", and a Pod with no requests fits on a node that is on its knees.
+</Callout>
+
+<DeepDive title="The scheduling framework: more than two phases">
+Filter and score are two of a longer list of **extension points**. Each one is served by plugins, and the default
+scheduler is simply a default set of plugins:
+
+<Flow label="One Pod through the scheduler" steps={["queueSort", "preFilter", "filter", "postFilter", "preScore", "score", "reserve", "permit", "preBind", "bind", "postBind"]} />
+
+- `queueSort` orders the pending Pods. The default plugin, `PrioritySort`, puts higher Pod priority first.
+- `postFilter` runs only when **no** node passed. The default plugin, `DefaultPreemption`, looks for a node where
+  deleting lower-priority Pods would make room. If it finds one, it deletes those Pods and records the node in the
+  waiting Pod's `status.nominatedNodeName`.
+- `reserve` marks the resources as taken in the scheduler's own cache, so the next Pod is scheduled against the new
+  picture before the first one is even bound.
+- `preBind` does the slow work, such as waiting for volumes to be provisioned and bound. `bind` posts the Binding.
+
+Everything up to `permit` is the **scheduling cycle** and runs for one Pod at a time. `preBind` and `bind` are the
+**binding cycle** and run in the background, so a slow volume does not hold up every other Pod.
+
+In very large clusters the scheduler stops filtering once it has found enough nodes that fit
+(`percentageOfNodesToScore`). In exam-sized clusters every node is checked.
+</DeepDive>
+
+### What happens when nothing fits
+
+<Diagram id="queues" />
+
+If no node passes the filters, the scheduler records a `FailedScheduling` event on the Pod, sets the Pod's
+`PodScheduled` condition to `False` with reason `Unschedulable`, and parks the Pod. It does **not** retry in a tight
+loop. The Pod is tried again when something happens that could help: a node is added, uncordoned or relabelled, a
+taint is removed, another Pod is deleted. Before each retry it waits in a backoff queue, one second at first,
+doubling up to ten seconds.
+
+In practice this means you never have to "kick" a Pending Pod. Fix the cause (free some capacity, remove the taint,
+correct the label) and the Pod is scheduled a few seconds later on its own.
+
+The scheduler also never revisits a decision. `IgnoredDuringExecution` in the affinity field names says exactly
+that: once a Pod is running, later changes to labels or load do not move it.
+
+## Ways to steer, replace or bypass it
+
+| How the node is chosen | Set by | The scheduler's part |
+|------------------------|--------|----------------------|
+| Default scheduling | Nothing | Filters and scores all nodes |
+| `nodeSelector`, affinity, tolerations, requests | Fields in the Pod spec | Still decides, within the limits you set |
+| `spec.schedulerName: my-scheduler` | The Pod spec | The default scheduler ignores the Pod; a scheduler with that name must exist |
+| `spec.nodeName: node-2` | The Pod spec, at creation | None: the Pod already has a node |
+| Static Pod (a file in `/etc/kubernetes/manifests`) | The kubelet's own disk | None: the kubelet runs it without asking anyone |
+| DaemonSet | The DaemonSet controller | Schedules each Pod, pinned to one node by a node affinity the controller adds |
+
+Two details in that table are worth remembering:
+
+- **`nodeName` skips every check.** No filter runs, so the Pod lands on a tainted, cordoned or full node all the
+  same. Only `NoExecute` taints still bite, because the node itself evicts the Pod, and a kubelet that really cannot
+  fit the Pod rejects it (status `OutOfcpu` or `OutOfmemory`).
+- **More than one scheduler can run.** Each one only handles Pods whose `schedulerName` matches a name it serves.
+  One kube-scheduler process can even serve several names, called profiles, from a single configuration file:
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: default-scheduler
+  - schedulerName: no-scoring-scheduler
+    plugins:
+      score:
+        disabled:
+          - name: "*"
+```
+
+<Callout kind="warning" title="A wrong schedulerName fails silently">
+If a Pod names a scheduler that does not exist, **nobody** picks it up. It stays Pending for ever, with no events
+and no error. The same picture appears when the only scheduler is down.
+</Callout>
+
+## Where it runs in a kubeadm cluster
+
+kubeadm runs the scheduler as a **static Pod** on every control plane node. The kubelet reads the manifest from disk
+and starts it, which is how the scheduler can run before any scheduler exists.
+
+| What | Where |
+|------|-------|
+| Manifest | `/etc/kubernetes/manifests/kube-scheduler.yaml` |
+| Pod | `kube-scheduler-<node name>` in `kube-system`, label `component=kube-scheduler` |
+| Credentials | `/etc/kubernetes/scheduler.conf` (user `system:kube-scheduler`), passed with `--kubeconfig` |
+| Health and metrics | HTTPS port `10259`, bound to `127.0.0.1` by default (`/healthz`, `/metrics`) |
+| Leader lock | Lease `kube-scheduler` in `kube-system` |
+
+With several control plane nodes there are several scheduler Pods, but `--leader-elect=true` makes sure only **one**
+is active. The others wait and take over when the leader stops renewing its Lease. That is all the high availability
+the scheduler needs, because it keeps no state of its own: everything it knows is rebuilt from the API server.
+
+On clusters that are not built with kubeadm the scheduler may be a systemd service instead
+(`systemctl status kube-scheduler`, options in the unit file), and on managed clusters such as EKS, GKE or AKS you
+cannot see it at all.
+
+## Using it
+
+<Example title="Find out why a Pod is Pending">
+The Pod `web` has been Pending for a minute. Ask the scheduler why:
+
+```bash
+kubectl get pod web -o wide                 # NODE is <none>: not scheduled yet
+kubectl describe pod web                    # read the Events at the bottom
+```
+
+```text
+Warning  FailedScheduling  default-scheduler  0/3 nodes are available: 1 node(s) had untolerated taint
+{node-role.kubernetes.io/control-plane: }, 2 Insufficient cpu. preemption: 0/3 nodes are available: 1 Preemption is
+not helpful for scheduling, 2 No preemption victims found for incoming pod.
+```
+
+Read it as a tally of the filters: of 3 nodes, 1 was rejected for its taint and 2 for CPU. The numbers always add up
+to the node count. Now check the cause that you can change:
+
+```bash
+kubectl get pod web -o jsonpath='{.spec.containers[*].resources.requests}'
+kubectl describe node node-1 | grep -A 8 "Allocated resources"
+```
+
+If the Pod asks for `cpu: "2"` and each worker has about 1.5 CPU unreserved, lower the request or free capacity. The
+Pod is scheduled by itself once it fits.
+</Example>
+
+<Example title="Repair a scheduler that is down">
+New Pods stay Pending and `kubectl describe pod` shows **no events at all**. Nobody is scheduling. On a kubeadm
+cluster, check the scheduler's own Pod:
+
+```bash
+kubectl -n kube-system get pods -l component=kube-scheduler
+kubectl -n kube-system logs kube-scheduler-controlplane
+```
+
+If the Pod is missing or `kubectl logs` gives nothing useful, go to the control plane node and ask the container
+runtime and the kubelet directly:
+
+```bash
+ssh controlplane
+sudo crictl ps -a --name kube-scheduler          # is there a container, and did it exit?
+sudo crictl logs <container-id>                  # why it exited
+sudo journalctl -u kubelet --since "5 min ago" | grep -i scheduler   # manifest could not be parsed?
+sudo vi /etc/kubernetes/manifests/kube-scheduler.yaml
+```
+
+Typical breakages are a typo in the command or image, a wrong path in `--kubeconfig`, a volume that mounts a file
+that does not exist, or the manifest moved out of the folder. Save the fixed file and wait: the kubelet notices the
+change and recreates the Pod within a few seconds. Then confirm that the waiting Pods get nodes:
+
+```bash
+kubectl -n kube-system get pods -l component=kube-scheduler
+kubectl get pods -o wide
+```
+</Example>
+
+<Example title="Place a Pod by hand">
+You are asked to run a Pod on `node-2` without the scheduler, or the scheduler is down and a Pod must start now. Set
+`nodeName` when you create it:
+
+```bash
+kubectl run web --image=nginx:1.29-alpine --dry-run=client -o yaml > web.yaml
+```
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web
+spec:
+  nodeName: node-2
+  containers:
+    - name: web
+      image: nginx:1.29-alpine
+```
+
+```bash
+kubectl apply -f web.yaml
+kubectl get pod web -o wide                 # NODE is node-2, with no Scheduled event
+```
+
+`nodeName` cannot be changed on an existing Pod. For a Pod that is already Pending, export it, add the field and
+recreate it in one step:
+
+```bash
+kubectl get pod web -o yaml > web.yaml      # add nodeName under spec
+kubectl replace --force -f web.yaml         # deletes and creates
+```
+</Example>
+
+<Example title="Send a Pod to a second scheduler">
+A second scheduler named `my-scheduler` runs in the cluster. Only one line in the Pod chooses it:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: batch
+spec:
+  schedulerName: my-scheduler
+  containers:
+    - name: batch
+      image: busybox:1.37
+      command: ["sleep", "3600"]
+```
+
+Prove which scheduler placed it. The `Scheduled` event names its source:
+
+```bash
+kubectl get events --field-selector involvedObject.name=batch,reason=Scheduled \
+  -o custom-columns=FROM:.reportingComponent,MESSAGE:.message
+```
+</Example>
+
+## Tricks
+
+<Trick title="No events or FailedScheduling: two different problems">
+A Pending Pod with a `FailedScheduling` event means the scheduler **ran and said no**: fix the Pod (requests,
+selector, tolerations) or the nodes (taints, labels, cordon). A Pending Pod with **no events** means **no scheduler
+acted**: check that the scheduler Pod is running and that `spec.schedulerName` names a scheduler that exists.
+</Trick>
+
+<Trick title="List everything the scheduler has not placed">
+`kubectl get pods -A --field-selector spec.nodeName=` lists every Pod without a node, across all namespaces. This is
+the same question the scheduler itself asks the API server. For the reasons, in time order:
+`kubectl get events -A --field-selector reason=FailedScheduling --sort-by=.lastTimestamp`.
+</Trick>
+
+<Trick title="Move a manifest out to stop a static Pod">
+To stop the scheduler on purpose (to test manual scheduling, for example), move its manifest out of the folder:
+`sudo mv /etc/kubernetes/manifests/kube-scheduler.yaml /tmp/`. Move it back to start it again. Before you edit a
+control plane manifest, copy it somewhere **outside** that folder first; a backup left inside
+`/etc/kubernetes/manifests` is read by the kubelet as a second static Pod.
+</Trick>
+
+<Trick title="See what a node has left to give">
+`kubectl describe node <name>` shows `Allocatable` (what the node offers) and `Allocated resources` (the sum of
+requests already placed). The difference is what the scheduler can still hand out. `kubectl top node` shows real
+usage, which the scheduler ignores.
+</Trick>
+
+## Common mistakes
+
+- **Thinking the scheduler starts Pods.** It only writes the node name. A Pod that is `ContainerCreating`,
+  `ImagePullBackOff` or `CrashLoopBackOff` has already been scheduled; the problem is on the node, not in the
+  scheduler.
+- **Looking at `kubectl top` to explain "Insufficient cpu".** The scheduler compares requests with allocatable
+  capacity. Look at `Allocated resources` in `kubectl describe node`.
+- **Trying to edit `nodeName` or `schedulerName` on a live Pod.** Both are fixed at creation. Recreate the Pod
+  (`kubectl replace --force -f`), or change the Pod template of the Deployment that owns it.
+- **Using `nodeName` and expecting taints to hold.** `nodeName` skips the scheduler, so `NoSchedule` taints and
+  cordons are not checked. Use `nodeSelector` or node affinity when you want the checks to stay on.
+- **Restarting the scheduler with `kubectl delete pod`.** For a static Pod this only deletes the mirror object in
+  the API; the kubelet puts it straight back. Real changes are made in the manifest file on the node.
+- **Waiting for the scheduler to rebalance.** It places each Pod once. Adding a node does not move running Pods
+  onto it; only new or recreated Pods can land there.
+
+## Recap
+
+- kube-scheduler gives every new Pod a node by setting `spec.nodeName`; the kubelet does the rest.
+- It **filters** out nodes that cannot run the Pod, **scores** the others and binds to the best one.
+- It counts resource **requests**, never real usage, and never moves a running Pod.
+- On kubeadm it is a static Pod: `/etc/kubernetes/manifests/kube-scheduler.yaml`, one active leader.
+- Pending with `FailedScheduling`: fix the Pod or the nodes. Pending with no events: fix the scheduler.
