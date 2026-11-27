@@ -5,13 +5,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import * as z from "zod";
-import { itemFromSource, itemToSource, validateItem, type ItemType, type LabEdit, type LessonEdit, type QuestionEdit, type QuizMockEdit } from "@lfct/curriculum";
+import { DiagramsSchema, NARRATION_VOICES, VideoSchema, draftVideo, type NarrationVoice, itemFromSource, itemToSource, lessonMediaProblems, validateItem, type ItemType, type LabEdit, type LessonEdit, type QuestionEdit, type QuizMockEdit } from "@lfct/curriculum";
 import { lab as labTable, lesson as lessonTable, question as questionTable, quizMock as quizMockTable } from "@lfct/curriculum/db";
 import { LessonBody } from "@/components/lesson-body";
+import { LessonVideo } from "@/components/lesson-video";
 import { getDb } from "@/db";
 import { answer, contentRevision, labSession, lessonProgress, quiz } from "@/db/schema";
 import { mdxProblems } from "@/lib/mdx-safety";
 import { invalidateCatalog } from "@/server/catalog";
+import { playerScenes, prewarmNarration } from "@/server/narration";
 import {
   authoringContext,
   getFileVersion,
@@ -62,6 +64,8 @@ async function writeRow(type: ItemType, edit: ItemEdit, opts: { create: boolean;
     const values = { ...lessonValues(edit as LessonEdit), ...common };
     if (opts.create) await db.insert(lessonTable).values({ id: edit.id, ...values, published: false, file: opts.file ?? "app" });
     else await db.update(lessonTable).set(values).where(eq(lessonTable.id, edit.id));
+    // Narrate the new or changed sentences in the background, so the video is ready when learners open it.
+    if ((edit as LessonEdit).video) void prewarmNarration(edit.id).catch(() => undefined);
   } else if (type === "question") {
     const values = { ...questionValues(edit as QuestionEdit), ...common };
     if (opts.create) await db.insert(questionTable).values({ id: edit.id, ...values, published: false, file: opts.file ?? "app" });
@@ -151,16 +155,57 @@ export async function convertItemAction(type: ItemType, to: "source" | "form", p
   }
 }
 
-/** Renders lesson MDX exactly as learners will see it, for the editor's Preview tab. */
-export async function previewLessonAction(body: string): Promise<{ problems: string[]; node: ReactNode | null }> {
+/**
+ * Renders a lesson exactly as learners will see it, for the editor's Preview tab: the video (when it has one) and
+ * the body with its diagrams. Takes the lesson as editor JSON; problems in the diagrams or video are listed
+ * instead of the parts they break.
+ */
+export async function previewLessonAction(lessonJson: string): Promise<{ problems: string[]; node: ReactNode | null }> {
   await requireAdmin();
+  let lesson: Record<string, unknown>;
+  try {
+    lesson = JSON.parse(lessonJson) as Record<string, unknown>;
+  } catch {
+    return { problems: ["the lesson does not parse"], node: null };
+  }
+  const body = typeof lesson.body === "string" ? lesson.body : "";
   const problems = mdxProblems(body);
+  const diagrams = DiagramsSchema.safeParse(lesson.diagrams ?? {});
+  if (!diagrams.success) problems.push(...diagrams.error.issues.map((i) => `diagrams.${i.path.join(".")}: ${i.message}`));
+  const video = lesson.video === undefined || lesson.video === null ? null : VideoSchema.safeParse(lesson.video);
+  if (video && !video.success) problems.push(...video.error.issues.map((i) => `video.${i.path.join(".")}: ${i.message}`));
+  if (diagrams.success && (!video || video.success)) problems.push(...lessonMediaProblems({ body, diagrams: diagrams.data, video: video?.data ?? null }));
   if (problems.length) return { problems, node: null };
   try {
-    const node = await LessonBody({ hash: `preview:${body.length}:${hashString(body)}`, source: body, untrusted: true });
-    return { problems: [], node };
+    const node = await LessonBody({ hash: `preview:${body.length}:${hashString(body)}`, source: body, untrusted: true, diagrams: diagrams.data });
+    return {
+      problems: [],
+      node: (
+        <>
+          {video?.success ? <LessonVideo key={hashString(JSON.stringify(video.data))} title={String(lesson.title ?? "")} scenes={playerScenes("preview", video.data, diagrams.data ?? {})} /> : null}
+          {node}
+        </>
+      ),
+    };
   } catch (err) {
     return { problems: [`MDX error: ${(err as Error).message}`], node: null };
+  }
+}
+
+/** A first video script from the lesson's sections (the editor's "Draft from the lesson"). */
+export async function draftVideoAction(lessonJson: string): Promise<{ ok: true; video: Record<string, unknown> } | { ok: false; problem: string }> {
+  await requireAdmin();
+  try {
+    const l = JSON.parse(lessonJson) as Record<string, unknown>;
+    const body = typeof l.body === "string" ? l.body : "";
+    if (!body.trim()) return { ok: false, problem: "Write the lesson body first: the draft is made from its sections." };
+    const diagrams = DiagramsSchema.safeParse(l.diagrams ?? {});
+    const current = (l.video as { voice?: string } | undefined)?.voice;
+    const voice = (NARRATION_VOICES as readonly string[]).includes(current ?? "") ? (current as NarrationVoice) : "af_heart";
+    const video = draftVideo({ title: String(l.title ?? "") || "Lesson", summary: String(l.summary ?? "") || String(l.title ?? "Lesson"), body, diagrams: diagrams.success ? diagrams.data : {} }, voice);
+    return { ok: true, video: video as unknown as Record<string, unknown> };
+  } catch (err) {
+    return { ok: false, problem: (err as Error).message };
   }
 }
 

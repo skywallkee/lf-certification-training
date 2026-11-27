@@ -80,6 +80,8 @@ ENV NEXT_TELEMETRY_DISABLED=1 PORT=4000 HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=build --chown=node:node /repo/platform/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/platform/apps/web/.next/static ./platform/apps/web/.next/static
+# Lesson video narration cache (one MP3 per sentence); compose mounts a volume here, which starts owned by node.
+RUN mkdir -p /data/narration && chown node:node /data/narration
 USER node
 EXPOSE 4000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \

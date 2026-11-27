@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import * as z from "zod";
 import { KeySchema } from "./schema.ts";
 import type { Curriculum } from "./load.ts";
+import { DiagramsSchema, VideoSchema, lessonMediaProblems } from "./lesson-media.ts";
 
 /**
  * Lessons and question banks. Lessons are MDX files with YAML front matter under content/lessons;
@@ -28,6 +29,10 @@ export const LessonFrontMatterSchema = z.strictObject({
   competencies: z.array(CompetencyRefSchema).min(1),
   docs: z.array(DocLinkSchema).default([]),
   mock: z.boolean().default(false),
+  /** Diagrams the body places with <Diagram id="..." /> and the video reuses (lesson-media.ts). */
+  diagrams: DiagramsSchema,
+  /** The narrated, animated lesson video (lesson-media.ts). */
+  video: VideoSchema.optional(),
 });
 
 export const QuestionOptionSchema = z.strictObject({
@@ -323,6 +328,7 @@ export async function loadContent(curriculum: Curriculum, opts: LoadContentOptio
     if (!meta.mock && file.includes("/sample/")) problems.push(`${file}: files under sample/ must set mock: true`);
     const body = text.slice(fm[0].length).trim();
     if (body.length === 0) problems.push(`${file}: empty lesson body`);
+    problems.push(...lessonMediaProblems({ ...meta, body }).map((p) => `${file}: ${p}`));
     if (!includeSample && meta.mock) continue;
     const cert = certOf(meta.competencies[0]!);
     lessons.push({ ...meta, cert, body, file, hash: hashOf({ meta, body }) });

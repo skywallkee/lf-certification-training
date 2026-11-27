@@ -16,6 +16,7 @@ import {
   type CertOption,
   type DocLink,
 } from "./fields";
+import { DiagramsField, VideoField } from "./lesson-media-editor";
 
 /**
  * Form views of the content file format, one per item type. They edit plain JSON shaped like the files
@@ -65,12 +66,22 @@ export function LessonForm({ value, onChange, certs, isNew }: FormProps) {
         rows={18}
         hint={
           <>
-            Markdown with GitHub tables and code blocks. Components: <code>{'<Callout kind="tip" title="…">…</Callout>'}</code> (note, tip, warning) and{" "}
-            <code>{'<Flow label="…" steps={["A", "B"]} />'}</code>. Use the Preview tab to check it.
+            Markdown with GitHub tables and code blocks. Components: <code>{'<KeyIdea>…</KeyIdea>'}</code>, <code>{'<DeepDive title="…">…</DeepDive>'}</code>,{" "}
+            <code>{'<Example title="…">…</Example>'}</code>, <code>{'<Trick title="…">…</Trick>'}</code>, <code>{'<Diagram id="…" />'}</code>,{" "}
+            <code>{'<Callout kind="tip" title="…">…</Callout>'}</code> (note, tip, warning) and <code>{'<Flow label="…" steps={["A", "B"]} />'}</code>. See
+            content/README.md for the lesson template. Use the Preview tab to check it.
           </>
         }
         value={str(value.body)}
         onChange={(body) => set({ body })}
+      />
+      <DiagramsField value={value.diagrams} onChange={(diagrams) => set({ diagrams })} />
+      <VideoField
+        lesson={value}
+        onChange={(video) => {
+          const { video: _old, ...rest } = value;
+          onChange(video ? { ...rest, video } : rest);
+        }}
       />
       <CheckboxField label="Sample content" hint={SAMPLE_HINT} checked={value.mock === true} onChange={(mock) => set({ mock })} />
     </div>

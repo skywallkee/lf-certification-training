@@ -37,6 +37,9 @@ services:
   mailpit:
     logging: *logging
 
+  narrator:
+    logging: *logging
+
   setup:
     environment:
       # A real server starts empty: no sample learners or cohort (SEED=if-missing adds them).
@@ -88,4 +91,6 @@ services:
         condition: service_completed_successfully
       lab-controller:
         condition: service_healthy
+      narrator:
+        condition: service_started
     logging: *logging

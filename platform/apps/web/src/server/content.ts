@@ -52,6 +52,8 @@ export function lessonEditOf(row: LessonRow): LessonEdit {
     competencies: row.competencyRefs,
     docs: row.docs,
     mock: row.mock,
+    diagrams: row.diagrams ?? {},
+    ...(row.video ? { video: row.video } : {}),
     body: row.body,
   };
 }
@@ -116,6 +118,8 @@ export function lessonValues(l: LessonEdit) {
     minutes: l.minutes,
     body,
     docs: l.docs,
+    diagrams: l.diagrams,
+    video: l.video ?? null,
     competencyRefs: l.competencies,
     mock: l.mock,
     contentHash: hashOfItem({ meta, body }),

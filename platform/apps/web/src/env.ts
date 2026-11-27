@@ -108,4 +108,17 @@ export const env = {
       return Number(process.env.MOCK_PRACTICE_PER_MONTH ?? 2);
     },
   },
+  /**
+   * Lesson video narration. NARRATOR_URL points at the local narrator service (Kokoro text to speech, see
+   * platform/narrator); without it the player uses the browser's own voice. Generated audio is kept in
+   * NARRATION_CACHE_DIR, one MP3 per sentence, so each sentence is synthesised once.
+   */
+  narration: {
+    get narratorUrl() {
+      return process.env.NARRATOR_URL || undefined;
+    },
+    get cacheDir() {
+      return process.env.NARRATION_CACHE_DIR || ".narration-cache";
+    },
+  },
 };

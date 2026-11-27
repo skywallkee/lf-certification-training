@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { Diagrams, Video } from "../lesson-media.ts";
 import {
   boolean,
   date,
@@ -131,6 +132,10 @@ export const lesson = pgTable(
     minutes: integer("minutes").notNull(),
     body: text("body").notNull(),
     docs: jsonb("docs").$type<DocLinkJson[]>().notNull(),
+    /** Diagrams placed in the body with <Diagram id>, keyed by id (lesson-media.ts). */
+    diagrams: jsonb("diagrams").$type<Diagrams>().notNull().default({}),
+    /** The narrated lesson video, or null when the lesson has none (lesson-media.ts). */
+    video: jsonb("video").$type<Video>(),
     competencyRefs: text("competency_refs").array().notNull(),
     mock: boolean("mock").notNull().default(false),
     /** "file": loaded from content/ by the ingest. "app": created or edited in the admin editor; the ingest leaves it alone. */
