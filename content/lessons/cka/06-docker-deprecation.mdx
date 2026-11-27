@@ -1,0 +1,477 @@
+---
+id: cka-docker-deprecation
+title: "A note on Docker deprecation: what was removed, and what was not"
+summary: "Kubernetes v1.24 removed dockershim, not Docker. See what dockershim was, why it went, what keeps working, what breaks, and how to check and debug a node's runtime without the docker command."
+minutes: 14
+competencies:
+  - cka/cluster-architecture-installation-configuration/extension-interfaces-cni-csi-cri
+  - cka/troubleshooting/troubleshoot-clusters-nodes
+docs:
+  - title: "Kubernetes blog: Updated dockershim removal FAQ"
+    url: https://kubernetes.io/blog/2022/02/17/dockershim-faq/
+  - title: "Kubernetes blog: Don't Panic: Kubernetes and Docker"
+    url: https://kubernetes.io/blog/2020/12/02/dont-panic-kubernetes-and-docker/
+  - title: "Kubernetes docs: Container runtimes"
+    url: https://kubernetes.io/docs/setup/production-environment/container-runtimes/
+  - title: "Kubernetes docs: Migrating from dockershim"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/migrating-from-dockershim/
+  - title: "Kubernetes docs: Find out what container runtime is used on a node"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/migrating-from-dockershim/find-out-runtime-you-use/
+  - title: "Kubernetes docs: Debugging Kubernetes nodes with crictl"
+    url: https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/
+mock: false
+diagrams:
+  call-chain:
+    title: "Starting one container, before and after v1.24"
+    caption: "Dockershim translated the kubelet's CRI calls into Docker API calls. Docker Engine then asked containerd anyway. Talking to containerd directly removes two hops and the code the kubelet had to carry."
+    nodes:
+      - { id: kubelet-old, label: "kubelet", sub: "v1.23 and older", icon: process, col: 0, row: 0 }
+      - { id: shim, label: "dockershim", sub: "inside the kubelet", icon: proxy, col: 1, row: 0, tone: warning }
+      - { id: docker, label: "Docker Engine", sub: "dockerd", icon: process, col: 2, row: 0, tone: muted }
+      - { id: ctd-old, label: "containerd", icon: process, col: 3, row: 0 }
+      - { id: runc-old, label: "runc", sub: "starts the container", icon: container, col: 4, row: 0 }
+      - { id: kubelet-new, label: "kubelet", sub: "v1.24 and newer", icon: process, col: 0, row: 1 }
+      - { id: ctd-new, label: "containerd", sub: "CRI plugin built in", icon: process, col: 1, row: 1, tone: primary }
+      - { id: runc-new, label: "runc", sub: "starts the container", icon: container, col: 2, row: 1, tone: success }
+    edges:
+      - { from: kubelet-old, to: shim, label: "CRI" }
+      - { from: shim, to: docker, label: "Docker API" }
+      - { from: docker, to: ctd-old }
+      - { from: ctd-old, to: runc-old }
+      - { from: kubelet-new, to: ctd-new, label: "CRI" }
+      - { from: ctd-new, to: runc-new }
+  runtimes-today:
+    title: "What a kubelet can talk to today"
+    caption: "The kubelet speaks only CRI, over a Unix socket. Anything that answers CRI on that socket can be the runtime. Docker Engine does not, so it needs the external adapter cri-dockerd."
+    nodes:
+      - { id: kubelet, label: "kubelet", icon: process, col: 0, row: 1 }
+      - { id: cri, label: "CRI", sub: "gRPC over a socket", icon: generic, col: 1, row: 1, tone: primary }
+      - { id: containerd, label: "containerd", sub: "most clusters", icon: process, col: 2, row: 0, tone: success }
+      - { id: crio, label: "CRI-O", sub: "OpenShift and others", icon: process, col: 2, row: 1, tone: success }
+      - { id: cri-dockerd, label: "cri-dockerd", sub: "external adapter", icon: proxy, col: 2, row: 2, tone: warning }
+      - { id: engine, label: "Docker Engine", sub: "dockerd", icon: process, col: 3, row: 2, tone: muted }
+    edges:
+      - { from: kubelet, to: cri }
+      - { from: cri, to: containerd }
+      - { from: cri, to: crio }
+      - { from: cri, to: cri-dockerd }
+      - { from: cri-dockerd, to: engine, label: "Docker API" }
+  image-path:
+    title: "Why your images did not change"
+    caption: "docker build produces an image in the OCI format. Every runtime pulls and runs that same format, so the tool that built the image does not matter to the cluster."
+    nodes:
+      - { id: build, label: "docker build", sub: "laptop or CI", icon: user, col: 0, row: 0 }
+      - { id: image, label: "OCI image", sub: "layers + config", icon: file, col: 1, row: 0, tone: primary }
+      - { id: registry, label: "Registry", sub: "Docker Hub, GHCR, ...", icon: database, col: 2, row: 0 }
+      - { id: runtime, label: "containerd", sub: "on the node", icon: process, col: 2, row: 1 }
+      - { id: pod, label: "Pod", sub: "running container", icon: pod, col: 1, row: 1, tone: success }
+    edges:
+      - { from: build, to: image, label: "builds" }
+      - { from: image, to: registry, label: "push" }
+      - { from: registry, to: runtime, label: "pull" }
+      - { from: runtime, to: pod, label: "runs" }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "A note on Docker deprecation"
+      narration: >-
+        You may have read that Kubernetes dropped Docker. That headline scared a lot of people, and it is only
+        half true. In this lesson you will see what was really removed, why it was removed, and what it means for
+        you on a node and in the exam.
+      visual:
+        kind: title
+        heading: "A note on Docker deprecation"
+        subheading: "What was removed, and what was not"
+    - id: the-scare
+      title: "What actually happened"
+      narration: >-
+        In December 2020, the release notes for Kubernetes 1.20 said that Docker support in the kubelet was
+        deprecated. In May 2022, version 1.24 removed it. But the thing that was removed was not Docker. It was a
+        small adapter inside the kubelet, called dockershim. Your Docker images, your Dockerfiles and Docker on your
+        laptop were never affected.
+      visual:
+        kind: points
+        heading: "The short version"
+        items:
+          - "v1.20, December 2020: dockershim deprecated"
+          - "v1.24, May 2022: dockershim removed"
+          - "Removed: an adapter inside the kubelet, not Docker"
+          - "It was called dockershim"
+          - "Images, Dockerfiles and local Docker: unchanged"
+    - id: call-chain
+      title: "The long way and the short way"
+      narration: >-
+        Here is how an old kubelet started a container. The kubelet speaks one language to runtimes, the Container
+        Runtime Interface, and Docker Engine does not understand it. So the kubelet carried dockershim, which
+        translated every call into the Docker API. Docker Engine then handed the work to containerd, and containerd
+        asked runc to start the container. Now look at the new path. The kubelet talks to containerd directly,
+        because containerd understands the interface itself. The container that comes out is exactly the same, with
+        two fewer hops.
+      visual:
+        kind: diagram
+        diagram: call-chain
+        steps:
+          - [kubelet-old]
+          - [docker]
+          - [shim, kubelet-old-shim, shim-docker]
+          - [ctd-old, runc-old, docker-ctd-old, ctd-old-runc-old]
+          - [kubelet-new]
+          - [ctd-new, kubelet-new-ctd-new]
+          - [runc-new, ctd-new-runc-new]
+    - id: why
+      title: "Why it was removed"
+      narration: >-
+        Docker is older than Kubernetes, and it was built for people, not for an orchestrator. Dockershim was
+        special code for one vendor, living inside the kubelet, and the Kubernetes maintainers had to keep it working
+        with every Docker release. Docker Engine also brings features that Kubernetes never uses, such as its own
+        networking, volumes and image builds. And new node features were being written for the runtime interface
+        only, so Docker nodes were falling behind.
+      visual:
+        kind: points
+        heading: "Why dockershim had to go"
+        items:
+          - "Docker was built for people, before Kubernetes existed"
+          - "Vendor code inside the kubelet, costly to maintain"
+          - "Docker's networking, volumes and builds go unused"
+          - "New node features target CRI runtimes only"
+    - id: images
+      title: "What keeps working"
+      narration: >-
+        Here is the part that calms everyone down. When you run docker build, the result is an image in the open
+        container format. You push it to a registry as before. On the node, containerd pulls that image, and it does
+        not care which tool built it. Then it runs it as a Pod, exactly as Docker would have.
+      visual:
+        kind: diagram
+        diagram: image-path
+        steps:
+          - [build]
+          - [image, build-image]
+          - [registry, image-registry]
+          - [runtime, registry-runtime]
+          - [pod, runtime-pod]
+    - id: what-breaks
+      title: "What does break"
+      narration: >-
+        Some things did depend on Docker being on the node. Pods that mount the Docker socket, such as build jobs
+        and some monitoring agents, find no socket. The docker command on a node shows no Kubernetes containers,
+        or is not installed at all. Images that you build on the node with Docker are invisible to the kubelet.
+        And registry mirrors or credentials that you set in the Docker configuration must move to the new runtime.
+      visual:
+        kind: points
+        heading: "What relied on Docker on the node"
+        items:
+          - "Pods that mount /var/run/docker.sock"
+          - "docker ps and docker logs on the node"
+          - "Images built on the node with docker build"
+          - "Registry settings in /etc/docker/daemon.json"
+    - id: today
+      title: "Your choices today"
+      narration: >-
+        Today the kubelet only knows the runtime interface, and it reaches it through a socket. Most clusters put
+        containerd behind that socket. Others use CRI-O, which was written only for Kubernetes. And if you truly
+        need Docker Engine on your nodes, an external adapter called cri-dockerd does the job that dockershim used
+        to do.
+      visual:
+        kind: diagram
+        diagram: runtimes-today
+        steps:
+          - [kubelet, cri, kubelet-cri]
+          - [containerd, cri-containerd]
+          - [crio, cri-crio]
+          - [cri-dockerd, engine, cri-cri-dockerd, cri-dockerd-engine]
+    - id: check
+      title: "Which runtime does a node use?"
+      narration: >-
+        To see what a node runs, list the nodes in wide format and read the last column. You can also ask one node
+        for just that field. On the node itself, the kubelet's settings name the socket it connects to.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get nodes -o wide"
+            out: "NAME     STATUS   ROLES           VERSION   ...   CONTAINER-RUNTIME\ncp-1     Ready    control-plane   v1.34.1   ...   containerd://2.1.4\nnode-1   Ready    <none>          v1.34.1   ...   containerd://2.1.4"
+          - cmd: "kubectl get node node-1 -o jsonpath='{.status.nodeInfo.containerRuntimeVersion}'"
+            out: "containerd://2.1.4"
+          - cmd: "sudo grep -ri runtime /var/lib/kubelet/"
+            out: "/var/lib/kubelet/config.yaml:containerRuntimeEndpoint: unix:///run/containerd/containerd.sock"
+    - id: node-debug
+      title: "Debugging a node without docker"
+      narration: >-
+        On a node, crictl replaces the docker command for looking around. List the running containers. List the
+        Pod sandboxes, which Docker never showed you. Read the logs of a container by its ID, even when the API
+        server is down.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "sudo crictl ps"
+            out: "CONTAINER       IMAGE           STATE     NAME             POD ID          POD\n3f1c2a9b7d10e   6f6b1d4a2c3e5   Running   kube-apiserver   9a7c1e2d3b4f5   kube-apiserver-cp-1\n8b2d4e6f1a3c5   2c4e6a8b0d1f3   Running   etcd             1d3f5b7a9c2e4   etcd-cp-1"
+          - cmd: "sudo crictl pods --name etcd"
+            out: "POD ID          STATE   NAME        NAMESPACE     ATTEMPT\n1d3f5b7a9c2e4   Ready   etcd-cp-1   kube-system   0"
+          - cmd: "sudo crictl logs --tail=2 8b2d4e6f1a3c5"
+            out: "... \"msg\":\"ready to serve client requests\"\n... \"msg\":\"serving client traffic securely\""
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Think crictl wherever you used to think docker: the everyday subcommands have the same names. If crictl
+        prints endpoint warnings, point it at the runtime's socket once, in its configuration file. When the API
+        server is down, kubectl is useless, so go to the node and read the container's logs there. And when a
+        question mentions the container runtime, start with the wide node listing.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "crictl ps, images, logs, exec, inspect: same names as docker"
+          - "Set runtime-endpoint once in /etc/crictl.yaml"
+          - "API server down? crictl ps -a and crictl logs on the node"
+          - "Runtime question? kubectl get nodes -o wide"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Kubernetes removed dockershim, the adapter in the kubelet, and not Docker itself. Images built with Docker
+        run on every runtime, because they share one open format. The kubelet talks to any runtime that speaks the
+        runtime interface, and for most clusters that is containerd. Docker Engine still works through cri-dockerd,
+        if you really need it. On the node, reach for crictl.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Removed in v1.24: dockershim, not Docker"
+          - "Docker-built images run everywhere (OCI format)"
+          - "kubelet → CRI → containerd or CRI-O"
+          - "Docker Engine needs cri-dockerd"
+          - "On the node: crictl, not docker"
+---
+
+## Why this note exists
+
+In December 2020 the Kubernetes v1.20 release notes carried one line that travelled much further than its authors
+expected: *"Docker support in the kubelet is now deprecated and will be removed in a future release."* Many people
+read it as "Kubernetes is dropping Docker" and worried about their images, their Dockerfiles and their clusters.
+
+What was deprecated, and then removed in **v1.24 (May 2022)**, was something much smaller: **dockershim**, a piece of
+adapter code inside the kubelet. Nothing about how you build or ship images changed. What changed is which program
+the kubelet talks to on each node, and which commands you use when you log in to a node.
+
+Older tutorials, blog posts and course videos still show `docker ps` on a Kubernetes node. This lesson explains why
+that no longer works, so the rest of the course (and the exam's clusters) make sense.
+
+<KeyIdea>
+Kubernetes did not remove Docker. It removed **dockershim**, the adapter that let the kubelet drive Docker Engine.
+Images built with Docker run exactly as before; only the runtime on the node, and the tool you debug it with, changed.
+</KeyIdea>
+
+## What dockershim was
+
+To understand the adapter you need three terms:
+
+| Term | What it is |
+|------|------------|
+| **CRI** (Container Runtime Interface) | The gRPC API the kubelet uses to tell a runtime "pull this image, create this Pod sandbox, start this container". Introduced in Kubernetes v1.5 so that the kubelet would not need code for each runtime |
+| **Docker Engine** (`dockerd`) | The daemon behind the `docker` command. It predates CRI and never implemented it. It has its own API, made for people and tools, not for an orchestrator |
+| **dockershim** | Code compiled into the kubelet that accepted CRI calls and translated them into Docker API calls. The only runtime adapter that lived inside Kubernetes itself |
+
+<Diagram id="call-chain" />
+
+The top row is how every Docker-based cluster worked up to v1.23. Notice what sits at the far end of it:
+**containerd**. Docker Engine has not run containers itself for years. Docker split its low-level runtime out as
+containerd in 2016 and donated it to the CNCF, and `dockerd` has used it ever since. So the kubelet was calling an
+adapter, which called Docker, which called the component that could have done the job directly.
+
+The bottom row is every cluster since v1.24: containerd ships with a CRI plugin, so the kubelet talks to it without
+a translator. The container that starts is the same in both rows, created by the same `runc`.
+
+## Why it was removed
+
+- **It was vendor code in the kubelet.** Every other runtime implements CRI on its own side. Dockershim was
+  Kubernetes maintainers keeping up with another project's API, release after release. The deprecation notice itself
+  said it "has seen maintenance issues in the Kubernetes community".
+- **Docker Engine does more than Kubernetes needs.** Its own networking, volumes, build system and Swarm mode are
+  unused on a node. Kubernetes brings CNI for networking and CSI for storage. Fewer moving parts means fewer things
+  to break and patch.
+- **New features were built on CRI only.** Work such as cgroup v2 support and user namespaces targets CRI runtimes.
+  Each one would have needed extra work in dockershim, or would simply not have reached Docker nodes.
+- **The shorter path is cheaper.** Two fewer hops per operation, and one fewer daemon whose restart can
+  disturb the node.
+
+<DeepDive title="The timeline, release by release">
+- **v1.5 (December 2016):** CRI arrives in alpha. Docker support inside the kubelet is rewritten as the first CRI
+  implementation: that is dockershim.
+- **2017 to 2019:** containerd gains a CRI plugin (built in from containerd 1.1), CRI-O matures, and managed
+  platforms start moving their nodes to containerd.
+- **v1.20 (December 2020):** dockershim is deprecated. The blog post "Don't Panic: Kubernetes and Docker" is
+  published the same week.
+- **v1.24 (May 2022):** dockershim is removed. The kubelet flags that only made sense with it go too:
+  `--network-plugin`, `--cni-conf-dir` and `--cni-bin-dir` (CNI is now configured in the runtime).
+- **v1.27:** the already meaningless `--container-runtime` kubelet flag is removed. An old kubelet unit file that
+  still passes `--container-runtime=remote` now stops the kubelet from starting: a classic upgrade failure.
+- **Meanwhile:** Mirantis and Docker took the dockershim code out of the tree and maintain it as the separate
+  project **cri-dockerd**.
+</DeepDive>
+
+## What still works, and what does not
+
+<Diagram id="image-path" />
+
+"Docker image" is a habit of speech. What `docker build` produces is an image in the **OCI** (Open Container
+Initiative) format, and every runtime pulls and runs that format. That is why nothing changed for developers.
+
+| You do this | After dockershim's removal |
+|-------------|----------------------------|
+| Build images with `docker build` on a laptop or in CI | Works. The cluster never knew how the image was built |
+| Pull from Docker Hub or any other registry | Works. Registries serve OCI images to any runtime |
+| Use Docker Desktop, kind or minikube locally | Works. kind and minikube run nodes *as* Docker containers, and inside each node the runtime is containerd |
+| Run `docker ps` on a node to see Pods' containers | **Breaks.** Docker is not installed, or is installed and shows nothing (see below) |
+| Mount `/var/run/docker.sock` into a Pod (CI build jobs, some monitoring and security agents) | **Breaks.** No socket. Build with a daemonless tool such as BuildKit, Kaniko or Buildah, and update agents to versions that use CRI |
+| Build an image on the node and run it with `imagePullPolicy: Never` | **Breaks.** The kubelet only sees images in the CRI runtime's store |
+| Configure registry mirrors or insecure registries in `/etc/docker/daemon.json` | **Ignored.** Configure them in the runtime instead (for containerd, `/etc/containerd/config.toml` and `/etc/containerd/certs.d/`) |
+
+<DeepDive title="Docker is installed on the node, yet docker ps is empty. Why?">
+containerd keeps its containers and images in **namespaces** (containerd's own, unrelated to Kubernetes namespaces).
+The kubelet's CRI plugin works in the namespace `k8s.io`; Docker Engine works in `moby`. Both can share one containerd
+daemon on the same machine and never see each other's containers or images.
+
+```bash
+sudo ctr namespaces list              # k8s.io, and moby if Docker is installed
+sudo ctr -n k8s.io containers list    # the kubelet's containers
+sudo ctr -n k8s.io images import app.tar   # make a locally built image visible to the kubelet
+```
+
+That is also the reason an image you just built with `docker build` on a node gives `ErrImageNeverPull` or
+`ImagePullBackOff`: it is in the wrong store. Push it to a registry, or import it into `k8s.io`.
+</DeepDive>
+
+## Your choices today
+
+<Diagram id="runtimes-today" />
+
+The kubelet finds its runtime through one setting, the **runtime endpoint**: a Unix socket. Whatever answers CRI on
+that socket is the node's runtime.
+
+| Runtime | Socket | Notes |
+|---------|--------|-------|
+| containerd | `unix:///run/containerd/containerd.sock` | The default choice for kubeadm clusters and most managed services |
+| CRI-O | `unix:///var/run/crio/crio.sock` | Built only for Kubernetes; the runtime of OpenShift |
+| Docker Engine + cri-dockerd | `unix:///var/run/cri-dockerd.sock` | For nodes that must keep Docker Engine. Both the Docker daemon and the adapter have to be installed and running |
+
+kubeadm detects the socket by itself when only one runtime is installed. With several (for example Docker Engine
+plus cri-dockerd on a machine that also has containerd, which is always the case with Docker), it stops and asks
+you to choose: pass `--cri-socket unix:///var/run/cri-dockerd.sock` to `kubeadm init` or `kubeadm join`.
+
+<Callout kind="warning" title="containerd from Docker's packages has CRI switched off">
+Installing Docker Engine also installs containerd (the `containerd.io` package), but its
+`/etc/containerd/config.toml` contains `disabled_plugins = ["cri"]`. `kubeadm init` then fails its preflight check
+with *"container runtime is not running ... unknown service runtime.v1.RuntimeService"*. Remove `cri` from that list
+(or regenerate the file with `containerd config default`), then `systemctl restart containerd`.
+</Callout>
+
+## Using it
+
+<Example title="Find out which runtime a node uses">
+From anywhere with `kubectl`:
+
+```bash
+kubectl get nodes -o wide          # last column: CONTAINER-RUNTIME
+kubectl get node node-1 -o jsonpath='{.status.nodeInfo.containerRuntimeVersion}{"\n"}'
+```
+
+```text
+containerd://2.1.4
+```
+
+The prefix is the runtime: `containerd://`, `cri-o://`, or `docker://` on a node that uses cri-dockerd.
+
+On the node itself, find the socket the kubelet was told to use. It is either the flag
+`--container-runtime-endpoint` or the field `containerRuntimeEndpoint` in the kubelet's configuration file:
+
+```bash
+ps -ef | grep [k]ubelet | tr ' ' '\n' | grep runtime
+sudo grep -ri runtime /var/lib/kubelet/
+```
+</Example>
+
+<Example title="Debug a control plane that kubectl cannot reach">
+`kubectl get nodes` answers "connection refused": the API server is down, so `kubectl` cannot tell you why. On a
+kubeadm cluster the API server is a static Pod, which means its container is run by the kubelet through the runtime.
+SSH to the control plane node and ask the runtime directly:
+
+```bash
+sudo crictl ps -a --name kube-apiserver     # -a also shows exited containers
+sudo crictl logs --tail=20 <container-id>   # why did it exit?
+sudo crictl pods --name kube-apiserver      # does the Pod sandbox exist at all?
+journalctl -u kubelet --since "10 min ago"  # if there is no container, the kubelet says why
+```
+
+With Docker this used to be `docker ps -a | grep apiserver` and `docker logs`. The reasoning is the same; only the
+tool changed.
+</Example>
+
+<Example title="Translate an old Docker habit">
+`crictl` deliberately keeps Docker's subcommand names for everything it supports:
+
+| With Docker | With any CRI runtime |
+|-------------|----------------------|
+| `docker ps -a` | `crictl ps -a` |
+| `docker images` | `crictl images` |
+| `docker logs -f <id>` | `crictl logs -f <id>` |
+| `docker exec -it <id> sh` | `crictl exec -it <id> sh` |
+| `docker inspect <id>` | `crictl inspect <id>` (containers), `crictl inspectp <id>` (Pods) |
+| `docker pull nginx` | `crictl pull nginx` |
+| `docker stats` | `crictl stats` |
+| (nothing) | `crictl pods`: list Pod sandboxes |
+| `docker build`, `docker push`, `docker run` | Not in `crictl`. It is a debugging tool: create workloads with `kubectl` |
+</Example>
+
+## Tricks
+
+<Trick title="Silence crictl's endpoint warnings once">
+If `crictl` prints warnings about trying default endpoints, or fails to connect, tell it where the runtime is:
+
+```bash
+sudo crictl config --set runtime-endpoint=unix:///run/containerd/containerd.sock
+```
+
+That writes `/etc/crictl.yaml`. For a single command, use `crictl --runtime-endpoint <socket> ps` instead.
+</Trick>
+
+<Trick title="Read the runtime from the node object">
+`kubectl get nodes -o wide` is the fastest answer to "which runtime and version does this node use?", and
+`kubectl describe node <name> | grep -i runtime` works when the wide table wraps badly in a small terminal.
+</Trick>
+
+<Trick title="Do not fix Pods with crictl">
+If you `crictl stop` or `crictl rm` a container that belongs to a Pod, the kubelet notices and creates it again.
+That makes `crictl` a quick way to restart one stuck static Pod container, and the wrong way to remove anything.
+Change the Pod (or the static Pod manifest) and let the kubelet do the rest.
+</Trick>
+
+<Trick title="Translate old answers as you read them">
+Much of the troubleshooting advice online predates v1.24. When it says `docker`, on a node read `crictl`; when it
+says to edit `/etc/docker/daemon.json`, read `/etc/containerd/config.toml`; when it says `systemctl restart docker`,
+read `systemctl restart containerd`.
+</Trick>
+
+## Common mistakes
+
+- **Saying "Kubernetes no longer supports Docker images".** It does. The image format is OCI and was never the issue.
+- **Looking for containers with `docker ps` on a node.** Empty output does not mean nothing is running. Use
+  `crictl ps`.
+- **Building an image on the node and expecting Pods to find it.** The kubelet only sees the CRI runtime's image
+  store. Push to a registry, or import with `ctr -n k8s.io images import`.
+- **Installing Docker Engine and forgetting cri-dockerd.** From v1.24 the kubelet cannot use Docker Engine on its
+  own; `kubeadm init` finds no usable CRI socket, or finds containerd with its CRI plugin disabled.
+- **Keeping removed kubelet flags through an upgrade.** `--container-runtime` and `--network-plugin` in an old unit
+  file or `/var/lib/kubelet/kubeadm-flags.env` make a newer kubelet exit at start. `journalctl -u kubelet` shows
+  "unknown flag".
+- **Confusing CRI with OCI.** CRI is how the kubelet talks to a runtime. OCI is the format of images and the
+  low-level contract for running a container. Docker fails the first and fully meets the second.
+
+## Recap
+
+- v1.20 deprecated and **v1.24 removed dockershim**, the kubelet's built-in adapter for Docker Engine. Docker itself
+  was not removed from anything.
+- Images built with Docker are **OCI images** and run on every runtime.
+- The kubelet speaks only **CRI**, over a socket: containerd or CRI-O directly, Docker Engine only through
+  **cri-dockerd**.
+- Check a node's runtime with `kubectl get nodes -o wide`.
+- On a node, use **`crictl`** (`ps`, `pods`, `logs`, `images`) where older guides say `docker`.
