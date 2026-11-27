@@ -1,0 +1,545 @@
+---
+id: cka-replicasets
+title: "ReplicaSets: keeping the right number of Pods alive"
+summary: "What a ReplicaSet is, how its control loop counts and replaces Pods, how labels and owner references tie the two together, and how to create, scale, fix and debug one quickly."
+minutes: 17
+competencies:
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+  - cka/workloads-scheduling/application-deployments-perform-rolling-update
+docs:
+  - title: "Kubernetes docs: ReplicaSet"
+    url: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+  - title: "Kubernetes docs: Controllers"
+    url: https://kubernetes.io/docs/concepts/architecture/controller/
+  - title: "Kubernetes docs: Labels and Selectors"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+  - title: "Kubernetes docs: Owners and Dependents"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
+  - title: "Kubernetes docs: Garbage Collection"
+    url: https://kubernetes.io/docs/concepts/architecture/garbage-collection/
+diagrams:
+  reconcile-loop:
+    title: "The reconcile loop"
+    caption: "The controller compares the number of matching Pods with spec.replicas and creates or deletes Pods until they agree. A lost Pod is not repaired: a new one takes its place."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl apply", icon: user, col: 0, row: 1 }
+      - { id: ctrl, label: "RS controller", sub: "controller-manager", icon: process, col: 1, row: 0, tone: muted }
+      - { id: rs, label: "ReplicaSet web", sub: "replicas: 3", icon: replicaset, col: 1, row: 1, tone: primary }
+      - { id: pod-1, label: "Pod web-7k2xq", sub: "Running", icon: pod, col: 2, row: 0, tone: success }
+      - { id: pod-2, label: "Pod web-m9d4c", sub: "Running", icon: pod, col: 2, row: 1, tone: success }
+      - { id: pod-3, label: "Pod web-p5c7t", sub: "lost with its node", icon: pod, col: 2, row: 2, tone: warning }
+      - { id: new, label: "Pod web-zr8wh", sub: "replacement", icon: pod, col: 3, row: 2, tone: success }
+    edges:
+      - { from: you, to: rs, label: "desired" }
+      - { from: ctrl, to: rs, label: "watches", dashed: true }
+      - { from: rs, to: pod-1 }
+      - { from: rs, to: pod-2, label: "owns" }
+      - { from: rs, to: pod-3 }
+      - { from: pod-3, to: new, label: "replaced", dashed: true }
+  ownership:
+    title: "Labels select, owner references own"
+    caption: "The selector decides which Pods could belong to the ReplicaSet; the ownerReference on each Pod records that they do. A matching Pod without an owner is adopted, and a Pod whose label changes is released."
+    nodes:
+      - { id: rs, label: "ReplicaSet web", sub: "selector app=web", icon: replicaset, col: 0, row: 1, tone: primary }
+      - { id: pod-a, label: "Pod web-7k2xq", sub: "app=web", icon: pod, col: 1, row: 0, tone: success }
+      - { id: pod-b, label: "Pod web-m9d4c", sub: "app=web", icon: pod, col: 1, row: 1, tone: success }
+      - { id: bare, label: "Pod handmade", sub: "app=web, no owner", icon: pod, col: 1, row: 2, tone: warning }
+      - { id: released, label: "Pod web-p5c7t", sub: "app=debug, released", icon: pod, col: 1, row: 3, tone: muted }
+    edges:
+      - { from: rs, to: pod-a, label: "owner" }
+      - { from: rs, to: pod-b, label: "owner" }
+      - { from: rs, to: bare, label: "adopts", dashed: true }
+  deployment-chain:
+    title: "A Deployment manages ReplicaSets, a ReplicaSet manages Pods"
+    caption: "Each version of the Pod template gets its own ReplicaSet. A rollout scales the new one up and the old one down; the old one stays at zero replicas so you can roll back."
+    nodes:
+      - { id: deploy, label: "Deployment web", sub: "you edit this", icon: deployment, col: 0, row: 1 }
+      - { id: rs-new, label: "RS web-5d8f7c9b6", sub: "replicas: 3", icon: replicaset, col: 1, row: 1, tone: primary }
+      - { id: rs-old, label: "RS web-64c8d5f7d", sub: "replicas: 0", icon: replicaset, col: 1, row: 2, tone: muted }
+      - { id: pod-1, label: "Pod", sub: "web-5d8f7c9b6-x7k2p", icon: pod, col: 2, row: 0, tone: success }
+      - { id: pod-2, label: "Pod", sub: "web-5d8f7c9b6-b4n6s", icon: pod, col: 2, row: 1, tone: success }
+      - { id: pod-3, label: "Pod", sub: "web-5d8f7c9b6-q9t2v", icon: pod, col: 2, row: 2, tone: success }
+    edges:
+      - { from: deploy, to: rs-new, label: "current" }
+      - { from: deploy, to: rs-old, label: "previous", dashed: true }
+      - { from: rs-new, to: pod-1 }
+      - { from: rs-new, to: pod-2 }
+      - { from: rs-new, to: pod-3 }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "ReplicaSets"
+      narration: >-
+        A single Pod is fragile. If it is deleted, or its node dies, nothing brings it back. A ReplicaSet fixes that
+        by keeping a fixed number of identical Pods running at all times. In this lesson you will see how it does
+        that, how it decides which Pods are its own, and how to work with one quickly in the exam.
+      visual:
+        kind: title
+        heading: "ReplicaSets"
+        subheading: "Keeping the right number of Pods alive"
+    - id: problem
+      title: "The problem a ReplicaSet solves"
+      narration: >-
+        A Pod you create by hand has no one looking after it. When its node fails, the Pod is simply gone. One copy
+        also means one point of failure, and no way to spread load. What you want is to state a number, and have
+        the cluster keep that many copies running for you.
+      visual:
+        kind: points
+        heading: "Why not just run a Pod?"
+        items:
+          - "A bare Pod has no one looking after it"
+          - "Node fails: the Pod is gone for good"
+          - "One copy: no redundancy, no spreading of load"
+          - "Better: state a number and let the cluster keep it"
+    - id: loop
+      title: "The reconcile loop"
+      narration: >-
+        You apply a ReplicaSet that asks for three replicas. The ReplicaSet controller, a loop inside the controller
+        manager, notices the new object. It counts the Pods that match the selector, finds none, and creates three.
+        Now a node fails and takes one Pod with it. The count is two and the spec says three, so the controller
+        creates a replacement. Notice that it never repairs a Pod: it only compares two numbers, and creates or
+        deletes Pods until they agree.
+      visual:
+        kind: diagram
+        diagram: reconcile-loop
+        steps:
+          - [you, rs, you-rs]
+          - [ctrl, ctrl-rs]
+          - [pod-1, pod-2, pod-3, rs-pod-1, rs-pod-2, rs-pod-3]
+          - [pod-3]
+          - [new, pod-3-new]
+    - id: manifest
+      title: "Reading a ReplicaSet manifest"
+      narration: >-
+        A ReplicaSet has three parts. Replicas is the number of Pods you want. The selector says which Pods count
+        towards that number. The template is the Pod that gets created whenever there are too few. The labels in the
+        template must match the selector, or the API server refuses the object.
+      visual:
+        kind: code
+        lang: yaml
+        code: |
+          apiVersion: apps/v1
+          kind: ReplicaSet
+          metadata:
+            name: web
+            namespace: shop
+          spec:
+            replicas: 3
+            selector:
+              matchLabels:
+                app: web
+            template:
+              metadata:
+                labels:
+                  app: web
+              spec:
+                containers:
+                  - name: nginx
+                    image: nginx:1.29-alpine
+        steps: ["1-2", "7", "8-10", "11-18", "9-10,13-14"]
+    - id: ownership
+      title: "Labels select, owner references own"
+      narration: >-
+        The ReplicaSet finds its Pods by label, here app equals web. Every Pod it creates carries an owner reference
+        that points back to it. A Pod you made by hand, with the same label and no owner, is adopted and counts as a
+        replica. And if you change the label on a Pod, the ReplicaSet lets it go and creates a replacement.
+      visual:
+        kind: diagram
+        diagram: ownership
+        steps:
+          - [rs]
+          - [pod-a, pod-b, rs-pod-a, rs-pod-b]
+          - [bare, rs-bare]
+          - [released]
+    - id: example
+      title: "Create, break and scale"
+      narration: >-
+        Apply the manifest and the ReplicaSet appears. Three Pods come up, each named after the ReplicaSet with a
+        random ending. Delete one of them, and a new Pod has taken its place within seconds. To change the number,
+        scale the ReplicaSet. The extra Pods are created from the same template.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl apply -f web-rs.yaml"
+            out: "replicaset.apps/web created"
+          - cmd: "kubectl -n shop get pods"
+            out: "NAME        READY   STATUS    RESTARTS   AGE\nweb-7k2xq   1/1     Running   0          20s\nweb-m9d4c   1/1     Running   0          20s\nweb-p5c7t   1/1     Running   0          20s"
+          - cmd: "kubectl -n shop delete pod web-p5c7t --wait=false && kubectl -n shop get rs web"
+            out: "NAME   DESIRED   CURRENT   READY   AGE\nweb    3         3         2       45s"
+          - cmd: "kubectl -n shop scale rs web --replicas=5"
+            out: "replicaset.apps/web scaled"
+          - cmd: "kubectl -n shop get rs web"
+            out: "NAME   DESIRED   CURRENT   READY   AGE\nweb    5         5         5       80s"
+    - id: template
+      title: "The template only matters for new Pods"
+      narration: >-
+        Here is the trap that catches most people. Changing the template does not touch the Pods that already run.
+        The controller only counts Pods, it never compares them with the template. So after you fix an image, the
+        old Pods keep the old image until you delete them. Replacing Pods in a controlled way is the job of a
+        Deployment.
+      visual:
+        kind: points
+        heading: "Editing a ReplicaSet"
+        items:
+          - "The classic trap"
+          - "A template change leaves running Pods alone"
+          - "The controller counts Pods, it does not compare them"
+          - "Fix the template, then delete the old Pods"
+          - "Want a rolling update? Use a Deployment"
+    - id: deployments
+      title: "Where ReplicaSets sit under a Deployment"
+      narration: >-
+        In a real cluster you rarely create a ReplicaSet yourself. You create a Deployment, and edit only that. The
+        Deployment creates a ReplicaSet for the current Pod template, with a hash of the template in its name. That
+        ReplicaSet creates the Pods. After a rollout, the previous ReplicaSet stays behind with zero replicas, ready
+        for a rollback.
+      visual:
+        kind: diagram
+        diagram: deployment-chain
+        steps:
+          - [deploy]
+          - [deploy]
+          - [rs-new, deploy-rs-new]
+          - [pod-1, pod-2, pod-3, rs-new-pod-1, rs-new-pod-2, rs-new-pod-3]
+          - [rs-old, deploy-rs-old]
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        The short name is r s, so type kubectl get r s. There is no create command for ReplicaSets, so generate a
+        Deployment manifest with dry run and change the kind. When a ReplicaSet shows fewer Pods than desired,
+        describe the ReplicaSet itself, because the reason is in its events. To take one Pod out for debugging,
+        change its label and a fresh one replaces it. And never scale a ReplicaSet that a Deployment owns, because
+        the Deployment will scale it straight back.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl get rs, kubectl scale rs web --replicas=5"
+          - "No kubectl create rs: generate a Deployment, change the kind"
+          - "Too few Pods? kubectl describe rs shows FailedCreate events"
+          - "Relabel a Pod to pull it out for debugging"
+          - "Owned by a Deployment? Scale the Deployment instead"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        A ReplicaSet keeps a set number of identical Pods running. Its selector decides which Pods count, and owner
+        references record which ones it owns. The template is only used when a new Pod is needed. Deployments manage
+        ReplicaSets for you, and add rolling updates on top. Now try it yourself in the practice questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "replicas, selector, template"
+          - "Selector picks Pods; ownerReferences record ownership"
+          - "Template changes only reach new Pods"
+          - "Deployment → ReplicaSet → Pods"
+---
+
+## Why ReplicaSets exist
+
+A Pod on its own is a one-off. The kubelet restarts its containers when they crash, but nothing recreates the Pod
+itself: delete it, drain its node or lose the node, and the application is gone until somebody notices. A single Pod
+also gives you one point of failure and no way to spread load.
+
+A **ReplicaSet** is the object that turns "run this Pod" into "always keep N of these Pods running". You state the
+number, and a controller in the control plane creates Pods when there are too few and deletes Pods when there are too
+many, for as long as the ReplicaSet exists.
+
+<KeyIdea>
+A ReplicaSet does one thing: it keeps the number of Pods that match its selector equal to `spec.replicas`. It counts
+Pods; it does not care how they got there or what is inside them.
+</KeyIdea>
+
+That one sentence explains almost every surprising thing a ReplicaSet does, so keep it in mind through the rest of
+this lesson.
+
+## What a ReplicaSet is made of
+
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: web
+  namespace: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.29-alpine
+```
+
+| Field | Meaning | Good to know |
+|-------|---------|--------------|
+| `spec.replicas` | How many Pods you want | Defaults to 1. The only field you change often. |
+| `spec.selector` | Which Pods count as replicas | Required, and **immutable** after creation. Supports `matchLabels` and `matchExpressions`. |
+| `spec.template` | The Pod to create when one is missing | Everything under it is an ordinary Pod: `metadata` plus `spec`, without `apiVersion` or `kind`. |
+
+Two rules tie the fields together:
+
+- **The template's labels must satisfy the selector.** Otherwise the ReplicaSet would create Pods it could not count,
+  and it would create them forever. The API server rejects such an object: ``The ReplicaSet "web" is invalid: ...
+  `selector` does not match template `labels` ``.
+- **The template's `restartPolicy` must be `Always`** (the default). A ReplicaSet is for Pods that should run
+  forever; run-to-completion work belongs in a Job.
+
+The ReplicaSet reports back in `status`, which is what `kubectl get rs` prints:
+
+| Column | Status field | Meaning |
+|--------|--------------|---------|
+| `DESIRED` | `spec.replicas` | What you asked for |
+| `CURRENT` | `status.replicas` | Pods that exist and match the selector, ready or not |
+| `READY` | `status.readyReplicas` | Pods that pass their readiness probe |
+
+## How it works: the reconcile loop
+
+<Diagram id="reconcile-loop" />
+
+No part of a ReplicaSet runs on your nodes. The object is only a record in etcd. The work is done by the
+**ReplicaSet controller**, one of the many loops inside `kube-controller-manager` on the control plane. It watches
+ReplicaSets and Pods through the API server, and every time either changes it runs the same small calculation for
+the ReplicaSet involved:
+
+<Flow label="One pass of the loop" steps={["List Pods matching the selector", "Ignore Pods that are terminating or finished", "Compare the count with spec.replicas", "Too few: create Pods from the template", "Too many: delete the surplus", "Write the counts to status"]} />
+
+This is the pattern behind all of Kubernetes: you record the **desired state**, and a controller keeps nudging the
+**actual state** towards it. It is why the same mechanism handles a first deployment, a crashed node, a deleted Pod
+and a `kubectl scale` without any special cases. In each one the count is simply wrong, and the controller corrects
+it.
+
+Note what the controller does **not** do. It does not start containers (the kubelet does), it does not pick nodes
+(the scheduler does) and it does not repair a broken Pod. It creates Pod objects through the API server, like you
+would with `kubectl`, and the rest of the cluster takes it from there. A Pod that is lost is not brought back; a
+new Pod with a new name and a new IP takes its place.
+
+<DeepDive title="What counts as a replica, and how fast lost Pods come back">
+- A Pod counts if it matches the selector, is owned by this ReplicaSet, is not being deleted and has not finished
+  (phase `Succeeded` or `Failed`). It does **not** have to be ready or even scheduled. A Pod stuck in `Pending` or
+  `CrashLoopBackOff` is still a replica, so the ReplicaSet will not replace it.
+- A Pod you delete is replaced within a second or two, because the delete is an event the controller sees at once.
+- A Pod on a node that stops responding takes much longer. The node is first marked `NotReady`, and Pods tolerate
+  that for 300 seconds by default before they are evicted. Only then does the count drop and a replacement appear,
+  so expect about five minutes. That delay is a setting on the Pod (`tolerationSeconds`), not on the ReplicaSet.
+- When many Pods are missing the controller creates them in growing batches (1, then 2, then 4, and so on). If the
+  first creations fail, for example against a ResourceQuota, it stops early instead of sending hundreds of requests
+  that would fail the same way, and it records a `FailedCreate` event on the ReplicaSet.
+</DeepDive>
+
+## Labels select, owner references own
+
+<Diagram id="ownership" />
+
+Two different links connect a ReplicaSet and its Pods, and it helps to keep them apart:
+
+- **The selector** answers "which Pods *could* be mine?". It is a label query, evaluated in the ReplicaSet's own
+  namespace.
+- **The owner reference** answers "which Pods *are* mine?". Every Pod the controller creates gets a
+  `metadata.ownerReferences` entry that names the ReplicaSet, with `controller: true`. You see it in
+  `kubectl describe pod` as `Controlled By: ReplicaSet/web`.
+
+Three behaviours follow, and each can cost or save you time:
+
+| Situation | What the ReplicaSet does |
+|-----------|--------------------------|
+| A Pod matches the selector and has **no controller owner** | It **adopts** the Pod (adds the owner reference) and counts it. |
+| An owned Pod's labels **stop matching** the selector | It **releases** the Pod (removes the owner reference) and creates a replacement. The released Pod keeps running. |
+| The ReplicaSet is deleted | The garbage collector deletes every Pod that names it as owner, unless you ask it not to. |
+
+<Callout kind="warning" title="Adoption can delete your Pod">
+If you create a bare Pod whose labels happen to match an existing ReplicaSet that already has all its replicas, the
+ReplicaSet adopts it, sees one Pod too many and deletes one, usually the newest: yours. A Pod that vanishes seconds
+after you create it is almost always this. Check `kubectl get rs -o wide` for a selector that matches your labels.
+</Callout>
+
+The same rule is why two ReplicaSets (or a ReplicaSet and a Deployment) should never share a selector. Kubernetes
+does not stop you, and the owner references keep them from stealing each other's Pods, but any Pod without an owner
+will be picked up by whichever controller sees it first.
+
+## ReplicaSets and Deployments
+
+<Diagram id="deployment-chain" />
+
+A ReplicaSet cannot update its Pods. If you change the image in the template, the count is still correct, so the
+controller does nothing; the running Pods keep the old image until something deletes them.
+
+That gap is what a **Deployment** fills. A Deployment owns ReplicaSets the way a ReplicaSet owns Pods. For every
+version of the Pod template it creates one ReplicaSet, named after the Deployment plus a hash of the template (for
+example `web-5d8f7c9b6`), and adds the same hash to the selector and the Pods as the `pod-template-hash` label. A
+rolling update is nothing more than scaling the new ReplicaSet up while scaling the old one down. The old one is kept
+at zero replicas, which is what makes `kubectl rollout undo` possible.
+
+| You want | Use |
+|----------|-----|
+| A stateless app that you will update | **Deployment** (it manages the ReplicaSets) |
+| Exactly one Pod per node | DaemonSet |
+| Stable names and storage per Pod | StatefulSet |
+| Work that runs to completion | Job |
+| A fixed set of Pods that is never rolled, or a custom update tool of your own | A bare ReplicaSet (rare) |
+
+So why learn ReplicaSets at all? Because every Deployment problem you debug ends at one. The Pods' names, their
+owner, the `DESIRED / CURRENT / READY` numbers and the events that explain a missing Pod all live on the ReplicaSet.
+
+<Callout kind="note" title="ReplicationController">
+You will still meet the name `ReplicationController` (short name `rc`) in old manifests. It is the predecessor of the
+ReplicaSet in the core `v1` API: the same loop, but with a plain key-value selector and no `matchExpressions`, and
+Deployments do not use it. Read it as "an old ReplicaSet" and create ReplicaSets or Deployments instead.
+</Callout>
+
+## Using it
+
+<Example title="Create a ReplicaSet and watch it heal">
+Save the manifest above as `web-rs.yaml`, create it, then delete a Pod and watch the count recover.
+
+```bash
+kubectl create namespace shop
+kubectl apply -f web-rs.yaml
+kubectl -n shop get rs web                 # DESIRED 3, CURRENT 3, READY 3
+kubectl -n shop get pods -l app=web        # web-7k2xq, web-m9d4c, web-p5c7t
+
+kubectl -n shop delete pod web-p5c7t
+kubectl -n shop get pods -l app=web        # still three: a new name has appeared
+kubectl -n shop describe rs web            # Events: SuccessfulCreate ... Created pod: web-zr8wh
+```
+
+The Pod names are the ReplicaSet's name plus five random characters. The events at the bottom of
+`kubectl describe rs` are the controller's own log of every Pod it created or deleted.
+</Example>
+
+<Example title="Scale up and down">
+Three ways to change the number, from fastest to slowest:
+
+```bash
+kubectl -n shop scale rs web --replicas=5          # imperative, one line
+kubectl -n shop edit rs web                        # change spec.replicas in the editor
+kubectl apply -f web-rs.yaml                       # after editing replicas in the file
+```
+
+`kubectl scale` changes the live object only. If the task says the manifest file must reflect the change, edit the
+file too, or the next `kubectl apply -f` will put the old number back.
+</Example>
+
+<Example title="Fix a ReplicaSet whose Pods never become ready">
+A typical troubleshooting task: ReplicaSet `api` in namespace `shop` should run four Pods, but none is ready.
+
+```bash
+kubectl -n shop get rs api                         # DESIRED 4, CURRENT 4, READY 0
+kubectl -n shop get pods -l app=api                # ImagePullBackOff on all four
+kubectl -n shop describe pod -l app=api | grep -i -A3 failed
+```
+
+The image tag has a typo. Fix the template, then replace the Pods, because the template change alone does nothing
+for Pods that already exist:
+
+```bash
+kubectl -n shop set image rs/api api=nginx:1.29-alpine
+kubectl -n shop delete pod -l app=api
+kubectl -n shop get rs api                         # READY climbs back to 4
+```
+
+The broken Pods still counted as replicas, which is why the ReplicaSet never replaced them on its own.
+</Example>
+
+<Example title="Take one Pod out of rotation without losing it">
+One replica misbehaves and you want to inspect it, without it serving traffic and without running one short.
+
+```bash
+kubectl -n shop label pod web-7k2xq app=debug --overwrite
+kubectl -n shop get pods -L app                    # web-7k2xq now app=debug, plus one new web Pod
+```
+
+The Pod no longer matches the selector, so the ReplicaSet releases it and creates a replacement. Any Service that
+selects `app: web` stops sending it traffic for the same reason. The Pod keeps running with no owner: delete it
+yourself when you are done.
+</Example>
+
+## Tricks
+
+<Trick title="There is no kubectl create replicaset">
+`kubectl create` has no ReplicaSet subcommand, and typing the manifest from memory is slow. Generate a Deployment and
+convert it:
+
+```bash
+kubectl -n shop create deployment web --image=nginx:1.29-alpine --replicas=3 \
+  --dry-run=client -o yaml > web-rs.yaml
+```
+
+Then change `kind: Deployment` to `kind: ReplicaSet` and delete the `strategy: {}` line, which a ReplicaSet does not
+have. Everything else, including the selector and the matching template labels, is already right.
+</Trick>
+
+<Trick title="Use the short name and the wide view">
+`rs` is the short name: `kubectl get rs`, `kubectl describe rs web`, `kubectl scale rs web --replicas=2`.
+`kubectl get rs -o wide` adds the containers, images and **selector** columns, which answers "which image does this
+run?" and "why did it grab my Pod?" in one command. `kubectl explain rs.spec` lists the fields if you forget one.
+</Trick>
+
+<Trick title="Fewer Pods than desired? Describe the ReplicaSet, not the Pods">
+When `CURRENT` is lower than `DESIRED`, the missing Pods were never created, so there is no Pod to describe. The
+reason is in the ReplicaSet's events: look for `FailedCreate` in `kubectl describe rs`. The usual causes are a
+ResourceQuota that is used up, a LimitRange the template violates, a missing ServiceAccount or an admission policy
+that rejects the Pod.
+</Trick>
+
+<Trick title="Find the owner before you change anything">
+`kubectl get rs` on a busy namespace mostly shows ReplicaSets that belong to Deployments. Check before you touch one:
+
+```bash
+kubectl -n shop get rs web-5d8f7c9b6 -o jsonpath='{.metadata.ownerReferences[0].kind}{"\n"}'
+```
+
+If it prints `Deployment`, make your change on the Deployment. Anything you scale or edit on the ReplicaSet is
+undone by the Deployment controller within seconds.
+</Trick>
+
+<Trick title="Delete the ReplicaSet but keep the Pods">
+`kubectl delete rs web --cascade=orphan` removes only the ReplicaSet and leaves its Pods running without an owner.
+A new ReplicaSet with the same selector adopts them. This is the way to replace a ReplicaSet whose selector you got
+wrong, since the selector cannot be edited.
+</Trick>
+
+<DeepDive title="Which Pods go first when you scale down">
+When there are too many Pods, the controller ranks them and deletes from the top of this list:
+
+1. Pods that are not scheduled yet, then Pods that are still `Pending`
+2. Pods that are not ready
+3. Pods with a lower `controller.kubernetes.io/pod-deletion-cost` annotation (the default is 0)
+4. Pods on nodes that hold more replicas of this ReplicaSet, which keeps the rest spread out
+5. Pods that became ready more recently, and then the newest Pods
+
+So scaling down removes the least useful Pods first, and among healthy Pods roughly the youngest. To protect a
+particular Pod, give the others a lower deletion cost: `kubectl annotate pod web-m9d4c
+controller.kubernetes.io/pod-deletion-cost=-100` makes that Pod the first to go.
+</DeepDive>
+
+## Common mistakes
+
+- **Editing the template and expecting a rollout.** Existing Pods are not touched. Delete them, or use a Deployment.
+- **Scaling a ReplicaSet that a Deployment owns.** The Deployment sets it straight back. Scale the Deployment.
+- **Selector and template labels that differ.** The API server rejects the object, so read the error instead of
+  retyping the whole file. With the generated manifest from the trick above it cannot happen.
+- **A selector that is too broad.** `app: web` in a namespace where other Pods carry that label means adopted Pods
+  and deleted "extras". Give each workload its own label value.
+- **Deleting Pods to stop an application.** They come back. Scale to zero (`--replicas=0`) or delete the ReplicaSet.
+- **Looking for `kubectl rollout` on a ReplicaSet.** `rollout status`, `undo` and `restart` work on Deployments,
+  DaemonSets and StatefulSets, not on a ReplicaSet.
+
+## Recap
+
+- A ReplicaSet keeps the number of Pods matching its **selector** equal to `spec.replicas`, by creating Pods from its
+  **template** or deleting the surplus.
+- The work is done by a reconcile loop in `kube-controller-manager`; lost Pods are replaced, never repaired.
+- Labels decide which Pods can belong; `ownerReferences` record which do. Matching bare Pods are adopted, relabelled
+  Pods are released.
+- The template only applies to new Pods. Updating running Pods is what a Deployment adds, using one ReplicaSet per
+  template version.
+- In the exam: `kubectl get rs -o wide`, `kubectl scale rs`, `kubectl describe rs` for `FailedCreate`, and generate
+  the YAML from `kubectl create deployment --dry-run=client -o yaml`.
