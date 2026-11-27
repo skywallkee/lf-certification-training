@@ -20,13 +20,13 @@ describe("lesson MDX written in the admin editor", () => {
     ).toEqual([]);
   });
 
-  it("accepts every sample lesson body in the repository", async () => {
-    const dir = path.resolve(import.meta.dirname, "../../../../content/lessons/sample");
-    for (const cert of await readdir(dir)) {
-      for (const file of await readdir(path.join(dir, cert))) {
-        const text = await readFile(path.join(dir, cert, file), "utf8");
-        expect(mdxProblems(text.replace(/^---[\s\S]*?---\n/, "")), file).toEqual([]);
-      }
+  it("accepts every lesson body in the repository", async () => {
+    const dir = path.resolve(import.meta.dirname, "../../../../content/lessons");
+    const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith(".mdx"));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const text = await readFile(path.join(dir, file), "utf8");
+      expect(mdxProblems(text.replace(/^---[\s\S]*?---\n/, "")), file).toEqual([]);
     }
   });
 

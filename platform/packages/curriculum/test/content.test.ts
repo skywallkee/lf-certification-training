@@ -11,17 +11,27 @@ describe("content in the repository", () => {
     curriculum = await loadCurriculum();
   });
 
-  it("loads the sample set: 13 lessons and 74 questions across KCNA, KCSA, CKA and CKNE, all marked mock", async () => {
+  // The sample set is questions, labs and mock exams only: the sample lessons were removed when the real CKA lessons
+  // arrived. These tests count the sample items alone, so real content can be added without touching them.
+  it("has no sample lessons, and loads the 74 sample questions across KCNA, KCSA, CKA and CKNE, all under sample/", async () => {
     const content = await loadContent(curriculum);
-    expect(content.lessons).toHaveLength(13);
-    expect(content.questions).toHaveLength(74);
-    expect(new Set([...content.lessons, ...content.questions].map((i) => i.cert))).toEqual(new Set(["KCNA", "KCSA", "CKA", "CKNE"]));
-    expect([...content.lessons, ...content.questions].every((i) => i.mock)).toBe(true);
+    expect(content.lessons.filter((l) => l.mock)).toEqual([]);
+    expect(content.lessons.every((l) => !l.file.includes("/sample/") && !l.id.startsWith("sample-"))).toBe(true);
+    const sample = content.questions.filter((q) => q.mock);
+    expect(sample).toHaveLength(74);
+    expect(new Set(sample.map((i) => i.cert))).toEqual(new Set(["KCNA", "KCSA", "CKA", "CKNE"]));
+    expect(sample.every((i) => i.file.includes("/sample/"))).toBe(true);
+    expect([...content.lessons, ...content.questions].filter((i) => !i.mock).every((i) => !i.file.includes("/sample/"))).toBe(true);
   });
 
   it("leaves the sample set out when includeSample is false", async () => {
+    const all = await loadContent(curriculum);
     const content = await loadContent(curriculum, { includeSample: false });
-    expect(content).toEqual({ lessons: [], questions: [], labs: [], quizMocks: [] });
+    const ids = (items: { id: string }[]) => items.map((i) => i.id);
+    expect(ids(content.lessons)).toEqual(ids(all.lessons.filter((i) => !i.mock)));
+    expect(ids(content.questions)).toEqual(ids(all.questions.filter((i) => !i.mock)));
+    expect(ids(content.labs)).toEqual(ids(all.labs.filter((i) => !i.mock)));
+    expect(ids(content.quizMocks)).toEqual(ids(all.quizMocks.filter((i) => !i.mock)));
   });
 
   it("loads the sample practical mock exams for CKA, CKAD and CKS: a pass mark, a competency per task and no hints", async () => {

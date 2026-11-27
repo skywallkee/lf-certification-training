@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { lab, question } from "@lfct/curriculum/db";
+import { lab, lesson, question } from "@lfct/curriculum/db";
 import { hashPassword } from "better-auth/crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "../src/db/schema.ts";
@@ -84,11 +84,18 @@ export async function seed(databaseUrl: string, opts: { today?: string; cohort?:
       { userId: ids.mid, certCode: "CKAD", state: "passed", passedOn: addDays(today, -83) },
       { userId: ids.mid, certCode: "CKA", state: "booked", bookedFor: addDays(today, 55) },
     ]);
-    await db.insert(schema.lessonProgress).values([
-      { userId: ids.mid, lessonId: "sample-cka-rolling-updates", completedAt: new Date(now.getTime() - 3 * 86_400_000) },
-      { userId: ids.mid, lessonId: "sample-cka-container-logs", completedAt: new Date(now.getTime() - 2 * 86_400_000) },
-      { userId: ids.mid, lessonId: "sample-cka-rbac", completedAt: new Date(now.getTime() - 86_400_000) },
-    ]);
+    // The first three CKA lessons in course order (file names start with their number), read on the last three days.
+    const readLessons = await db
+      .select({ id: lesson.id })
+      .from(lesson)
+      .where(and(eq(lesson.certCode, "CKA"), eq(lesson.published, true)))
+      .orderBy(asc(lesson.file))
+      .limit(3);
+    if (readLessons.length > 0) {
+      await db.insert(schema.lessonProgress).values(
+        readLessons.map((l, i) => ({ userId: ids.mid, lessonId: l.id, completedAt: new Date(now.getTime() - (readLessons.length - i) * 86_400_000) })),
+      );
+    }
 
     const ckaQuestions = await db
       .select({ id: question.id, refs: question.competencyRefs, options: question.options, knownIssue: question.knownIssue })

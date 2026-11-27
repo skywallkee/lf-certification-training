@@ -103,21 +103,23 @@ test("the mid learner runs a review session from the queue", async ({ page }) =>
 
 test("marking a lesson done, saving it and writing a note show up on Saved", async ({ page }) => {
   await signIn(page, "new@example.com");
-  await page.goto("/certs/kcna/domains/kubernetes-fundamentals/competencies/kubernetes-core-concepts");
-  const markDone = page.getByRole("button", { name: "Mark as done" });
+  await page.goto("/certs/cka/domains/troubleshooting/competencies/troubleshoot-clusters-nodes");
+  // Scoped to the lesson's own section: other lessons share this competency page.
+  const lesson = page.locator('section[aria-labelledby="lesson-cka-course-introduction"]');
+  const markDone = lesson.getByRole("button", { name: "Mark as done" });
   if (await markDone.isVisible()) {
     await markDone.click();
-    await expect(page.getByRole("button", { name: /Done · mark as not done/ })).toBeVisible();
+    await expect(lesson.getByRole("button", { name: /Done · mark as not done/ })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
-  await page.getByLabel("Your private note").fill("Remember: a Deployment manages ReplicaSets.");
-  await page.getByRole("button", { name: "Save note" }).click();
-  await expect(page.getByText("Saved", { exact: true }).last()).toBeVisible();
+  await lesson.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(lesson.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await lesson.getByLabel("Your private note").fill("Remember: alias k=kubectl and its completion.");
+  await lesson.getByRole("button", { name: "Save note" }).click();
+  await expect(lesson.getByText("Saved", { exact: true }).last()).toBeVisible();
 
   await page.goto("/saved");
-  await expect(page.getByText("Remember: a Deployment manages ReplicaSets.")).toBeVisible();
-  await expect(page.getByRole("link", { name: /Pods, Deployments and Services in one picture/ }).first()).toBeVisible();
+  await expect(page.getByText("Remember: alias k=kubectl and its completion.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Course introduction: how to study for the CKA/ }).first()).toBeVisible();
 });
 
 test("a learner books an exam and then marks it passed", async ({ page }) => {
@@ -180,7 +182,11 @@ test("the progress dashboard shows readiness per cert from questions, lessons, l
   await expect(cka.getByText("Booked")).toBeVisible();
   await expect(cka.getByRole("img", { name: /Readiness \d+ percent/ })).toBeVisible();
   await expect(cka.getByText(/lab tasks? and \d+ mock exam tasks?/)).toBeVisible();
-  await expect(cka.getByText("3 of 6")).toBeVisible();
+  // Lessons read: the seed marks the first three CKA lessons read (fewer while fewer exist), and the total grows with
+  // every real CKA lesson.
+  const [row] = await query<{ n: number }>("select count(*)::int as n from lesson where cert_code = 'CKA' and published");
+  const ckaLessons = row!.n;
+  await expect(cka.getByText(new RegExp(`^${Math.min(3, ckaLessons)} of ${ckaLessons}$`))).toBeVisible();
   await expect(cka.getByText(/1 of 2 solved/)).toBeVisible();
   await expect(cka.getByText(/^Best \d+%$/)).toBeVisible();
   await expect(cka.getByRole("heading", { name: "Before you book" })).toBeVisible();

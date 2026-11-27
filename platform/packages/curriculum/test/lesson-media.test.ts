@@ -117,11 +117,11 @@ describe("lesson media", () => {
     expect(lessonMediaProblems({ body, diagrams, video: v })).toEqual([]);
   });
 
-  it("the template lesson's video fits its diagrams and narration", async () => {
+  it("every lesson's video fits its diagrams and narration", async () => {
     const content = await loadContent(await loadCurriculum());
-    const lesson = content.lessons.find((l) => l.id === "sample-cka-services")!;
-    expect(lesson.video?.scenes.length).toBeGreaterThanOrEqual(8);
-    expect(Object.keys(lesson.diagrams)).toEqual(["service-routing", "kube-proxy", "service-types"]);
-    expect(lessonMediaProblems(lesson)).toEqual([]);
+    const intro = content.lessons.find((l) => l.id === "cka-course-introduction")!;
+    expect(intro.video?.scenes.length).toBeGreaterThanOrEqual(8);
+    expect(Object.keys(intro.diagrams)).toEqual(["course-map", "control-loop", "study-loop"]);
+    for (const lesson of content.lessons) expect(lessonMediaProblems(lesson), lesson.id).toEqual([]);
   });
 });

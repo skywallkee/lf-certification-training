@@ -2,7 +2,8 @@
  * One-step database setup for the local Docker stack (the compose "setup" service) and fresh clones:
  * applies both migration sets, ingests the curriculum and content (sample set included), and seeds the
  * sample learners the first time only, so `docker compose up` again keeps your progress. The sample cohort for the
- * admin analytics page is added on its own when it is missing.
+ * admin analytics page is added on its own when it is missing. Learner rows left on the removed sample lessons
+ * are cleared on every run (retire-sample-lessons.ts).
  * Set SEED=always to reset the sample learners, or SEED=never to skip them.
  *
  * Everything runs in this one process, so the container image can ship it as a single bundled file
@@ -14,6 +15,7 @@ import { migrateAll } from "./migrate.ts";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "../src/db/schema.ts";
 import { todayIn } from "../src/lib/dates.ts";
+import { retireSampleLessons } from "./retire-sample-lessons.ts";
 import { COHORT_DOMAIN, seedCohort } from "./seed-cohort.ts";
 import { seedDiscussions } from "./seed-discussions.ts";
 import { SAMPLE_EMAILS, SAMPLE_USERS, seed } from "./seed.ts";
@@ -32,6 +34,14 @@ try {
     process.exit(1);
   }
   throw err;
+}
+
+{
+  // Databases from before the real CKA lessons still hold learner rows on the removed sample lessons.
+  const pool = new pg.Pool({ connectionString: url, max: 1 });
+  const removed = await retireSampleLessons(pool);
+  if (removed > 0) console.log(`Removed ${removed} progress, bookmark and discussion rows left on the removed sample lessons.`);
+  await pool.end();
 }
 
 const mode = process.env.SEED ?? "if-missing";

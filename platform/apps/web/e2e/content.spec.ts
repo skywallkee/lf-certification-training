@@ -7,7 +7,7 @@ test("learners cannot open the content editor", async ({ page }) => {
   await signIn(page, "mid@example.com");
   await page.goto("/admin/content");
   await expect(page).toHaveURL("/today");
-  const res = await page.request.get("/api/admin/content/lesson/sample-cka-rbac");
+  const res = await page.request.get("/api/admin/content/lesson/cka-course-introduction");
   expect(res.status()).toBe(404);
 });
 

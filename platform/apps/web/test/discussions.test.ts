@@ -108,7 +108,7 @@ describe("rules", () => {
   });
 
   it("checks target ids and builds paths", () => {
-    expect(isTargetId("lesson", "sample-cka-rbac")).toBe(true);
+    expect(isTargetId("lesson", "cka-course-introduction")).toBe(true);
     expect(isTargetId("lesson", "../etc")).toBe(false);
     expect(isTargetId("lesson", "a/b")).toBe(false);
     expect(isTargetId("mock-task", "cka-mock/t1")).toBe(true);
