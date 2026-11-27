@@ -22,7 +22,7 @@ test("lesson code blocks are highlighted and can be copied", async ({ page, cont
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const url = "/certs/cka/domains/servicing-networking/competencies/define-enforce-network-policies";
   await page.goto(url);
-  const block = page.locator(".code-block").first();
+  const block = page.locator('section[aria-labelledby="lesson-sample-cka-network-policies"]').locator(".code-block").first();
   await expect(block.locator("code.language-yaml .hljs-attr").first()).toHaveText("apiVersion:");
   await block.getByRole("button", { name: "Copy code" }).click();
   await expect(block.getByRole("button", { name: "Copied code" })).toBeVisible();

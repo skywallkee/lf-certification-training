@@ -13,8 +13,9 @@ function para(scope: Page | Locator, text: string) {
   return scope.locator("p", { hasText: text });
 }
 
+/** The sample lesson's own discussion: other lessons on the same competency page have theirs. */
 function discussion(page: Page) {
-  return page.getByRole("region", { name: /^Discussion/ });
+  return page.locator('section[aria-labelledby="lesson-sample-cka-rbac"]').getByRole("region", { name: /^Discussion/ });
 }
 
 test("a learner reads a lesson discussion, opens a spoiler, posts a thread, and gets a reply by email", async ({ page }) => {
