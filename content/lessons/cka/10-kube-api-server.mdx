@@ -1,0 +1,515 @@
+---
+id: cka-kube-api-server
+title: "Kube-API Server: the front door of the cluster"
+summary: "What the API server does, the path every request takes through authentication, authorization and admission, how kubeadm runs it as a static Pod, and how to fix it when kubectl stops answering."
+minutes: 22
+competencies:
+  - cka/cluster-architecture-installation-configuration/create-manage-kubernetes-clusters-kubeadm
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Cluster architecture"
+    url: https://kubernetes.io/docs/concepts/architecture/
+  - title: "Kubernetes docs: Controlling access to the Kubernetes API"
+    url: https://kubernetes.io/docs/concepts/security/controlling-access/
+  - title: "Kubernetes docs: kube-apiserver reference"
+    url: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/
+  - title: "Kubernetes docs: Admission control"
+    url: https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/
+  - title: "Kubernetes docs: API server health endpoints"
+    url: https://kubernetes.io/docs/reference/using-api/health-checks/
+  - title: "Kubernetes docs: Create static Pods"
+    url: https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/
+diagrams:
+  api-hub:
+    title: "Everything talks to the API server, and only the API server talks to etcd"
+    caption: "No component calls another directly. Each one reads and writes objects through the API server, which is the only client of etcd."
+    nodes:
+      - { id: kubectl, label: "kubectl", sub: "you, or CI", icon: user, col: 0, row: 0 }
+      - { id: api, label: "kube-apiserver", sub: "HTTPS :6443", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: etcd, label: "etcd", sub: ":2379, the only state", icon: database, col: 2, row: 0, tone: warning }
+      - { id: cm, label: "Controller manager", sub: "watches, then fixes", icon: process, col: 1, row: 1 }
+      - { id: sched, label: "Scheduler", sub: "watches unbound Pods", icon: process, col: 2, row: 1 }
+      - { id: kubelet, label: "kubelet", sub: "watches its Pods", icon: node, col: 1, row: 2, tone: success }
+      - { id: proxy, label: "kube-proxy", sub: "watches Services", icon: proxy, col: 2, row: 2, tone: success }
+    edges:
+      - { from: kubectl, to: api, label: "REST" }
+      - { from: api, to: etcd, label: "read / write" }
+      - { from: cm, to: api, label: "watch" }
+      - { from: sched, to: api }
+      - { from: kubelet, to: api, both: true }
+      - { from: proxy, to: api }
+    groups:
+      - { id: control-plane, label: "Control plane node", nodes: [api, etcd, cm, sched] }
+      - { id: every-node, label: "Every node", nodes: [kubelet, proxy] }
+  request-path:
+    title: "The path of one write request"
+    caption: "A request can be turned away at every station, each with its own error. Only what passes all of them is stored, and only after it is stored do the watchers hear about it."
+    nodes:
+      - { id: client, label: "kubectl apply", sub: "HTTPS to :6443", icon: user, col: 0, row: 0 }
+      - { id: authn, label: "1. Authentication", sub: "Who are you? 401", icon: secret, col: 1, row: 0 }
+      - { id: authz, label: "2. Authorization", sub: "May you? 403", icon: policy, col: 2, row: 0 }
+      - { id: mutate, label: "3. Mutating", sub: "admission: defaults", icon: config, col: 3, row: 0 }
+      - { id: schema, label: "4. Schema check", sub: "valid object? 422", icon: file, col: 3, row: 1 }
+      - { id: validate, label: "5. Validating", sub: "admission: policy", icon: policy, col: 2, row: 1 }
+      - { id: store, label: "6. etcd", sub: "stored: 201 Created", icon: database, col: 1, row: 1, tone: success }
+      - { id: watchers, label: "Watchers", sub: "controllers, kubelet", icon: process, col: 0, row: 1, tone: muted }
+    edges:
+      - { from: client, to: authn }
+      - { from: authn, to: authz }
+      - { from: authz, to: mutate }
+      - { from: mutate, to: schema }
+      - { from: schema, to: validate }
+      - { from: validate, to: store }
+      - { from: store, to: watchers, label: "watch event", dashed: true }
+  static-pod:
+    title: "How kubeadm runs the API server"
+    caption: "The kubelet starts the API server from a file on disk, so it can start before any API exists. The Pod you see with kubectl is only a mirror of that file."
+    nodes:
+      - { id: manifest, label: "kube-apiserver.yaml", sub: "/etc/kubernetes/manifests", icon: file, col: 0, row: 0, tone: primary }
+      - { id: kubelet, label: "kubelet", sub: "watches the folder", icon: node, col: 1, row: 0 }
+      - { id: container, label: "kube-apiserver", sub: "container, :6443", icon: container, col: 2, row: 0, tone: success }
+      - { id: etcd, label: "etcd", sub: "127.0.0.1:2379", icon: database, col: 3, row: 0, tone: warning }
+      - { id: pki, label: "Certificates", sub: "/etc/kubernetes/pki", icon: secret, col: 2, row: 1, tone: muted }
+      - { id: mirror, label: "Mirror Pod", sub: "kube-apiserver-cp1", icon: pod, col: 1, row: 1, tone: muted }
+    edges:
+      - { from: manifest, to: kubelet, label: "reads" }
+      - { from: kubelet, to: container, label: "starts" }
+      - { from: container, to: etcd, label: "TLS" }
+      - { from: pki, to: container, label: "hostPath", dashed: true }
+      - { from: kubelet, to: mirror, label: "reports", dashed: true }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "The Kube-API Server"
+      narration: >-
+        Every kubectl command you type ends up as an HTTPS request to one program: the kube API server. It is the
+        front door of the cluster, and the only door. In this lesson you will follow a request through it, see how
+        kubeadm runs it, and learn how to fix it when kubectl stops answering.
+      visual:
+        kind: title
+        heading: "Kube-API Server"
+        subheading: "The front door of the cluster"
+    - id: problem
+      title: "Why one front door"
+      narration: >-
+        A cluster is many programs on many machines, and they all need to agree on what should be running. If
+        each of them wrote to the database directly, every one would need its own security checks and its own
+        validation. So Kubernetes puts one server in front of the data. It checks who is calling and what they
+        may do. It refuses objects that are not valid. And it tells everyone who is interested when something
+        changes.
+      visual:
+        kind: points
+        heading: "One place for every rule"
+        items:
+          - "Many components must agree on one desired state"
+          - "Direct database access would repeat every check everywhere"
+          - "One server sits in front of the data"
+          - "It checks identity and permissions"
+          - "It rejects invalid objects"
+          - "It notifies everyone who watches"
+    - id: hub
+      title: "The hub of the cluster"
+      narration: >-
+        Here is the API server, listening on port 6443. You talk to it with kubectl. It is the only component
+        that talks to etcd, where all cluster state is stored. The controller manager and the scheduler never call
+        each other; they watch the API server and write their decisions back to it. The kubelet and kube-proxy on
+        every node do the same. So when you create a Deployment, nobody gives orders: each component notices a
+        change, does its small part, and writes the result back.
+      visual:
+        kind: diagram
+        diagram: api-hub
+        steps:
+          - [api]
+          - [kubectl, kubectl-api]
+          - [etcd, api-etcd]
+          - [cm, sched, cm-api, sched-api, control-plane]
+          - [kubelet, proxy, kubelet-api, proxy-api, every-node]
+    - id: request-path
+      title: "The path of a request"
+      narration: >-
+        Follow one kubectl apply. First comes authentication: the server works out who you are, from your client
+        certificate or token, and answers 401 if it cannot. Second is authorization: RBAC decides whether you may
+        do this, and answers 403 if not. Third, mutating admission may change the object, for example by adding
+        defaults. Fourth, the object is checked against its schema. Fifth, validating admission can still say no,
+        for example when a quota is used up. Only then is the object written to etcd. And only after that do the
+        watchers hear about it and start working.
+      visual:
+        kind: diagram
+        diagram: request-path
+        steps:
+          - [client]
+          - [authn, client-authn]
+          - [authz, authn-authz]
+          - [mutate, authz-mutate]
+          - [schema, mutate-schema]
+          - [validate, schema-validate]
+          - [store, validate-store]
+          - [watchers, store-watchers]
+    - id: static-pod
+      title: "How kubeadm runs it"
+      narration: >-
+        On a kubeadm cluster, the API server is a static Pod. Its manifest is a file in the manifests folder on
+        the control plane node. The kubelet watches that folder and starts the container itself, with no API
+        needed. The container connects to etcd, using certificates mounted from the host. The Pod you see in the
+        kube-system namespace is only a mirror of the file, so deleting it with kubectl changes nothing.
+      visual:
+        kind: diagram
+        diagram: static-pod
+        steps:
+          - [container]
+          - [manifest]
+          - [kubelet, manifest-kubelet, kubelet-container]
+          - [etcd, container-etcd, pki, pki-container]
+          - [mirror, kubelet-mirror]
+    - id: manifest
+      title: "Reading the manifest"
+      narration: >-
+        This is the manifest kubeadm writes. Every setting is a flag on the command. The advertise address and the
+        secure port say where the server can be reached. The etcd servers flag points to the database. The client
+        CA file decides which client certificates are trusted. Authorization mode lists the authorizers in order,
+        and the admission plugins flag adds plugins to the default set. The service cluster IP range is where
+        every Service address comes from.
+      visual:
+        kind: code
+        heading: "/etc/kubernetes/manifests/kube-apiserver.yaml"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: kube-apiserver
+            namespace: kube-system
+          spec:
+            containers:
+              - name: kube-apiserver
+                image: registry.k8s.io/kube-apiserver:v1.34.1
+                command:
+                  - kube-apiserver
+                  - --advertise-address=192.168.56.10
+                  - --secure-port=6443
+                  - --etcd-servers=https://127.0.0.1:2379
+                  - --client-ca-file=/etc/kubernetes/pki/ca.crt
+                  - --authorization-mode=Node,RBAC
+                  - --enable-admission-plugins=NodeRestriction
+                  - --service-cluster-ip-range=10.96.0.0/12
+        steps: ["1-5", "10-11", "12-13", "14", "15", "16-17", "18"]
+    - id: troubleshoot
+      title: "When kubectl stops answering"
+      narration: >-
+        Connection refused on port 6443 means the API server is not running, so kubectl cannot help you. Go to
+        the control plane node and ask the container runtime instead. Read the logs of the container that
+        exited: the last lines name the cause. Here the server cannot reach etcd, and the manifest shows why: the
+        port is wrong. Fix the file, wait for the kubelet to restart the Pod, and kubectl answers again.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get nodes"
+            out: "The connection to the server 192.168.56.10:6443 was refused - did you specify the right host or port?"
+          - cmd: "crictl ps -a --name kube-apiserver"
+            out: "CONTAINER       IMAGE           CREATED          STATE     NAME             ATTEMPT\n3f1c9a7d2b6e4   c2e17b8d0f4b2   20 seconds ago   Exited    kube-apiserver   6"
+          - cmd: "crictl logs 3f1c9a7d2b6e4 2>&1 | tail -n 2"
+            out: "... dial tcp 127.0.0.1:23790: connect: connection refused\n... error creating storage factory: context deadline exceeded"
+          - cmd: "grep etcd-servers /etc/kubernetes/manifests/kube-apiserver.yaml"
+            out: "    - --etcd-servers=https://127.0.0.1:23790"
+          - cmd: "kubectl get nodes"
+            out: "NAME   STATUS   ROLES           AGE   VERSION\ncp1    Ready    control-plane   41d   v1.34.1\nw1     Ready    <none>          41d   v1.34.1"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Copy the manifest before you edit it, and keep the copy outside the manifests folder, or the kubelet will
+        try to run it too. After saving, watch the containers with crictl until the new one is running; it can
+        take a minute. If no container appears at all, the file is not valid YAML, and the kubelet's journal says
+        so. Use kubectl auth can-i to tell a permissions problem from a broken server. And add dash v equals 6 to
+        any kubectl command to see the exact requests it sends.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "Back up the manifest outside /etc/kubernetes/manifests"
+          - "watch crictl ps until the new container runs"
+          - "No container at all? journalctl -u kubelet"
+          - "kubectl auth can-i separates 403 from a broken server"
+          - "kubectl -v=6 shows every request"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The API server is the only way in, and the only client of etcd. Every request is authenticated, then
+        authorized, then passed through admission, before anything is stored. Everything else in the cluster
+        works by watching it. With kubeadm it is a static Pod, so you change it by editing one file. And when it is
+        down, you debug it with crictl and the kubelet's journal, not with kubectl.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "The only door, and the only client of etcd"
+          - "Authentication → authorization → admission → etcd"
+          - "Every other component watches the API server"
+          - "kubeadm: a static Pod, changed by editing one file"
+          - "When it is down: crictl and journalctl, not kubectl"
+---
+
+## Why the API server exists
+
+A cluster is many programs on many machines: a scheduler, controllers, a kubelet on every node, and you with
+`kubectl`. All of them need the same picture of what *should* be running. That picture lives in etcd, but if every
+program read and wrote etcd directly, each one would need its own access rules, its own validation and its own way
+of learning about changes. One bug in one client could corrupt the cluster's state.
+
+So Kubernetes puts a single program in front of the data: **kube-apiserver**. It is the only component that talks
+to etcd. Everything else, including the rest of the control plane, is a client that sends it HTTPS requests. That
+gives the cluster one place to check who is calling, decide what they may do, refuse objects that make no sense,
+and tell everyone who is interested when something changes.
+
+<KeyIdea>
+The API server is the front door of the cluster and the only client of etcd. Every component, and every `kubectl`
+command, works by reading, writing or watching objects through it. If it is down, the cluster keeps running what it
+has, but nothing can change.
+</KeyIdea>
+
+## What the API server is
+
+<Diagram id="api-hub" />
+
+The API server is a **stateless REST server**. It keeps no data of its own: every object you have ever applied is
+in etcd, and the API server is the gatekeeper and translator in front of it. Four jobs are worth knowing by name:
+
+- **It serves the Kubernetes API.** Every resource is a URL. Core resources live under `/api/v1`, everything else
+  under `/apis/<group>/<version>`. `kubectl get pods -n shop` is a `GET` to `/api/v1/namespaces/shop/pods`, and
+  `kubectl get deployments -n shop` is a `GET` to `/apis/apps/v1/namespaces/shop/deployments`.
+- **It guards the door.** Each request is authenticated, authorized and passed through admission control before it
+  can touch the data (the next section follows one through).
+- **It stores and versions objects.** It validates an object, writes it to etcd, and stamps it with a
+  `resourceVersion` so that two writers cannot silently overwrite each other.
+- **It notifies watchers.** Clients can keep a `watch` request open and receive every change as it happens. This is
+  how the scheduler learns about a new Pod and how the kubelet learns it must start one.
+
+That last point explains how the whole cluster cooperates. **No component gives another component orders.** When you
+create a Deployment, the Deployment controller sees it through its watch and creates a ReplicaSet; the ReplicaSet
+controller sees that and creates Pods; the scheduler sees Pods without a node and writes a node name into each; the
+kubelet on that node sees a Pod assigned to it and starts the containers. Every step is "watch the API server, do
+one small thing, write the result back".
+
+<Callout kind="note" title="It also reaches out">
+Most connections go *to* the API server, but a few go the other way. `kubectl logs`, `kubectl exec` and
+`kubectl port-forward` are requests to the API server, which then connects to the kubelet on the Pod's node (port
+10250) and relays the stream. That is why these commands fail when the control plane cannot reach a node, even
+though `kubectl get pods` still works.
+</Callout>
+
+## How a request travels through it
+
+<Diagram id="request-path" />
+
+Every request passes the same stations, in the same order. Knowing the order tells you where an error comes from.
+
+1. **Authentication: who are you?** The API server tries its authenticators in turn: client certificates (the
+   certificate's common name is the user name, its organizations are the groups), bearer tokens such as
+   ServiceAccount tokens, and others such as OIDC. Kubernetes has **no User object**: a user is whatever name a
+   trusted credential carries. If nothing accepts the credential, the answer is `401 Unauthorized`.
+2. **Authorization: may you do this?** The request is reduced to a few facts (user, groups, verb, resource,
+   namespace) and shown to the authorizers listed in `--authorization-mode`, in order. kubeadm sets `Node,RBAC`: the
+   Node authorizer covers what kubelets need, and RBAC covers everything else. If no authorizer allows the request,
+   the answer is `403 Forbidden`.
+3. **Mutating admission.** Admission plugins that may *change* the object run first. This is where a Pod gets its
+   default ServiceAccount and token volume, where a LimitRange fills in missing requests and limits, and where a
+   PersistentVolumeClaim gets the default StorageClass.
+4. **Schema validation.** The object, as it now stands, is checked against the API's schema: required fields, types,
+   allowed values. A failure is `422 Unprocessable Entity`, shown by kubectl as `The Pod "x" is invalid: ...`.
+5. **Validating admission.** Plugins that may only say yes or no run last, so they judge the final object.
+   ResourceQuota, Pod Security admission and validating webhooks live here.
+6. **Persistence.** The object is written to etcd, the client gets `201 Created`, and every open watch for that
+   resource receives an event.
+
+Reads (`get`, `list`, `watch`) stop after step 2: **admission only sees requests that create, update, delete or
+connect**. So admission can stop you from creating a Pod, but it can never hide one from you.
+
+<DeepDive title="Details that explain odd behaviour">
+- **Authorizers can pass.** Each authorizer answers allow, deny or "no opinion". The first allow or deny wins; a
+  request that nobody has an opinion about is denied. RBAC itself has no deny rules: it only allows, so a missing
+  permission is always a missing Role or binding, never a rule that forbids.
+- **Anonymous requests.** A request with no credentials at all is not rejected at once. It becomes the user
+  `system:anonymous` and is then judged by authorization, which is why an unauthenticated `curl` to most paths
+  returns 403 rather than 401, while `/livez`, `/readyz` and `/version` answer.
+- **Two kinds of "forbidden".** RBAC and admission can both answer 403. Read the message: RBAC says
+  `User "jane" cannot create resource "pods" in API group "" in the namespace "shop"`; admission names the reason,
+  for example `exceeded quota` or `violates PodSecurity`.
+- **Conflicts.** Every object carries a `resourceVersion`. An update that is based on an old version is refused with
+  `409 Conflict` (the "object has been modified" error), and the client must read the object again and retry. This
+  is how many controllers can safely edit the same objects without locks.
+- **Watches are cheap.** The API server keeps a recent window of changes in memory (the watch cache) and serves most
+  lists and watches from it, so thousands of watchers do not turn into thousands of etcd queries.
+- **High availability.** Because it is stateless, you can run several API servers behind a load balancer and all of
+  them serve traffic at once. The controller manager and the scheduler are different: several copies may run, but
+  only the elected leader acts.
+</DeepDive>
+
+## How it is installed and configured
+
+How you configure the API server depends on how it was installed.
+
+| Installed with | Runs as | Where the flags are |
+|----------------|---------|---------------------|
+| kubeadm (the exam's clusters) | A **static Pod** started by the kubelet | `/etc/kubernetes/manifests/kube-apiserver.yaml` |
+| Binaries by hand ("the hard way") | A systemd service | `/etc/systemd/system/kube-apiserver.service` |
+
+On any node you can also see the running flags with `ps -ef | grep kube-apiserver`.
+
+<Diagram id="static-pod" />
+
+A static Pod solves a chicken-and-egg problem: Pods are normally created through the API, but the API server cannot
+create itself. So the kubelet reads manifests from a folder on disk and runs them without asking anyone. For each
+one it also reports a **mirror Pod** to the API, named after the node (`kube-apiserver-cp1`), so that you can see it
+and read its logs with kubectl. The file is the truth; the mirror Pod is a reflection. `kubectl delete pod` on it
+changes nothing, and `kubectl edit` cannot change the flags.
+
+The flags you are most likely to read or change:
+
+| Flag | What it controls | kubeadm sets |
+|------|------------------|--------------|
+| `--advertise-address` | The IP other components use to reach this API server | The node's IP |
+| `--secure-port` | The HTTPS port | `6443` |
+| `--etcd-servers` | Where etcd is (client port) | `https://127.0.0.1:2379` |
+| `--etcd-cafile`, `--etcd-certfile`, `--etcd-keyfile` | TLS towards etcd | Files under `/etc/kubernetes/pki` |
+| `--client-ca-file` | The CA whose client certificates are trusted | `/etc/kubernetes/pki/ca.crt` |
+| `--tls-cert-file`, `--tls-private-key-file` | The API server's own serving certificate | `apiserver.crt`, `apiserver.key` |
+| `--kubelet-client-certificate`, `--kubelet-client-key` | How it proves itself to kubelets (logs, exec) | `apiserver-kubelet-client.*` |
+| `--authorization-mode` | The authorizers, in order | `Node,RBAC` |
+| `--enable-admission-plugins` | Plugins to add to the default set | `NodeRestriction` |
+| `--service-cluster-ip-range` | The range Service IPs are taken from | `10.96.0.0/12` |
+| `--service-node-port-range` | The range for NodePorts | not set (default `30000-32767`) |
+| `--service-account-key-file`, `--service-account-issuer` | Checking and issuing ServiceAccount tokens | `sa.pub`, the cluster's issuer URL |
+
+<Callout kind="warning" title="A flag that names a file needs a volume too">
+The API server runs in a container. A flag such as `--audit-policy-file=/etc/kubernetes/audit/policy.yaml` only
+works if that path is also mounted into the container with a `hostPath` volume and a `volumeMount`. kubeadm mounts
+`/etc/kubernetes/pki` for you; anything else you must add yourself. Forgetting the mount is one of the most common
+ways to break the API server: it exits at once with "no such file or directory".
+</Callout>
+
+## Using it
+
+<Example title="See what kubectl really sends">
+kubectl is only an HTTP client. Raise its verbosity to see the requests, or send one yourself.
+
+```bash
+kubectl get pods -n shop -v=6            # prints each URL and the response code
+kubectl get --raw /api/v1/namespaces/shop/pods | head -c 300
+kubectl get --raw '/readyz?verbose'      # the API server's own health checks, one per line
+kubectl api-resources                    # every resource, its API group, short name and whether it is namespaced
+kubectl auth whoami                      # the user and groups the API server sees you as
+kubectl auth can-i create deployments -n shop --as jane
+```
+
+`/readyz?verbose` is worth remembering: a line such as `[-]etcd failed` tells you in one command that the API
+server is up but cannot reach its database.
+</Example>
+
+<Example title="Change a flag safely on a kubeadm cluster">
+Task: allow NodePorts from 30000 to 34000. Work on the control plane node, as root.
+
+```bash
+cp /etc/kubernetes/manifests/kube-apiserver.yaml /root/kube-apiserver.yaml.bak   # outside the manifests folder
+vi /etc/kubernetes/manifests/kube-apiserver.yaml
+```
+
+Add one line to the `command` list, with the same indentation as its neighbours:
+
+```yaml
+    - --service-node-port-range=30000-34000
+```
+
+Save. The kubelet notices the change within about half a minute, stops the old container and starts a new one. kubectl answers
+"connection refused" in the meantime, so watch the runtime instead:
+
+```bash
+watch crictl ps --name kube-apiserver    # wait for a new container in state Running
+kubectl -n kube-system get pod -l component=kube-apiserver
+ps -ef | grep -o 'service-node-port-range=[^ ]*'
+```
+</Example>
+
+<Example title="Fix an API server that will not start">
+`kubectl get nodes` answers `The connection to the server 192.168.56.10:6443 was refused`. kubectl is useless now,
+because the thing it talks to is the thing that is broken. Go to the control plane node and ask the container
+runtime.
+
+```bash
+crictl ps -a --name kube-apiserver       # Exited, and the ATTEMPT number keeps growing
+crictl logs <container-id> 2>&1 | tail   # the last lines name the cause
+```
+
+What the logs usually say, and what it means:
+
+| The log says | Look at |
+|--------------|---------|
+| `unknown flag: --...` | A misspelt flag in the manifest |
+| `dial tcp 127.0.0.1:2379: connect: connection refused` | Is etcd running? Is `--etcd-servers` right? |
+| `open /etc/kubernetes/pki/...: no such file or directory` | A wrong path, or a file that is not mounted |
+| `x509: certificate signed by unknown authority` | The wrong CA file in an `--etcd-cafile` or similar flag |
+
+If `crictl ps -a` shows **no** kube-apiserver container at all, the kubelet could not even read the manifest:
+
+```bash
+journalctl -u kubelet --since "5 min ago" | grep -i -E "apiserver|manifest|yaml"
+```
+
+Fix the manifest (or restore your backup), then wait for the container and for `kubectl get nodes` to answer.
+</Example>
+
+## Tricks
+
+<Trick title="Keep backups out of the manifests folder">
+The kubelet runs **every** file in `/etc/kubernetes/manifests`, whatever its name. A copy called
+`kube-apiserver.yaml.bak` in the same folder can be picked up as well, with confusing results. Copy
+to `/root` or `/tmp` instead.
+</Trick>
+
+<Trick title="When kubectl is down, use crictl and the log files">
+`crictl ps -a`, `crictl logs` and `journalctl -u kubelet` work without an API server. So do the log files the
+runtime writes: `/var/log/pods/kube-system_kube-apiserver-*/kube-apiserver/*.log` and the links in
+`/var/log/containers/`. If the container restarts too fast to catch, read the files.
+</Trick>
+
+<Trick title="Force a clean restart by moving the file">
+To restart the API server, move the manifest out of the folder, wait until `crictl ps` no longer shows the
+container, and move it back. The kubelet removes the Pod and creates it again from scratch.
+</Trick>
+
+<Trick title="Find a flag without scrolling">
+`grep -n etcd /etc/kubernetes/manifests/kube-apiserver.yaml` is faster than paging through the file, and
+`kubectl -n kube-system describe pod -l component=kube-apiserver` shows the same command when the server is up. To
+compare with a healthy setup, the etcd manifest next to it shows the port etcd really listens on
+(`--listen-client-urls`).
+</Trick>
+
+<Trick title="Tell 'not allowed' from 'not working'">
+A 403 means the API server is healthy and said no. Use `kubectl auth can-i <verb> <resource> -n <namespace> --as
+<user>` to confirm it, and fix RBAC rather than the server. For a ServiceAccount, the user name is
+`system:serviceaccount:<namespace>:<name>`.
+</Trick>
+
+## Common mistakes
+
+- **Editing the mirror Pod.** `kubectl edit pod kube-apiserver-cp1` cannot change the flags, and deleting the Pod
+  does not restart the server. Only the file in `/etc/kubernetes/manifests` counts.
+- **Breaking the YAML.** A tab, a wrong indent or a missing dash and the kubelet cannot read the manifest: the old
+  container is stopped and no new one appears. The container logs are empty, so look in `journalctl -u kubelet`.
+- **Not waiting.** After a change the API server needs up to a minute to come back, longer if the kubelet is backing
+  off after several crashes. "Connection refused" for the first seconds is normal; check `crictl ps` before you
+  change anything else.
+- **Pointing at the wrong etcd port.** Clients use 2379. Port 2380 is for etcd members talking to each other.
+- **Reading 401 and 403 as the same thing.** 401 means your credential was not accepted (an expired certificate,
+  the wrong kubeconfig). 403 means you are known but not allowed.
+- **Blaming the API server for everything.** If `kubectl get` works but new Pods stay `Pending`, the API server is
+  fine: look at the scheduler. If Pods are scheduled but never start, look at the kubelet on that node.
+
+## Recap
+
+- The API server is the only door into the cluster and the only client of etcd; it is stateless.
+- Every request goes through **authentication → authorization → admission** (mutating, schema check, validating)
+  before it is stored. Reads skip admission.
+- All other components work by **watching** the API server and writing results back to it.
+- With kubeadm it is a **static Pod**: change it by editing `/etc/kubernetes/manifests/kube-apiserver.yaml`.
+- When it is down, kubectl cannot help: use `crictl ps -a`, `crictl logs` and `journalctl -u kubelet`.
