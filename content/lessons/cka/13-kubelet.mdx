@@ -1,0 +1,582 @@
+---
+id: cka-kubelet
+title: "Kubelet: the agent that turns Pod specs into running containers"
+summary: "What the kubelet does on every node, how it starts Pods through the container runtime, how it reports node health, where its configuration lives, and how to fix a node that went NotReady."
+minutes: 22
+competencies:
+  - cka/troubleshooting/troubleshoot-cluster-components
+  - cka/troubleshooting/troubleshoot-clusters-nodes
+  - cka/cluster-architecture-installation-configuration/extension-interfaces-cni-csi-cri
+docs:
+  - title: "Kubernetes docs: kubelet reference"
+    url: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+  - title: "Kubernetes docs: Configuring each kubelet in your cluster using kubeadm"
+    url: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/kubelet-integration/
+  - title: "Kubernetes docs: Create static Pods"
+    url: https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/
+  - title: "Kubernetes docs: Node status and heartbeats"
+    url: https://kubernetes.io/docs/reference/node/node-status/
+  - title: "Kubernetes docs: Node-pressure eviction"
+    url: https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/
+  - title: "Kubernetes docs: Troubleshooting kubeadm"
+    url: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/troubleshooting-kubeadm/
+mock: false
+diagrams:
+  kubelet-node:
+    title: "The kubelet and its neighbours on a node"
+    caption: "The kubelet is the only component that talks to both the API server and the container runtime. The runtime, not the kubelet, calls the CNI plugin to give each Pod its network."
+    nodes:
+      - { id: api, label: "API server", sub: "Pods bound to node", icon: control-plane, col: 0, row: 1, tone: muted }
+      - { id: manifests, label: "Manifest folder", sub: "/etc/kubernetes/manifests", icon: file, col: 1, row: 0, tone: muted }
+      - { id: kubelet, label: "kubelet", sub: "systemd service", icon: process, col: 1, row: 1, tone: primary }
+      - { id: csi, label: "CSI driver", sub: "mounts volumes", icon: volume, col: 1, row: 2 }
+      - { id: cni, label: "CNI plugin", sub: "Pod IP and routes", icon: proxy, col: 2, row: 0 }
+      - { id: runtime, label: "containerd", sub: "CRI socket", icon: container, col: 2, row: 1 }
+      - { id: pods, label: "Pod containers", sub: "sandbox + containers", icon: pod, col: 3, row: 1, tone: success }
+    edges:
+      - { from: api, to: kubelet, label: "watch / status", both: true }
+      - { from: manifests, to: kubelet, label: "static Pods", dashed: true }
+      - { from: kubelet, to: runtime, label: "CRI (gRPC)" }
+      - { from: runtime, to: cni, label: "network", dashed: true }
+      - { from: runtime, to: pods, label: "starts" }
+      - { from: kubelet, to: csi, label: "mount" }
+    groups:
+      - { id: node, label: "One node", nodes: [manifests, kubelet, csi, cni, runtime, pods] }
+  sync-loop:
+    title: "The sync loop: desired state against actual state"
+    caption: "The kubelet never runs a script once. It keeps comparing the Pods it should run with the containers that really run, and fixes any difference."
+    nodes:
+      - { id: api, label: "API server", sub: "Pods for this node", icon: control-plane, col: 0, row: 0, tone: muted }
+      - { id: files, label: "Manifest folder", sub: "static Pods", icon: file, col: 0, row: 2, tone: muted }
+      - { id: sync, label: "Sync loop", sub: "desired vs actual", icon: process, col: 1, row: 1, tone: primary }
+      - { id: probes, label: "Probes", sub: "liveness, readiness", icon: policy, col: 2, row: 0 }
+      - { id: runtime, label: "Container runtime", sub: "sandbox, containers", icon: container, col: 2, row: 1, tone: success }
+      - { id: pleg, label: "PLEG", sub: "container events", icon: generic, col: 2, row: 2, tone: muted }
+    edges:
+      - { from: api, to: sync, label: "watch / status", both: true }
+      - { from: files, to: sync, label: "reads" }
+      - { from: sync, to: runtime, label: "create, kill" }
+      - { from: runtime, to: pleg, label: "relist" }
+      - { from: pleg, to: sync, label: "changed" }
+      - { from: probes, to: runtime, label: "check" }
+      - { from: probes, to: sync, label: "results", dashed: true }
+  heartbeat:
+    title: "How the cluster notices a dead kubelet"
+    caption: "The kubelet renews a small Lease object every 10 seconds. When the renewals stop, the node controller marks the node Unknown and taints it; Pods are replaced only after their toleration runs out."
+    nodes:
+      - { id: kubelet, label: "kubelet", sub: "on node01", icon: process, col: 0, row: 0, tone: primary }
+      - { id: lease, label: "Lease node01", sub: "kube-node-lease", icon: file, col: 1, row: 0 }
+      - { id: controller, label: "Node controller", sub: "controller manager", icon: control-plane, col: 2, row: 0, tone: muted }
+      - { id: nodeobj, label: "Node node01", sub: "Ready condition", icon: node, col: 1, row: 1 }
+      - { id: taint, label: "Taint, then evict", sub: "unreachable:NoExecute", icon: policy, col: 2, row: 1, tone: warning }
+    edges:
+      - { from: kubelet, to: lease, label: "renew, 10s" }
+      - { from: kubelet, to: nodeobj, label: "status" }
+      - { from: controller, to: lease, label: "watches", dashed: true }
+      - { from: controller, to: nodeobj, label: "Ready: Unknown" }
+      - { from: controller, to: taint, label: "adds taint" }
+  config-chain:
+    title: "Where a kubeadm kubelet gets its settings"
+    caption: "systemd starts the kubelet with flags built by a drop-in file. The flags point at three files, and a mistake in any link of this chain keeps the kubelet from starting."
+    nodes:
+      - { id: systemd, label: "systemd", sub: "kubelet.service", icon: process, col: 0, row: 1, tone: muted }
+      - { id: dropin, label: "10-kubeadm.conf", sub: "drop-in: builds flags", icon: file, col: 1, row: 1 }
+      - { id: config, label: "config.yaml", sub: "/var/lib/kubelet", icon: config, col: 2, row: 0 }
+      - { id: flags, label: "kubeadm-flags.env", sub: "/var/lib/kubelet", icon: file, col: 2, row: 1 }
+      - { id: kubeconfig, label: "kubelet.conf", sub: "/etc/kubernetes", icon: secret, col: 2, row: 2 }
+      - { id: kubelet, label: "kubelet", sub: "/usr/bin/kubelet", icon: process, col: 3, row: 1, tone: primary }
+    edges:
+      - { from: systemd, to: dropin }
+      - { from: dropin, to: config, label: "--config" }
+      - { from: dropin, to: flags, label: "extra flags" }
+      - { from: dropin, to: kubeconfig, label: "--kubeconfig" }
+      - { from: config, to: kubelet }
+      - { from: flags, to: kubelet }
+      - { from: kubeconfig, to: kubelet }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Kubelet"
+      narration: >-
+        The scheduler decides where a Pod should run, but it never starts a container. That job belongs to the
+        kubelet, the agent that runs on every node. In this lesson you will see what the kubelet does, how it
+        starts a Pod, how it reports that its node is alive, and how to repair it when a node goes Not Ready.
+      visual:
+        kind: title
+        heading: "Kubelet"
+        subheading: "The agent that turns Pod specs into running containers"
+    - id: problem
+      title: "Why every node needs an agent"
+      narration: >-
+        The control plane only stores and decides. Somebody has to do the real work on each machine. Something
+        must start the containers and restart them when they crash. And something must tell the cluster whether
+        the node is still healthy. On every node, that something is the kubelet.
+      visual:
+        kind: points
+        heading: "What the control plane cannot do"
+        items:
+          - "The API server stores Pods; the scheduler picks a node"
+          - "Neither of them can reach into a machine"
+          - "Containers must be started, checked and restarted locally"
+          - "The cluster needs a health report from each node"
+          - "The kubelet does all of it, on every node"
+    - id: what-it-is
+      title: "The kubelet and its neighbours"
+      narration: >-
+        Here is one node, with the kubelet in the middle. The kubelet watches the API server for Pods that are
+        bound to its node, and it writes their status back. It does not run containers itself: it asks the
+        container runtime to do that, through the Container Runtime Interface. The runtime creates the Pod's
+        containers. The runtime also calls the network plugin, which gives the Pod its IP address. For storage,
+        the kubelet asks a CSI driver to mount the volumes. And one more source of Pods exists: a folder of
+        manifest files on the node's own disk.
+      visual:
+        kind: diagram
+        diagram: kubelet-node
+        steps:
+          - [kubelet, node]
+          - [api, api-kubelet]
+          - [runtime, kubelet-runtime]
+          - [pods, runtime-pods]
+          - [cni, runtime-cni]
+          - [csi, kubelet-csi]
+          - [manifests, manifests-kubelet]
+    - id: sync-loop
+      title: "The sync loop"
+      narration: >-
+        The kubelet works as a loop that never ends. It collects the Pods it should run, from the API server and
+        from the manifest folder. For each Pod, it compares that wish with what the runtime really runs, then
+        creates or kills containers to close the gap. A part called PLEG lists the containers again and again,
+        and wakes the loop when one of them changed. Probes check the running containers, and their results
+        decide whether a container is restarted or taken out of Service endpoints.
+      visual:
+        kind: diagram
+        diagram: sync-loop
+        steps:
+          - [sync]
+          - [api, files, api-sync, files-sync]
+          - [runtime, sync-runtime]
+          - [pleg, runtime-pleg, pleg-sync]
+          - [probes, probes-runtime, probes-sync]
+    - id: heartbeat
+      title: "How the cluster notices a dead kubelet"
+      narration: >-
+        Every ten seconds, the kubelet renews a small Lease object in the kube node lease namespace. It also
+        writes the node's status, with conditions such as Ready and Memory Pressure. The node controller watches
+        those Leases. When renewals stop for less than a minute, it sets the Ready condition to Unknown, and
+        kubectl shows the node as Not Ready. It then taints the node, and Pods are replaced elsewhere after their
+        toleration runs out, which is five minutes by default.
+      visual:
+        kind: diagram
+        diagram: heartbeat
+        steps:
+          - [kubelet, lease, kubelet-lease]
+          - [nodeobj, kubelet-nodeobj]
+          - [controller, controller-lease]
+          - [controller-nodeobj]
+          - [taint, controller-taint]
+    - id: static-pods
+      title: "Static Pods"
+      narration: >-
+        The manifest folder is how a cluster starts itself. This file describes the API server as an ordinary
+        Pod. Because it sits in the manifest folder, the kubelet runs it without asking anyone. The image and
+        the command line are right here, so changing a flag means editing this file. The kubelet notices the
+        change and recreates the Pod by itself.
+      visual:
+        kind: code
+        heading: "/etc/kubernetes/manifests/kube-apiserver.yaml"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: kube-apiserver
+            namespace: kube-system
+          spec:
+            hostNetwork: true
+            containers:
+              - name: kube-apiserver
+                image: registry.k8s.io/kube-apiserver:v1.34.0
+                command:
+                  - kube-apiserver
+                  - --etcd-servers=https://127.0.0.1:2379
+                  - --service-cluster-ip-range=10.96.0.0/12
+        steps: ["1-5", "2", "7", "10-14", "12-14"]
+    - id: config
+      title: "Where the settings come from"
+      narration: >-
+        The kubelet is not a Pod. It is a systemd service, so systemd starts it. On a kubeadm cluster, a drop-in
+        file builds the command line. Most settings live in a configuration file under var lib kubelet. A few
+        node specific flags come from a small environment file next to it. The kubelet's identity, which it uses
+        to log in to the API server, is a kubeconfig under etc kubernetes. A wrong path in any of these keeps
+        the kubelet from starting.
+      visual:
+        kind: diagram
+        diagram: config-chain
+        steps:
+          - [kubelet]
+          - [systemd]
+          - [dropin, systemd-dropin]
+          - [config, dropin-config, config-kubelet]
+          - [flags, dropin-flags, flags-kubelet]
+          - [kubeconfig, dropin-kubeconfig, kubeconfig-kubelet]
+    - id: troubleshoot
+      title: "Fix a node that is Not Ready"
+      narration: >-
+        Here is the routine for a broken node: start with kubectl get nodes, and find the one that is Not Ready.
+        Connect to that node and ask systemd for the state of the kubelet. If it is failing, the journal tells
+        you why, usually in the last few lines. Fix the file that the error names, then restart the kubelet.
+        Finally, go back and check that the node is Ready again.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get nodes"
+            out: "NAME           STATUS     ROLES           AGE   VERSION\ncontrolplane   Ready      control-plane   12d   v1.34.0\nnode01         NotReady   <none>          12d   v1.34.0"
+          - cmd: "ssh node01 sudo systemctl status kubelet"
+            out: "● kubelet.service - kubelet: The Kubernetes Node Agent\n     Active: activating (auto-restart) (Result: exit-code)"
+          - cmd: "ssh node01 sudo journalctl -u kubelet --no-pager | tail -n 2"
+            out: "E1127 kubelet.go:1611] \"Failed to run kubelet\" err=\"unable to load client CA file\n/etc/kubernetes/pki/WRONG-ca.crt: no such file or directory\""
+          - cmd: "ssh node01 sudo systemctl restart kubelet    # after fixing config.yaml"
+          - cmd: "kubectl get nodes"
+            out: "NAME           STATUS   ROLES           AGE   VERSION\ncontrolplane   Ready    control-plane   12d   v1.34.0\nnode01         Ready    <none>          12d   v1.34.0"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        A few habits save minutes. Use systemctl cat kubelet to see the unit and every drop-in in one view.
+        Read the journal from the end, because the last error is the one that matters. If you edited a unit
+        file, run daemon reload before the restart. When the kubelet is healthy but Pods are not, use crictl to
+        look at containers directly on the node. And never delete a static Pod with kubectl: edit or move its
+        manifest file instead.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "First habit: read before you change anything"
+          - "systemctl cat kubelet shows unit and drop-ins"
+          - "journalctl -u kubelet: read the last error first"
+          - "Unit file changed? systemctl daemon-reload, then restart"
+          - "crictl ps -a works even when the API server is down"
+          - "Static Pod: change the file, not the mirror Pod"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The kubelet is the node agent: it turns Pod specs into running containers through the container runtime.
+        It runs as a systemd service, never as a Pod. It also runs static Pods from a folder, which is how the
+        control plane itself starts. Its Lease heartbeat decides whether the node is Ready. And when a node is
+        Not Ready, the path is always the same: systemctl, journalctl, fix, restart.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Node agent: Pod specs in, running containers out"
+          - "A systemd service, not a Pod"
+          - "Static Pods come from /etc/kubernetes/manifests"
+          - "Lease every 10s decides Ready or NotReady"
+          - "systemctl status → journalctl → fix → restart"
+---
+
+## Why the kubelet exists
+
+The control plane is a set of programs that store and decide. The API server stores a Pod object, and the scheduler
+writes a node name into it. At that point nothing is running anywhere: a Pod is still only a record in etcd.
+
+Somebody has to do the real work on the machine: pull the image, create the containers, mount the volumes, restart
+what crashes, and tell the cluster how the node is doing. That somebody is the **kubelet**, an agent that runs on
+**every node**, control plane nodes included.
+
+<KeyIdea>
+The kubelet is the only component that turns a Pod spec into running containers. It watches for Pods bound to its
+node, makes the node match them, and reports back what really happened.
+</KeyIdea>
+
+Two facts follow from this, and both matter in the exam:
+
+- **The kubelet is not a Pod.** It has to exist before any Pod can, so it runs as a normal Linux service under
+  systemd. `kubectl get pods -A` never shows it, and `kubectl logs` cannot read its logs.
+- **kubeadm does not install it.** You install the `kubelet` package yourself on every node (together with `kubeadm`
+  and `kubectl`); kubeadm only writes its configuration and starts it.
+
+## What the kubelet is made of
+
+<Diagram id="kubelet-node" />
+
+The kubelet sits between the API server and everything local to the node:
+
+| Neighbour | Interface | What the kubelet uses it for |
+|-----------|-----------|------------------------------|
+| API server | HTTPS, with a client certificate | Watch Pods bound to this node, fetch their ConfigMaps and Secrets, write Pod and Node status |
+| Container runtime (containerd, CRI-O) | **CRI**, gRPC over a Unix socket | Pull images, create the Pod sandbox, start and stop containers, read logs, exec |
+| Network plugin | **CNI**, called by the runtime | Give each Pod sandbox an IP address and routes |
+| Storage drivers | **CSI**, gRPC over a Unix socket | Mount and unmount volumes into Pods |
+| Manifest folder | Files on disk | Run **static Pods** without any API server |
+
+The kubelet also **listens**. Its HTTPS server on port **10250** is what the API server connects to when you run
+`kubectl logs`, `kubectl exec` or `kubectl port-forward`, and where the metrics server collects CPU and memory
+figures (the kubelet embeds cAdvisor for those). A plain health endpoint answers on `127.0.0.1:10248/healthz`.
+
+<Callout kind="note" title="The kubelet does not call CNI itself">
+Since dockershim was removed, the kubelet only says "create a sandbox for this Pod" over CRI. The **runtime** then
+runs the CNI plugin. That is why a node without a network plugin reports `NetworkReady=false` and stays
+`NotReady` even though the kubelet itself is healthy: the runtime tells the kubelet that networking is not set up.
+</Callout>
+
+## How it works
+
+### The sync loop
+
+<Diagram id="sync-loop" />
+
+The kubelet is a control loop, like the controllers in the control plane, but for one node. It gathers the Pods it
+should run from its sources (the API server, the manifest folder, and optionally a URL), compares each with what the
+runtime reports, and acts on the difference. It repeats this whenever something changes, and at least about once a
+minute for every Pod even when nothing seems to have changed.
+
+For a new Pod the order of work is always the same, and it explains the states you see in `kubectl get pods`:
+
+<Flow label="Starting one Pod" steps={["Admit: does it fit this node?", "Create cgroups, mount volumes", "Runtime creates sandbox, CNI gives the IP", "Pull images", "Init containers, one by one", "App containers, then probes"]} />
+
+- A Pod stuck in `ContainerCreating` is waiting in step two or three: a missing ConfigMap or Secret, a volume that
+  will not mount, or a CNI problem. `kubectl describe pod` names which.
+- `ImagePullBackOff` is step four, `Init:0/1` is step five, and `CrashLoopBackOff` is step six failing again and again.
+
+<DeepDive title="PLEG, probes and restarts">
+- **PLEG** (Pod Lifecycle Event Generator) asks the runtime for the full list of containers about once a second and
+  turns differences into events ("container died") that wake the sync loop. If a relist takes more than three
+  minutes, the node goes `NotReady` with the message `PLEG is not healthy`, which nearly always means the runtime is
+  hanging or the node is badly overloaded.
+- **Probes** are run by the kubelet, from the node, not by the control plane. A failed liveness probe makes the
+  kubelet kill and restart the container. A failed readiness probe only changes the Pod's Ready condition; the
+  control plane then takes the Pod out of Service endpoints.
+- **Restarts are local.** The kubelet restarts containers according to `restartPolicy`, waiting 10s, 20s, 40s and so
+  on up to five minutes between attempts. That waiting is what `CrashLoopBackOff` means. The kubelet never moves a
+  Pod to another node; only a controller (a Deployment, for example) creates a replacement elsewhere.
+- **Containers outlive the kubelet.** Stopping or restarting the kubelet does not stop the containers, because the
+  runtime owns them. This is why you can restart the kubelet on a live node without an outage.
+- **Resources.** The kubelet turns requests and limits into cgroup settings, and it protects the node: when memory
+  or disk runs low it sets `MemoryPressure` or `DiskPressure` and evicts Pods. The default hard thresholds are
+  `memory.available<100Mi`, `nodefs.available<10%` and `imagefs.available<15%`.
+</DeepDive>
+
+### Heartbeats and node status
+
+<Diagram id="heartbeat" />
+
+The kubelet registers its own Node object when it first starts, then proves it is alive in two ways:
+
+- It renews a **Lease** named after the node in the `kube-node-lease` namespace every 10 seconds. This is the real
+  heartbeat: a tiny object, cheap to update.
+- It writes the Node's `.status` (conditions, capacity, allocatable, addresses, kubelet version) when something
+  changes, and at least every five minutes.
+
+The node controller inside kube-controller-manager watches the Leases. If a node misses renewals for the grace period
+(under a minute by default), the controller sets the node's `Ready` condition to `Unknown`, `kubectl get nodes` shows
+`NotReady`, and `kubectl describe node` says **"Kubelet stopped posting node status"**. The node then gets the taint
+`node.kubernetes.io/unreachable:NoExecute`. Pods tolerate that taint for 300 seconds by default, so a Deployment's
+Pods are replaced on other nodes roughly **five to six minutes** after a kubelet dies, not immediately.
+
+<Callout kind="warning" title="NotReady does not mean the containers stopped">
+`NotReady` only means the control plane has not heard from the kubelet. The containers on that node may be running
+perfectly. It also means the cluster can no longer manage them: no new Pods start there, and `kubectl logs` and
+`kubectl exec` for Pods on that node fail.
+</Callout>
+
+### How the kubelet proves who it is
+
+The kubelet logs in to the API server with a client certificate whose identity is `system:node:<nodeName>` in the
+group `system:nodes`. The kubeconfig at `/etc/kubernetes/kubelet.conf` points to that certificate under
+`/var/lib/kubelet/pki/`, and the kubelet rotates it by itself before it expires. The **Node authorizer** and the
+NodeRestriction admission plugin then keep each kubelet in its lane: it may read only the Secrets and ConfigMaps of
+Pods bound to its own node, and may change only its own Node object. A stolen kubelet credential therefore exposes
+one node's secrets, not the whole cluster's.
+
+## Two kinds of Pods: from the API and static
+
+| | Pods from the API server | Static Pods |
+|---|--------------------------|-------------|
+| Defined in | The API (created by you or a controller) | A file in the kubelet's `staticPodPath` |
+| Needs a control plane | Yes | No, only the kubelet and the runtime |
+| Placed by | The scheduler | Nobody: always on the node that holds the file |
+| Visible in kubectl | Yes | Yes, as a read-only **mirror Pod** named `<name>-<nodeName>` |
+| Change or remove | `kubectl edit`, `kubectl delete` | Edit, move or delete the file |
+
+Static Pods solve a chicken-and-egg problem: the API server, etcd, the scheduler and the controller manager cannot be
+started by a control plane that does not exist yet. On a kubeadm cluster they are static Pods in
+`/etc/kubernetes/manifests`, started by the kubelet of each control plane node. That is why their names end in the
+node name, as in `kube-apiserver-controlplane`.
+
+<Callout kind="warning" title="Deleting a mirror Pod does nothing useful">
+`kubectl delete pod kube-scheduler-controlplane -n kube-system` removes only the mirror object; the kubelet puts it
+back within seconds and the container was never touched. To stop a static Pod, move its file out of the folder. To
+change it, edit the file and wait for the kubelet to recreate the Pod.
+</Callout>
+
+## Where the configuration lives
+
+<Diagram id="config-chain" />
+
+On a kubeadm node the kubelet's settings come from a short chain of files. You should be able to walk it from memory:
+
+| File | What it holds |
+|------|---------------|
+| `/usr/lib/systemd/system/kubelet.service` | The base systemd unit |
+| `.../kubelet.service.d/10-kubeadm.conf` | The drop-in that builds the real command line (the binary path and the flags below) |
+| `/var/lib/kubelet/config.yaml` | The `KubeletConfiguration`: almost every setting, including `staticPodPath`, `clusterDNS`, `cgroupDriver`, the client CA file and eviction thresholds |
+| `/var/lib/kubelet/kubeadm-flags.env` | A few flags that differ per node, written by `kubeadm init` and `kubeadm join` |
+| `/etc/kubernetes/kubelet.conf` | The kubeconfig: which API server to call and which client certificate to use |
+| `/var/lib/kubelet/pki/` | The kubelet's client and serving certificates |
+
+The drop-in sits under `/usr/lib/systemd/system/` with current packages and under `/etc/systemd/system/` with older
+ones. You do not need to remember which: `systemctl cat kubelet` prints the unit and every drop-in with their paths.
+
+A trimmed `config.yaml` from a kubeadm node:
+
+```yaml
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+authentication:
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+cgroupDriver: systemd
+clusterDNS:
+  - 10.96.0.10
+clusterDomain: cluster.local
+staticPodPath: /etc/kubernetes/manifests
+```
+
+<DeepDive title="Why these particular settings break clusters">
+- **`cgroupDriver`** must match the container runtime's driver. On systemd machines both should be `systemd`
+  (kubeadm's default). A mismatch gives an unstable node or a kubelet that refuses to start.
+- **`clusterDNS`** is written into every Pod's `/etc/resolv.conf`. If it does not match the ClusterIP of the
+  `kube-dns` Service, Pods start fine but cannot resolve any name.
+- **`clientCAFile`** is the CA the kubelet trusts for callers of port 10250. A wrong path stops the kubelet at
+  startup with a clear "unable to load client CA file" error.
+- **Swap.** By default (`failSwapOn: true`) the kubelet refuses to start on a node with swap enabled. This is the
+  classic reason a freshly prepared node fails to join.
+- **Cluster-wide copy.** kubeadm keeps the shared configuration in the ConfigMap `kubelet-config` in `kube-system`.
+  `kubeadm join` and `kubeadm upgrade node` write it to `/var/lib/kubelet/config.yaml`, so a manual edit of that
+  file lasts only until the next upgrade unless you change the ConfigMap too.
+</DeepDive>
+
+## Using it
+
+<Example title="Bring a NotReady node back">
+`node01` shows `NotReady`. Work from the outside in: the cluster's view, then the service, then its log.
+
+```bash
+kubectl get nodes
+kubectl describe node node01 | grep -A8 Conditions   # "Kubelet stopped posting node status"
+
+ssh node01
+sudo systemctl status kubelet            # inactive? failing and restarting? running?
+sudo journalctl -u kubelet --no-pager | tail -n 30
+```
+
+What the state tells you:
+
+- **`inactive (dead)`**: someone stopped it. `sudo systemctl enable --now kubelet` starts it and keeps it enabled
+  after a reboot.
+- **`activating (auto-restart)`**: it crashes at startup. The journal names the cause: a wrong path to the binary or
+  to `config.yaml` in the drop-in, a bad value in `config.yaml`, or a missing certificate file.
+- **`active (running)` but the node is still NotReady**: the kubelet runs but cannot do its job. Look in the journal
+  for a refused connection to the API server (wrong server address or port in `/etc/kubernetes/kubelet.conf`), a
+  runtime that is down (`sudo systemctl status containerd`), or a missing CNI plugin.
+
+After the fix:
+
+```bash
+sudo systemctl daemon-reload     # only needed if a unit or drop-in file changed
+sudo systemctl restart kubelet
+exit
+kubectl get nodes -w             # Ready within about a minute
+```
+</Example>
+
+<Example title="Run a static Pod on one node">
+Create a static Pod named `web` on `node01`. Find the folder first instead of assuming it, then let kubectl write
+the manifest.
+
+```bash
+ssh node01
+sudo grep staticPodPath /var/lib/kubelet/config.yaml     # staticPodPath: /etc/kubernetes/manifests
+
+kubectl run web --image=nginx:1.29 --dry-run=client -o yaml \
+  | sudo tee /etc/kubernetes/manifests/web.yaml
+exit
+kubectl get pods -o wide          # web-node01 is Running on node01
+```
+
+`kubectl run --dry-run=client` only prints YAML, so it works on a node whose kubectl has no access to the cluster. To
+remove the Pod, delete `/etc/kubernetes/manifests/web.yaml` on `node01`.
+</Example>
+
+<Example title="Change a kubelet setting on one node">
+Raise the Pod limit on `node01` from the default 110 to 150.
+
+```bash
+ssh node01
+sudo vi /var/lib/kubelet/config.yaml       # add or change:  maxPods: 150
+sudo systemctl restart kubelet
+exit
+kubectl get node node01 -o jsonpath='{.status.capacity.pods}'    # 150
+```
+
+The file is read only at startup, so nothing changes until the restart. Running Pods are not disturbed by it.
+</Example>
+
+## Tricks
+
+<Trick title="See everything systemd knows in one command">
+`systemctl cat kubelet` prints the unit file and all drop-ins, with their paths. It is the fastest way to find a
+wrong binary path or a wrong `--config` path, and it tells you which file to edit.
+</Trick>
+
+<Trick title="Read the journal from the end">
+A crashing kubelet restarts every ten seconds and repeats the same error. `journalctl -u kubelet --no-pager | tail -n 30`
+shows the latest attempt; add `| grep -iE "err|fail"` on a noisy node. Use `journalctl -u kubelet -f` to watch a
+restart live.
+</Trick>
+
+<Trick title="Ask the running kubelet for its real configuration">
+`kubectl get --raw "/api/v1/nodes/node01/proxy/configz"` returns the configuration the kubelet is actually using,
+defaults included. Pipe it through `jq` to check a value such as `.kubeletconfig.maxPods` without logging in to
+the node.
+</Trick>
+
+<Trick title="Use crictl when kubectl cannot help">
+When the API server is down or the kubelet is confused, look at the runtime directly on the node: `sudo crictl ps -a`
+lists containers (including exited ones), `sudo crictl logs <container-id>` reads their output, and `sudo crictl pods`
+lists sandboxes. This is how you debug a control plane static Pod that will not come up.
+</Trick>
+
+<Trick title="Restart a static Pod by moving its file">
+Move the manifest out of the folder, wait until `crictl ps` no longer shows the container, and move it back. The
+kubelet stops and recreates the Pod, which is the static Pod version of `kubectl rollout restart`.
+</Trick>
+
+## Common mistakes
+
+- **Looking for a kubelet Pod.** There is none. Its state is in `systemctl status kubelet` and its logs are in
+  `journalctl -u kubelet`, on the node itself.
+- **Forgetting `daemon-reload`.** After editing a unit or drop-in file, systemd keeps using the old version until
+  `systemctl daemon-reload`. Edits to `config.yaml` need only a restart.
+- **Starting without enabling.** `systemctl start kubelet` fixes the node until the next reboot. Use
+  `systemctl enable --now kubelet`.
+- **Fixing the wrong node.** `kubectl` runs from where you are, but `systemctl` and the files act on the machine you
+  are logged in to. Check the prompt before you edit anything, and `exit` when you are done.
+- **Blaming the kubelet for a runtime problem.** If the journal is full of errors about `containerd.sock`, the
+  runtime is down or its socket path is wrong; restarting the kubelet will not help.
+- **Upgrading in the wrong order.** A kubelet must never be newer than the API server. Upgrade the control plane
+  first, then drain each node, upgrade its kubelet package, run `daemon-reload` and restart it, and uncordon.
+
+## Recap
+
+- The kubelet is the **node agent**: it turns Pod specs into running containers through the CRI runtime, and it is a
+  systemd service, not a Pod.
+- It runs a **sync loop** over Pods from the API server and from the static Pod folder, runs probes, and restarts
+  containers locally.
+- Its **Lease** heartbeat every 10 seconds decides `Ready` or `NotReady`; Pods on a dead node are replaced after
+  about five minutes.
+- Settings: `/var/lib/kubelet/config.yaml`, flags from the systemd drop-in, identity in `/etc/kubernetes/kubelet.conf`.
+- Broken node: `systemctl status kubelet`, `journalctl -u kubelet`, fix the named file, `daemon-reload` if needed,
+  restart.
