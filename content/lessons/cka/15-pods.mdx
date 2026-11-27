@@ -1,0 +1,518 @@
+---
+id: cka-pods
+title: "Pods: the smallest thing Kubernetes runs"
+summary: "What a Pod really is, why Kubernetes wraps containers in one, how a Pod gets from kubectl to a running container, and the commands that create and debug Pods fast in the exam."
+minutes: 20
+competencies:
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+docs:
+  - title: "Kubernetes docs: Pods"
+    url: https://kubernetes.io/docs/concepts/workloads/pods/
+  - title: "Kubernetes docs: Pod Lifecycle"
+    url: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+  - title: "Kubernetes docs: kubectl run"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_run/
+  - title: "Kubernetes docs: Debug Pods"
+    url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/
+mock: false
+diagrams:
+  pod-anatomy:
+    title: "What is inside a Pod"
+    caption: "The containers of a Pod share one IP address and can share volumes. A hidden pause container holds the network, so the IP survives when an app container restarts."
+    nodes:
+      - { id: client, label: "Other Pods", sub: "call 10.244.1.7:80", icon: pod, col: 0, row: 0 }
+      - { id: app, label: "Container nginx", sub: "listens on :80", icon: container, col: 1, row: 0, tone: primary }
+      - { id: helper, label: "Container shipper", sub: "sends the logs away", icon: container, col: 2, row: 0 }
+      - { id: pause, label: "pause container", sub: "holds IP 10.244.1.7", icon: process, col: 1, row: 1, tone: muted }
+      - { id: logs, label: "Volume logs", sub: "emptyDir", icon: volume, col: 2, row: 1, tone: success }
+    edges:
+      - { from: client, to: app, label: "one IP" }
+      - { from: app, to: helper, label: "localhost", both: true }
+      - { from: pause, to: app, label: "network", dashed: true }
+      - { from: app, to: logs, label: "writes" }
+      - { from: helper, to: logs, label: "reads" }
+    groups:
+      - { id: pod, label: "Pod web (10.244.1.7)", nodes: [app, helper, pause, logs] }
+  pod-creation:
+    title: "From kubectl run to a running container"
+    caption: "Nobody tells the next component what to do. Each one watches the API server and acts when it sees a Pod that needs its work."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl run web", icon: user, col: 0, row: 0 }
+      - { id: api, label: "API server", sub: "checks and stores", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: etcd, label: "etcd", sub: "Pod saved", icon: database, col: 2, row: 0, tone: muted }
+      - { id: scheduler, label: "Scheduler", sub: "picks worker-1", icon: process, col: 2, row: 1 }
+      - { id: kubelet, label: "kubelet", sub: "sees its new Pod", icon: process, col: 1, row: 2 }
+      - { id: runtime, label: "containerd", sub: "sandbox, images", icon: process, col: 2, row: 2 }
+      - { id: running, label: "Pod web", sub: "Running", icon: pod, col: 3, row: 2, tone: success }
+    edges:
+      - { from: you, to: api, label: "create Pod" }
+      - { from: api, to: etcd, label: "store" }
+      - { from: scheduler, to: api, label: "bind to node" }
+      - { from: kubelet, to: api, label: "watch, report" }
+      - { from: kubelet, to: runtime, label: "CRI" }
+      - { from: runtime, to: running, label: "starts" }
+    groups:
+      - { id: worker, label: "Node worker-1", nodes: [kubelet, runtime, running] }
+  pod-phases:
+    title: "The five Pod phases"
+    caption: "A restarting container does not change the phase: a Pod in CrashLoopBackOff is still in the Running phase."
+    nodes:
+      - { id: pending, label: "Pending", sub: "scheduling, pulling", icon: pod, col: 0, row: 0 }
+      - { id: running, label: "Running", sub: "a container started", icon: pod, col: 1, row: 0, tone: primary }
+      - { id: succeeded, label: "Succeeded", sub: "all exited with 0", icon: pod, col: 2, row: 0, tone: success }
+      - { id: failed, label: "Failed", sub: "one exited non-zero", icon: pod, col: 2, row: 1, tone: warning }
+      - { id: unknown, label: "Unknown", sub: "node unreachable", icon: pod, col: 1, row: 1, tone: muted }
+    edges:
+      - { from: pending, to: running }
+      - { from: running, to: succeeded }
+      - { from: running, to: failed }
+      - { from: running, to: unknown, dashed: true }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Pods"
+      narration: >-
+        Kubernetes never runs a container on its own. It always runs a Pod, and the container lives inside it. In
+        this lesson you will see what a Pod really is, how it gets from your command to a running container, and
+        how to create and debug Pods quickly in the exam.
+      visual:
+        kind: title
+        heading: "Pods"
+        subheading: "The smallest thing Kubernetes runs"
+    - id: problem
+      title: "Why a Pod and not a container"
+      narration: >-
+        Some processes only make sense together, like a web server and the helper that ships its logs. They need
+        to talk over localhost and read the same files. They must land on the same machine, start together and
+        stop together. So Kubernetes schedules the group as one unit, and calls it a Pod.
+      visual:
+        kind: points
+        heading: "Why wrap containers in a Pod?"
+        items:
+          - "Some containers belong together"
+          - "They share localhost and files"
+          - "Same node, same lifetime"
+          - "One unit to schedule, scale and replace"
+    - id: anatomy
+      title: "What is inside a Pod"
+      narration: >-
+        Here is a Pod called web, with one container that runs nginx. A second container can sit next to it, and
+        the two reach each other over localhost. They can also share a volume, so one writes log files and the
+        other reads them. Underneath, a tiny pause container holds the Pod's network, which is why the IP survives
+        when your container restarts. From the outside, other Pods see only one address.
+      visual:
+        kind: diagram
+        diagram: pod-anatomy
+        steps:
+          - [pod, app]
+          - [helper, app-helper]
+          - [logs, app-logs, helper-logs]
+          - [pause, pause-app]
+          - [client, client-app]
+    - id: creation
+      title: "How a Pod comes to life"
+      narration: >-
+        You run one kubectl command. The API server checks the request and saves the Pod in etcd, with no node
+        yet. The scheduler notices a Pod without a node, picks one, and writes that choice back. The kubelet on
+        that node sees a Pod assigned to it. It asks the container runtime to build the sandbox, pull the image
+        and start the container. Then the kubelet reports the status, and you see Running.
+      visual:
+        kind: diagram
+        diagram: pod-creation
+        steps:
+          - [you, you-api]
+          - [api, etcd, api-etcd]
+          - [scheduler, scheduler-api]
+          - [worker, kubelet, kubelet-api]
+          - [runtime, kubelet-runtime]
+          - [running, runtime-running]
+    - id: phases
+      title: "The life of a Pod"
+      narration: >-
+        A new Pod starts in Pending, while it waits for a node and for its images. It becomes Running when at
+        least one container has started. If every container exits with code zero, the Pod ends as Succeeded. If
+        one exits with an error and will not be restarted, it ends as Failed. Unknown means the node stopped
+        answering.
+      visual:
+        kind: diagram
+        diagram: pod-phases
+        steps:
+          - [pending]
+          - [running, pending-running]
+          - [succeeded, running-succeeded]
+          - [failed, running-failed]
+          - [unknown, running-unknown]
+    - id: not-self-healing
+      title: "What a Pod does not do"
+      narration: >-
+        The kubelet restarts a crashed container, in the same Pod, on the same node. But a Pod is never moved to
+        another node. If its node dies, a Pod you created by hand is simply gone. And you cannot change most of a
+        Pod after it is created. That is why real workloads use a Deployment, which makes new Pods for you.
+      visual:
+        kind: points
+        heading: "A Pod is disposable"
+        items:
+          - "Containers restart in place, on the same node"
+          - "A Pod is never moved to another node"
+          - "Node lost: a bare Pod is not replaced"
+          - "Most of the spec cannot be changed"
+          - "Controllers replace Pods; they do not repair them"
+    - id: example
+      title: "Create a Pod and look inside"
+      narration: >-
+        Create a Pod with kubectl run and an image. List it with the wide output to see its IP and its node.
+        Describe it, and read the events at the bottom, because that is where problems show up first. Read the
+        logs of the container. Finally, open a shell inside it to look around.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl run web --image=nginx:1.29"
+            out: "pod/web created"
+          - cmd: "kubectl get pod web -o wide"
+            out: "NAME   READY   STATUS    RESTARTS   AGE   IP            NODE\nweb    1/1     Running   0          8s    10.244.1.7    worker-1"
+          - cmd: "kubectl describe pod web | tail -n 6"
+            out: "Events:\n  Normal  Scheduled  9s   default-scheduler  Successfully assigned default/web to worker-1\n  Normal  Pulled     8s   kubelet            Container image \"nginx:1.29\" already present\n  Normal  Created    8s   kubelet            Created container: web\n  Normal  Started    8s   kubelet            Started container web"
+          - cmd: "kubectl logs web"
+            out: "/docker-entrypoint.sh: Configuration complete; ready for start up"
+          - cmd: "kubectl exec -it web -- sh"
+            out: "#"
+    - id: broken
+      title: "Reading a broken Pod"
+      narration: >-
+        The status column tells you where to look. Pending with no node means the scheduler found no place for it.
+        Image pull back off means the image name or tag is wrong. Crash loop back off means the container starts
+        and then dies, so read the logs of the previous run. In every case, describe the Pod and read its events.
+      visual:
+        kind: points
+        heading: "Status, then where to look"
+        items:
+          - "Read STATUS and READY first"
+          - "Pending: describe, look for FailedScheduling"
+          - "ImagePullBackOff: check the image name and tag"
+          - "CrashLoopBackOff: kubectl logs --previous"
+          - "Always: kubectl describe pod, Events section"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Let kubectl write the manifest, with dry run client and output YAML. For a quick test, start a throwaway
+        Pod that deletes itself when you exit. Do not wait thirty seconds for a delete: force it. And when you
+        must change a field that cannot be edited, replace the Pod with the force flag.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl run web --image=nginx --dry-run=client -o yaml"
+          - "kubectl run tmp --rm -it --restart=Never --image=busybox -- sh"
+          - "kubectl delete pod web --grace-period=0 --force"
+          - "kubectl replace --force -f pod.yaml"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        A Pod is one or more containers that share an IP address, volumes and a lifetime. The API server stores
+        it, the scheduler picks a node, and the kubelet runs it. Containers restart in place, but a Pod is never
+        moved or repaired. Status and events tell you what went wrong. Now try it yourself in the practice
+        questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "One or more containers; one IP, shared volumes, one lifetime"
+          - "API server stores, scheduler places, kubelet runs"
+          - "Restarted in place; never moved, never repaired"
+          - "STATUS, describe, logs: in that order"
+---
+
+## Why Pods exist
+
+A container is one isolated process. Real applications are often a little more than that: a web server and the
+agent that ships its logs, an application and the proxy that encrypts its traffic, a service and the helper that
+reloads its configuration. Those processes are separate programs with separate images, but they only make sense
+**together**: they must run on the same machine, talk to each other cheaply, read the same files, and start and
+stop as one.
+
+Kubernetes could have scheduled containers one by one and let you tie them together with rules. Instead it made
+the group itself the unit. A **Pod** is that group: one or more containers that Kubernetes always places on the
+same node, gives one shared IP address, and creates and deletes as a whole. Most Pods hold a single container, and
+that is fine. The wrapper still matters, because everything else in Kubernetes (scheduling, networking, storage,
+scaling, Services) is defined in terms of Pods, never in terms of containers.
+
+<KeyIdea>
+A Pod is the smallest thing Kubernetes can run: one or more containers that share an IP address, volumes and a
+lifetime. You scale an application by adding Pods, not by adding containers to a Pod.
+</KeyIdea>
+
+## What a Pod is made of
+
+<Diagram id="pod-anatomy" />
+
+- **Containers.** Each has its own image, its own filesystem and its own resource limits. A crash in one does not
+  kill the others.
+- **One network identity.** Every container in the Pod sees the same network interface, the same IP address and
+  the same port space. Two containers in one Pod reach each other on `localhost`, and for the same reason they
+  cannot both listen on port 80. Every Pod in the cluster gets its own IP, and Pods reach each other directly,
+  without NAT.
+- **Volumes.** A volume is declared once on the Pod and mounted by any container that needs it. This is how two
+  containers share files; their own filesystems stay separate.
+- **One spec, one fate.** The Pod's containers are scheduled together onto one node, and deleting the Pod deletes
+  them all.
+
+What "sharing" means in practice:
+
+| Shared by all containers in the Pod | Separate per container |
+|-------------------------------------|------------------------|
+| IP address, ports and `localhost` | Image and root filesystem |
+| Hostname (the Pod's name) | Command, arguments and environment |
+| Volumes declared in the Pod (when mounted) | CPU and memory requests and limits |
+| Node, restart policy, service account | Probes, restart count, logs |
+
+Processes are **not** shared by default: a container cannot see the other containers' processes unless the Pod sets
+`shareProcessNamespace: true`.
+
+<DeepDive title="The hidden pause container">
+When the kubelet starts a Pod, the container runtime first creates a **Pod sandbox**: a tiny container that runs the
+`pause` image (`registry.k8s.io/pause`) and does nothing but sleep. Its job is to own the Pod's Linux namespaces,
+above all the network namespace that the CNI plugin wires up and gives an IP.
+
+Your containers are then started **inside those namespaces**. That explains several things you will observe:
+
+- A container that crashes and restarts keeps the same Pod IP, because the sandbox, not your container, holds the
+  network.
+- On a node, `crictl pods` lists sandboxes and `crictl ps` lists containers; `crictl ps` never shows `pause`, but
+  `crictl pods` has one line per Pod.
+- If the sandbox itself dies, the kubelet rebuilds the whole Pod on that node, and then the IP can change.
+- The status `ContainerCreating` usually means the sandbox is still being set up: the network plugin has not
+  answered, a volume cannot be mounted, or the image is still being pulled.
+</DeepDive>
+
+## How a Pod comes to life
+
+<Diagram id="pod-creation" />
+
+No component orders another around. Each one **watches the API server** and reacts to what it sees:
+
+1. `kubectl` sends the Pod to the **API server**, which authenticates you, checks your permissions, runs admission
+   (defaults such as the service account are filled in here), validates the object and stores it in **etcd**. At
+   this moment the Pod exists but `spec.nodeName` is empty, and its phase is `Pending`.
+2. The **scheduler** watches for Pods without a node. It filters out nodes that cannot run the Pod (not enough
+   CPU or memory, taints, node selectors), scores the rest, and writes its choice back by binding the Pod to a node.
+3. The **kubelet** on that node watches for Pods bound to its node. Through the CRI it asks the container runtime
+   (containerd) to create the sandbox, the CNI plugin gives it an IP, volumes are mounted, images are pulled, init
+   containers run to completion, and then the application containers start.
+4. The kubelet keeps reporting the Pod's **status** back to the API server. That status is what `kubectl get pods`
+   prints.
+
+This chain is worth knowing by heart, because every stuck Pod is stuck at one of these steps, and the step tells
+you which component to look at.
+
+<Flow label="Where a stuck Pod is waiting" steps={["Pending, no node: scheduler", "ContainerCreating: kubelet, CNI, volumes", "ImagePullBackOff: registry or image name", "CrashLoopBackOff: your container"]} />
+
+### Phases, states and the STATUS column
+
+<Diagram id="pod-phases" />
+
+A Pod has one **phase**, a coarse summary of where it is in its life:
+
+| Phase | Meaning |
+|-------|---------|
+| `Pending` | Accepted by the cluster, but not all containers have started: still unscheduled, or pulling images |
+| `Running` | Bound to a node and at least one container is running, starting or restarting |
+| `Succeeded` | Every container exited with code 0 and none will be restarted |
+| `Failed` | Every container has stopped and at least one failed (non-zero exit or killed by the system) |
+| `Unknown` | The node stopped reporting, so the state cannot be read |
+
+Each container also has a **state**: `Waiting` (with a reason, such as `ImagePullBackOff`), `Running`, or
+`Terminated` (with an exit code and a reason, such as `Completed`, `Error` or `OOMKilled`).
+
+<Callout kind="warning" title="STATUS is not the phase">
+The STATUS column of `kubectl get pods` is a mix: usually the most telling container reason, otherwise the phase. A
+Pod showing `CrashLoopBackOff` is in phase `Running`, and one showing `ImagePullBackOff` is in phase `Pending`. If a
+task asks for Pods in a phase, use `--field-selector=status.phase=Running`, not `grep`.
+</Callout>
+
+### What "restart" really means
+
+The Pod's `restartPolicy` tells the kubelet what to do when a container exits. It applies to every container in
+the Pod.
+
+| `restartPolicy` | The kubelet restarts a container when | Typical use |
+|-----------------|----------------------------------------|-------------|
+| `Always` (default) | it exits, for any reason, even with code 0 | Servers, anything in a Deployment |
+| `OnFailure` | it exits with a non-zero code | Jobs that should retry |
+| `Never` | never | One-off commands, test Pods |
+
+The restart happens **inside the same Pod on the same node**: same name, same UID, same IP, and the RESTARTS
+counter goes up. To avoid hammering the node, the kubelet waits longer after each crash: 10 seconds, 20, 40, and so
+on up to five minutes. While it waits, the status reads `CrashLoopBackOff`. A container that then runs cleanly for
+ten minutes gets its delay reset.
+
+<DeepDive title="Why a bare Pod is not self-healing">
+Restarting a container is the kubelet's job, and the kubelet only exists on its node. Nothing in a Pod's definition
+asks the cluster to keep a Pod **existing**:
+
+- If the node fails, the Pod is eventually marked for deletion and it is gone. No component creates another one.
+- A Pod is never moved. "Rescheduling" always means that a controller created a **new** Pod, with a new name, a new
+  UID and a new IP, and the old one was deleted.
+- If you delete the Pod, or the node evicts it because memory or disk runs short, it stays gone.
+
+A ReplicaSet, Deployment, StatefulSet, DaemonSet or Job adds exactly that missing piece: a controller that notices
+a missing Pod and creates a replacement from a template. This is the "self-healing" the CKA curriculum talks about,
+and the next lessons build on it. Create bare Pods for tests, debugging and exam tasks that ask for one; run
+everything else through a controller.
+</DeepDive>
+
+## One container or several
+
+The rule of thumb: put two containers in one Pod only if they **cannot work apart**. Ask whether they must scale
+together. A web application and its database do not: you want five web replicas and one database, so they are two
+Pods. A web server and the agent that tails its log files do: they are one Pod.
+
+| Pattern | What the extra container does | Example |
+|---------|-------------------------------|---------|
+| Sidecar | Extends the main container for the Pod's whole life | Log shipper, service mesh proxy |
+| Init container | Runs to completion **before** the app containers start | Wait for a database, fetch configuration |
+| Ephemeral container | Added to a running Pod for debugging, never restarted | `kubectl debug` with a toolbox image |
+
+Init containers run one after another, and each must succeed before the next starts; a failing one shows as
+`Init:Error` or `Init:CrashLoopBackOff` in the STATUS column. A sidecar is written as an init container with
+`restartPolicy: Always`: it starts before the application containers, keeps running next to them and is stopped
+after them.
+
+<Callout kind="note" title="Pods that no API call created">
+The control plane of a kubeadm cluster runs as **static Pods**: the kubelet starts them straight from manifest files
+in `/etc/kubernetes/manifests` on the node, with no scheduler involved. You see them in `kubectl get pods -n
+kube-system` with the node's name appended (`etcd-controlplane`), but deleting them with kubectl does not stop
+them; you change or remove the file instead.
+</Callout>
+
+## Using it
+
+<Example title="Create a Pod and check every layer">
+Run nginx in a Pod called `web`, then confirm where it runs and that it answers.
+
+```bash
+kubectl run web --image=nginx:1.29 --port=80 --labels=app=web
+kubectl get pod web -o wide              # READY, STATUS, RESTARTS, IP and NODE
+kubectl describe pod web                 # spec, container states, and Events at the bottom
+kubectl logs web                         # what the container printed
+kubectl exec -it web -- sh               # a shell inside the container
+```
+
+`--port` only records the container port in the spec; it opens nothing and exposes nothing. In `kubectl get`,
+`READY 1/1` means one of one containers passes its readiness check. A Pod can be `Running` and `0/1`: started, but
+not ready for traffic.
+</Example>
+
+<Example title="Run a one-off command in a throwaway Pod">
+Check from inside the cluster that the Pod answers on its IP, without leaving anything behind.
+
+```bash
+kubectl run tmp --rm -it --restart=Never --image=busybox:1.37 -- wget -qO- http://10.244.1.7
+```
+
+`--restart=Never` makes the Pod finish instead of restarting when the command exits, `-it` attaches your terminal,
+and `--rm` deletes the Pod afterwards. Everything after `--` is passed to the container as **arguments**. Add
+`--command` when the first word should replace the image's entrypoint:
+
+```bash
+kubectl run sleeper --image=busybox:1.37 --command -- sleep 3600
+```
+</Example>
+
+<Example title="Find out why a Pod does not start">
+A Pod `api` in namespace `shop` never becomes ready. Work from the outside in:
+
+```bash
+kubectl -n shop get pod api                      # 1. STATUS and RESTARTS
+kubectl -n shop describe pod api                 # 2. Events, and State / Last State per container
+kubectl -n shop logs api --previous              # 3. output of the run that crashed
+kubectl -n shop get pod api -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}'
+```
+
+| What you see | What it means | Where to look |
+|--------------|---------------|---------------|
+| `Pending`, no NODE | No node fits | `FailedScheduling` event: resources, taints, node selector |
+| `ContainerCreating` for long | Sandbox, network or volume not ready | Events: missing ConfigMap, Secret or volume claim; CNI |
+| `ErrImagePull`, `ImagePullBackOff` | Image cannot be pulled | Image name, tag, registry, pull secret |
+| `CrashLoopBackOff` | Container starts, then exits | `logs --previous`, the exit code, the command |
+| `Running` but `0/1` | Readiness probe fails | Probe settings in `describe`, the app's port |
+| `OOMKilled`, exit code 137 | Memory limit exceeded | `resources.limits.memory` |
+
+Exit codes worth recognising: `0` finished normally, `1` the application reported an error, `127` the command was
+not found (a typo in `command`), `137` killed with SIGKILL (often out of memory), `143` stopped with SIGTERM.
+</Example>
+
+<Example title="Change a Pod that is already running">
+Only a few fields of a live Pod can be changed: the container images, `activeDeadlineSeconds`, and added
+tolerations. Everything else, such as the command, environment, ports, volumes or labels in a selector you depend
+on, needs a new Pod.
+
+```bash
+kubectl set image pod/web web=nginx:1.30         # allowed in place: the container restarts
+kubectl get pod web -o yaml > web.yaml           # for anything else: export,
+vi web.yaml                                      # edit,
+kubectl replace --force -f web.yaml              # and delete + recreate in one step
+```
+
+If you try the forbidden change with `kubectl edit`, the save is rejected and kubectl keeps your version in a file
+under `/tmp`; `kubectl replace --force -f` on that file finishes the job.
+</Example>
+
+## Tricks
+
+<Trick title="Let kubectl write the Pod manifest">
+`kubectl run web --image=nginx:1.29 --dry-run=client -o yaml > web.yaml` gives you a valid manifest in two seconds.
+Add what the task asks for (a volume, a second container, a node selector) and `kubectl apply -f web.yaml`. This is
+faster and safer than typing a Pod from memory, and it is the bridge to the next lesson on Pod YAML.
+</Trick>
+
+<Trick title="Do not wait for deletes">
+A deleted Pod gets 30 seconds to shut down, and kubectl waits for it. In the exam, `kubectl delete pod web
+--grace-period=0 --force` returns at once. `kubectl replace --force -f` accepts `--grace-period=0` too. Use this
+only on Pods you own; on a real cluster the grace period protects in-flight requests.
+</Trick>
+
+<Trick title="Ask the cluster for the field name">
+`kubectl explain pod.spec.containers` lists every field with its type and meaning, and `kubectl explain pod
+--recursive | less` shows the whole tree to search in. It works offline and is quicker than finding the right
+documentation page.
+</Trick>
+
+<Trick title="Wait instead of polling">
+`kubectl wait --for=condition=Ready pod/web --timeout=60s` returns as soon as the Pod is ready, and fails if it is
+not, which is handy in scripts and before you test a Pod. `kubectl get pod web -w` streams every status change
+while you watch.
+</Trick>
+
+<Trick title="Pick the container in a multi-container Pod">
+`logs` and `exec` act on the first container unless you name one: `kubectl logs web -c shipper`, `kubectl exec -it
+web -c shipper -- sh`. `kubectl logs web --all-containers` prints them all. Container names are listed in `kubectl
+describe pod`.
+</Trick>
+
+## Common mistakes
+
+- **Expecting a bare Pod to come back.** A deleted or evicted Pod, or one on a failed node, is gone. If the task
+  says "ensure it keeps running", it wants a Deployment.
+- **Reading `Running` as "works".** `Running` only says a container has started. Check READY and RESTARTS as well:
+  `0/1` or a climbing restart count means trouble.
+- **Reading the wrong logs.** After a crash, `kubectl logs` shows the new attempt, which may be empty. The reason is
+  in `kubectl logs --previous`.
+- **Forgetting `--restart=Never` on one-off Pods.** With the default `Always`, a command that finishes is restarted
+  again and again, and the Pod ends up in `CrashLoopBackOff` although nothing failed.
+- **Mixing up arguments and command.** Without `--command`, the words after `--` become arguments to the image's
+  entrypoint. With an image that has an entrypoint, `-- sleep 3600` may be passed to it as options and fail.
+- **Two containers on the same port.** They share one port space, so the second one fails to bind and crash-loops.
+- **Forgetting the namespace.** A Pod "not found" is usually in another namespace. Try `kubectl get pods -A`.
+
+## Recap
+
+- A Pod is one or more containers that share an **IP address, volumes and a lifetime**, always on one node.
+- The API server **stores** it, the scheduler **places** it, the kubelet **runs** it through the container runtime.
+- The kubelet restarts containers **in place** according to `restartPolicy`; a Pod itself is never moved or
+  repaired, which is why workloads run under controllers.
+- Phases are `Pending`, `Running`, `Succeeded`, `Failed`, `Unknown`; the STATUS column shows the more useful
+  container reason.
+- In the exam: `kubectl run` with `--dry-run=client -o yaml`, then `get -o wide`, `describe`, `logs --previous`,
+  and `replace --force` when a field cannot be edited.
