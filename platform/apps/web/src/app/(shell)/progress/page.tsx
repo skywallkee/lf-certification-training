@@ -194,7 +194,7 @@ export default async function ProgressPage() {
         {dash.active.length === 0 ? (
           <Card>
             <p className="text-[15px] text-muted-foreground">
-              No cert in progress yet. Pick a focus cert or mark one as booked on your <Link href="/path">path</Link>, then practise to see
+              No cert in progress yet. Pick a focus cert or mark one as booked on <Link href="/certs">Certifications</Link>, then practise to see
               your readiness here.
             </p>
           </Card>
@@ -230,7 +230,7 @@ export default async function ProgressPage() {
             {dash.notStarted === 0
               ? "Every cert is passed or in progress."
               : `${plural(dash.notStarted, "cert")} not started yet.`}{" "}
-            <Link href="/path">See your path</Link>
+            <Link href="/certs">See all certifications</Link>
           </p>
         </Card>
       </div>

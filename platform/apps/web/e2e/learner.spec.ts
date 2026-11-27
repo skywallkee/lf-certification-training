@@ -139,7 +139,7 @@ test("signed-in pages pass the accessibility checks in light and dark", async ({
   await signIn(page, "mid@example.com");
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
-    for (const url of ["/today", "/path", "/progress", "/certs/cka", "/certs/cka/readiness", "/practice", "/review", "/saved", "/account"]) {
+    for (const url of ["/today", "/certs", "/progress", "/certs/cka", "/certs/cka/readiness", "/practice", "/review", "/saved", "/account"]) {
       await page.goto(url);
       await expectAccessible(page, `${url} (${theme})`);
     }
@@ -149,7 +149,7 @@ test("signed-in pages pass the accessibility checks in light and dark", async ({
 test("Today holds at 320px wide without sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   await signIn(page, "mid@example.com");
-  for (const url of ["/today", "/path", "/progress", "/review"]) {
+  for (const url of ["/today", "/certs", "/progress", "/review"]) {
     await page.goto(url);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `${url} scrolls sideways`).toBeLessThanOrEqual(0);

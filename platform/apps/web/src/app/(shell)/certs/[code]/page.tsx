@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BookOpen, ChevronRight, FlaskConical, ListChecks, Timer } from "lucide-react";
 import { CoverageBadge } from "@/components/coverage-badge";
 import { weakestDomain } from "@/components/domain-weight-bar";
 import { ExamStatusForm } from "@/components/forms/exam-status-form";
+import { setFocusAction } from "@/app/actions/study";
 import { SampleBadge, StatusChip } from "@/components/status-chip";
 import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { formatLong } from "@/lib/dates";
@@ -14,6 +17,9 @@ import { en } from "@/messages/en";
 import { certRefs, competencyPath, coverageOf, lessonsFor } from "@/server/catalog";
 import { loadCert } from "@/server/cert-page";
 import { getReadiness, getReported, getStatusViews } from "@/server/progress";
+import { listLabs } from "@/server/labs";
+import { listMocks } from "@/server/mocks";
+import { listQuizMocks } from "@/server/quiz-mocks";
 import { getProfile, getUser } from "@/server/session";
 import { learnerToday } from "@/server/today";
 
@@ -37,11 +43,23 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
   const anySample = certLessons.some((l) => l.mock) || (catalog.questionCountByCert.get(cert.code) ?? 0) > 0;
   const weakest = readiness?.sufficient ? weakestDomain(readiness.domains) : undefined;
   const lower = cert.code.toLowerCase();
+  // Lessons in the official domain order, each linking to its competency page where it is shown.
+  const domainOrder = new Map(cert.domains.map((d, i) => [d.key, i]));
+  const lessonList = certLessons
+    .map((l) => ({ lesson: l, ref: l.competencyRefs.find((r) => refs.includes(r))! }))
+    .map((x) => ({ ...x, domain: catalog.competencies.get(x.ref)?.domain }))
+    .sort((a, b) => (domainOrder.get(a.domain?.key ?? "") ?? 99) - (domainOrder.get(b.domain?.key ?? "") ?? 99));
+  const [labCount, mockCount] = user
+    ? await Promise.all([
+        listLabs().then((ls) => ls.filter((l) => l.certCode === cert.code).length),
+        Promise.all([listMocks(), listQuizMocks()]).then(([a, b]) => [...a, ...b].filter((m) => m.certCode === cert.code).length),
+      ])
+    : [0, 0];
 
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-3 text-[13px] text-muted-foreground">
-        <Link href="/certs">Certs</Link> / <span aria-current="page">{cert.code}</span>
+        <Link href="/certs">Certifications</Link> / <span aria-current="page">{cert.code}</span>
       </nav>
       <header className="mb-6 flex flex-wrap items-start justify-between gap-6">
         <div className="flex flex-col gap-2">
@@ -66,8 +84,8 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
         </div>
         {user ? (
           weakest ? (
-            <Link href={`/practice?cert=${cert.code}&domains=${weakest.key}`} className={buttonVariants()}>
-              Study {weakest.name}, your weakest
+            <Link href={`/practice?cert=${cert.code}&domains=${weakest.key}`} className={cn(buttonVariants(), "h-auto max-w-full whitespace-normal py-2 text-left")}>
+              Practise your weakest domain: {weakest.name}
             </Link>
           ) : (
             <Link href={`/practice?cert=${cert.code}`} className={buttonVariants()}>
@@ -80,6 +98,63 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
           </Link>
         )}
       </header>
+
+      <div className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card aria-labelledby="lessons-title" className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <CardTitle id="lessons-title">Lessons</CardTitle>
+            <span className="text-[13px] text-muted-foreground">
+              {lessonList.length} lesson{lessonList.length === 1 ? "" : "s"} · {coverage.withLessons} of {coverage.competencies} topics covered
+            </span>
+          </div>
+          {lessonList.length === 0 ? (
+            <p className="text-[15px] text-muted-foreground">No lessons for {cert.code} yet. The domains below list every topic the exam covers.</p>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {lessonList.map(({ lesson, ref, domain }) => (
+                <li key={lesson.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 first:pt-0 last:pb-0">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <BookOpen aria-hidden="true" className="size-4 shrink-0 translate-y-0.5 text-primary" />
+                    <Link href={`${competencyPath(ref)}#lesson-${lesson.id}`} className="font-medium">
+                      {lesson.title}
+                    </Link>
+                  </span>
+                  <span className="text-[13px] text-muted-foreground">
+                    {domain ? `${domain.name} · ` : ""}
+                    {lesson.minutes} min
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card aria-labelledby="practise-title" className="flex flex-col gap-3">
+          <CardTitle id="practise-title">Practise {cert.code}</CardTitle>
+          <ul className="flex flex-col gap-1">
+            {[
+              { href: user ? `/practice?cert=${cert.code}` : `/sign-in?next=/certs/${lower}`, Icon: ListChecks, label: "Practice quiz", hint: "Short quiz across every domain" },
+              ...(labCount > 0 ? [{ href: `/labs#cert-${cert.code}`, Icon: FlaskConical, label: `Labs (${labCount})`, hint: "Hands-on tasks on a real cluster" }] : []),
+              ...(mockCount > 0 ? [{ href: `/mocks#cert-${cert.code}`, Icon: Timer, label: `Mock exams (${mockCount})`, hint: "Timed, like the real exam" }] : []),
+            ].map(({ href, Icon, label, hint }) => (
+              <li key={label}>
+                <Link href={href} className="flex items-center gap-3 rounded-md px-2 py-2 text-foreground no-underline hover:bg-muted hover:text-foreground">
+                  <Icon aria-hidden="true" className="size-5 shrink-0 text-primary" />
+                  <span className="flex flex-1 flex-col">
+                    <span className="font-medium">{label}</span>
+                    <span className="text-[13px] text-muted-foreground">{hint}</span>
+                  </span>
+                  <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {user ? (
+            <p className="mt-auto text-[13px] text-muted-foreground">
+              Booked the exam? <Link href="#status">Set your exam date</Link> so your plan and expiry dates follow it.
+            </p>
+          ) : null}
+        </Card>
+      </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {readiness ? (
@@ -122,7 +197,10 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
 
       <Card className="overflow-hidden p-0" aria-labelledby="domains">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-          <CardTitle id="domains">Domains, by official weight</CardTitle>
+          <div>
+            <CardTitle id="domains">Domains, by official weight</CardTitle>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">Open a domain to see every topic the exam covers.</p>
+          </div>
           <CoverageBadge coverage={coverage} />
         </div>
         <ul>
@@ -134,9 +212,12 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
             const isWeak = weakest?.key === d.key;
             return (
               <li key={d.key} className={`border-b last:border-b-0 ${isWeak ? "bg-warning-soft" : ""}`}>
-                <details>
-                  <summary className="grid cursor-pointer grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_64px_minmax(120px,30%)_minmax(0,200px)]">
-                    <span className={isWeak ? "font-semibold" : "font-medium"}>{d.name}</span>
+                <details className="group">
+                  <summary className="grid cursor-pointer list-none grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 px-5 py-3 hover:bg-muted/60 sm:grid-cols-[minmax(0,1fr)_64px_minmax(120px,30%)_minmax(0,200px)] [&::-webkit-details-marker]:hidden">
+                    <span className={`flex items-center gap-2 ${isWeak ? "font-semibold" : "font-medium"}`}>
+                      <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                      {d.name}
+                    </span>
                     <span className="text-sm">{d.weight}%</span>
                     <span className="col-span-2 flex items-center gap-2 sm:col-span-1">
                       {dm && dm.answers > 0 ? (
@@ -197,6 +278,21 @@ export default async function CertHomePage({ params }: { params: Promise<{ code:
             .
           </p>
           <ExamStatusForm cert={cert.code} state={reported?.state ?? null} date={reported?.bookedFor ?? reported?.passedOn ?? null} today={today} />
+          <div className="mt-5 border-t pt-4 text-[15px]">
+            {profile?.focusCert === cert.code ? (
+              <p className="text-muted-foreground">
+                {cert.code} is your focus cert: Today and your study plan follow it.
+              </p>
+            ) : (
+              <form action={setFocusAction} className="flex flex-wrap items-center gap-3">
+                <input type="hidden" name="cert" value={cert.code} />
+                <button type="submit" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  Make {cert.code} my focus
+                </button>
+                <span className="text-[13px] text-muted-foreground">Today and your study plan follow your focus cert.</span>
+              </form>
+            )}
+          </div>
         </Card>
       ) : null}
     </>

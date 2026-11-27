@@ -17,7 +17,7 @@ export default async function DomainPage({ params }: { params: Promise<{ code: s
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-3 text-[13px] text-muted-foreground">
-        <Link href="/certs">Certs</Link> / <Link href={`/certs/${code}`}>{cert.code}</Link> / <span aria-current="page">{domain.name}</span>
+        <Link href="/certs">Certifications</Link> / <Link href={`/certs/${code}`}>{cert.code}</Link> / <span aria-current="page">{domain.name}</span>
       </nav>
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>

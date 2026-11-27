@@ -22,8 +22,8 @@ export function NextStepCard({ step }: { step: NextStep }) {
         <h2 className="text-[22px] font-semibold">Pick a cert to focus on</h2>
         <p className="text-[15px] text-muted-foreground">Your next steps follow the cert you focus on. You can change it any time.</p>
         <div>
-          <Link href="/path" className={buttonVariants()}>
-            Choose on your path
+          <Link href="/certs" className={buttonVariants()}>
+            Choose a focus cert
           </Link>
         </div>
       </section>

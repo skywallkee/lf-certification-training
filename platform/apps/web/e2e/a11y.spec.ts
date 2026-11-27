@@ -10,7 +10,6 @@ import { expectAccessible, signIn } from "./helpers";
 const PUBLIC = ["/", "/sign-in", "/sign-up", "/forgot-password", "/verify-email?email=someone%40example.com", "/reset-password?token=x", "/unsubscribe?u=x&t=y"];
 const LEARNER = [
   "/today",
-  "/path",
   "/plan",
   "/certs",
   "/certs/kcna",

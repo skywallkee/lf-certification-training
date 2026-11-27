@@ -80,12 +80,12 @@ test.describe("phones", () => {
     const mobileNav = page.getByRole("navigation", { name: "Main (mobile)" });
     await mobileNav.getByRole("button", { name: "More" }).click();
     const sheet = page.getByRole("dialog", { name: "More" });
-    for (const name of ["Search", "Saved", "Labs", "Mocks", "Account", "Admin"]) {
+    for (const name of ["Saved", "Mock exams", "Study plan", "Progress", "Account", "Admin"]) {
       await expect(sheet.getByRole("link", { name })).toBeVisible();
     }
     await expectAccessible(page, "More menu");
-    await sheet.getByRole("link", { name: "Labs" }).click();
-    await expect(page).toHaveURL("/labs");
+    await sheet.getByRole("link", { name: /^Saved/ }).click();
+    await expect(page).toHaveURL("/saved");
     await expect(sheet).toBeHidden();
 
     await mobileNav.getByRole("button", { name: "More" }).click();
@@ -96,6 +96,6 @@ test.describe("phones", () => {
   test("signed-in pages hold at 320px wide", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await signIn(page, "admin@example.com");
-    await noSidewaysScroll(page, ["/certs/cka/readiness", "/search?q=pod", "/labs", "/labs/history", "/mocks", "/mocks/history", "/saved", "/account", "/admin", "/admin/content"]);
+    await noSidewaysScroll(page, ["/certs", "/certs/cka", "/certs/cka/readiness", "/search?q=pod", "/labs", "/labs/history", "/mocks", "/mocks/history", "/saved", "/account", "/admin", "/admin/content"]);
   });
 });

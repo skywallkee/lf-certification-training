@@ -56,7 +56,7 @@ export default async function CompetencyPage({ params }: { params: Promise<Param
   return (
     <article>
       <nav aria-label="Breadcrumb" className="mb-3 text-[13px] text-muted-foreground">
-        <Link href="/certs">Certs</Link> / <Link href={`/certs/${code}`}>{cert.code}</Link> /{" "}
+        <Link href="/certs">Certifications</Link> / <Link href={`/certs/${code}`}>{cert.code}</Link> /{" "}
         <Link href={`/certs/${code}/domains/${domainKey}`}>{domain.name}</Link> / <span aria-current="page">Competency</span>
       </nav>
       <header className="mb-6 flex flex-col gap-3">

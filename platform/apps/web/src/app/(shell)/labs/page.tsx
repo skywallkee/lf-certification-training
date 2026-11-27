@@ -27,6 +27,9 @@ export default async function LabsPage() {
   // Your runs per lab, newest first (getHistory's order), for "Last 75% · best 100% · 3 runs".
   const runs = new Map<string, number[]>();
   for (const s of history) if (s.score !== null) runs.set(s.labId, [...(runs.get(s.labId) ?? []), s.score]);
+  // Reasons that stop every lab at once are said once above the list, not on every card.
+  const shared = labs[0] ? blockFor(labs[0], usage, capacity) : null;
+  const sharedBlock = shared && (shared.reason === "controller-down" || shared.reason === "capacity") ? shared : null;
   const byCert = new Map<string, typeof labs>();
   for (const lab of labs) byCert.set(lab.certCode, [...(byCert.get(lab.certCode) ?? []), lab]);
 
@@ -43,6 +46,11 @@ export default async function LabsPage() {
       />
       <div className="flex flex-col gap-6">
         <QuotaMeter usage={usage} capacity={capacity} />
+        {sharedBlock ? (
+          <p role="status" className="rounded-lg border border-warning bg-warning-soft px-4 py-3 text-sm">
+            {sharedBlock.reason === "controller-down" ? en.labs.controllerDown : en.labs.capacity}
+          </p>
+        ) : null}
         {labs.length === 0 ? (
           <Card>
             <p className="text-[15px] text-muted-foreground">No labs yet. Run pnpm curriculum:ingest to load the sample labs.</p>
@@ -76,7 +84,7 @@ export default async function LabsPage() {
                         </p>
                       ) : null}
                       <div className="mt-auto">
-                        <StartLab lab={lab} usage={usage} block={blockFor(lab, usage, capacity)} bootSeconds={bootTimes.get(lab.id)} />
+                        <StartLab lab={lab} usage={usage} block={blockFor(lab, usage, capacity)} bootSeconds={bootTimes.get(lab.id)} quiet={["controller-down", "capacity"]} />
                       </div>
                     </Card>
                   </li>

@@ -25,7 +25,7 @@ async function assertCert(code: string) {
 }
 
 export async function setFocusAction(form: FormData): Promise<void> {
-  const user = await requireUser("/path");
+  const user = await requireUser("/certs");
   const code = CertCode.parse(form.get("cert"));
   await assertCert(code);
   await getDb()
@@ -42,7 +42,7 @@ export interface StatusFormState {
 
 /** Self-reported exam status: booked with a date, passed with a date, or cleared. */
 export async function setExamStatusAction(_prev: StatusFormState, form: FormData): Promise<StatusFormState> {
-  const user = await requireUser("/path");
+  const user = await requireUser("/certs");
   const code = CertCode.parse(form.get("cert"));
   await assertCert(code);
   const state = String(form.get("state"));
