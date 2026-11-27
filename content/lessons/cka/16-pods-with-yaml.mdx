@@ -1,0 +1,682 @@
+---
+id: cka-pods-with-yaml
+title: "Pods with YAML: write, generate and fix a Pod manifest"
+summary: "What every line of a Pod manifest means, what the cluster does with the file after you apply it, how to let kubectl write it for you, and how to read the errors when it is wrong."
+minutes: 22
+competencies:
+  - cka/workloads-scheduling/primitives-used-create-robust-self
+docs:
+  - title: "Kubernetes docs: Pods"
+    url: https://kubernetes.io/docs/concepts/workloads/pods/
+  - title: "Kubernetes docs: Objects in Kubernetes (required fields)"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/
+  - title: "Kubernetes API reference: Pod v1"
+    url: https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/
+  - title: "kubectl reference: kubectl run"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_run/
+  - title: "Kubernetes docs: Define a command and arguments for a container"
+    url: https://kubernetes.io/docs/tasks/inject-data-application/define-command-argument-container/
+diagrams:
+  manifest-anatomy:
+    title: "The four top-level fields of a Pod manifest"
+    caption: "Every Kubernetes object starts with the same four keys. Only what sits under spec changes from one kind of object to another; for a Pod it is mostly the list of containers."
+    nodes:
+      - { id: api-version, label: "apiVersion", sub: "which API to speak", icon: generic, col: 0, row: 0 }
+      - { id: kind, label: "kind", sub: "what to create", icon: generic, col: 0, row: 1 }
+      - { id: metadata, label: "metadata", sub: "who it is", icon: config, col: 0, row: 2 }
+      - { id: spec, label: "spec", sub: "what you want", icon: file, col: 0, row: 3, tone: primary }
+      - { id: v1, label: "v1", sub: "the core group", icon: generic, col: 1, row: 0, tone: muted }
+      - { id: pod, label: "Pod", sub: "capital P, exactly", icon: pod, col: 1, row: 1, tone: muted }
+      - { id: meta-fields, label: "name, namespace", sub: "labels, annotations", icon: generic, col: 1, row: 2, tone: muted }
+      - { id: containers, label: "containers", sub: "a list: one or more", icon: container, col: 1, row: 3, tone: success }
+      - { id: container-fields, label: "name, image", sub: "ports, env, command", icon: generic, col: 2, row: 3, tone: muted }
+    edges:
+      - { from: api-version, to: v1 }
+      - { from: kind, to: pod }
+      - { from: metadata, to: meta-fields }
+      - { from: spec, to: containers }
+      - { from: containers, to: container-fields, label: "each item" }
+    groups:
+      - { id: file, label: "pod.yaml", nodes: [api-version, kind, metadata, spec] }
+  apply-path:
+    title: "From a file on your disk to running containers"
+    caption: "kubectl only translates and sends. The API server checks the object, fills in defaults and stores it; the scheduler and the kubelet then each do their part by watching the API."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl apply -f", icon: user, col: 0, row: 0 }
+      - { id: kubectl, label: "kubectl", sub: "YAML to JSON", icon: process, col: 1, row: 0 }
+      - { id: api, label: "API server", sub: "validate, default", icon: control-plane, col: 2, row: 0, tone: primary }
+      - { id: etcd, label: "etcd", sub: "stores the Pod", icon: database, col: 3, row: 0, tone: muted }
+      - { id: scheduler, label: "Scheduler", sub: "picks a node", icon: process, col: 1, row: 1 }
+      - { id: kubelet, label: "kubelet", sub: "on the chosen node", icon: node, col: 2, row: 1 }
+      - { id: running, label: "Containers", sub: "nginx:1.29 running", icon: container, col: 3, row: 1, tone: success }
+    edges:
+      - { from: you, to: kubectl, label: "pod.yaml" }
+      - { from: kubectl, to: api, label: "POST" }
+      - { from: api, to: etcd, label: "save" }
+      - { from: scheduler, to: api, label: "sets nodeName" }
+      - { from: kubelet, to: api, label: "watch, status", both: true }
+      - { from: kubelet, to: running, label: "starts" }
+  written-vs-stored:
+    title: "What you write and what the cluster keeps"
+    caption: "The stored Pod is your manifest plus defaults from the API server, a node from the scheduler and a status from the kubelet. You own spec; the cluster owns status."
+    nodes:
+      - { id: yours, label: "Your manifest", sub: "about 14 lines", icon: file, col: 0, row: 0, tone: primary }
+      - { id: defaults, label: "API server adds", sub: "uid, defaults, token", icon: control-plane, col: 1, row: 0 }
+      - { id: stored, label: "Stored Pod", sub: "about 100 lines", icon: pod, col: 2, row: 0, tone: success }
+      - { id: sched, label: "Scheduler adds", sub: "spec.nodeName", icon: process, col: 1, row: 1, tone: muted }
+      - { id: status, label: "kubelet writes", sub: "status: phase, podIP", icon: node, col: 2, row: 1, tone: muted }
+    edges:
+      - { from: yours, to: defaults }
+      - { from: defaults, to: stored }
+      - { from: sched, to: stored }
+      - { from: status, to: stored }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Pods with YAML"
+      narration: >-
+        You already know what a Pod is. Now you will describe one in a file, the way real clusters and the exam
+        expect. In this lesson you will learn what every line of a Pod manifest means, what the cluster does with
+        the file, and how to get a correct manifest in seconds instead of typing it from memory.
+      visual:
+        kind: title
+        heading: "Pods with YAML"
+        subheading: "Write, generate and fix a Pod manifest"
+    - id: why
+      title: "Why describe a Pod in a file"
+      narration: >-
+        A command like kubectl run is quick, but it can only set a handful of options. A manifest can set every
+        field a Pod has. The file can be reviewed, stored in Git and applied again tomorrow with the same result.
+        And every other workload, from Deployments to Jobs, contains a Pod template that is written the same way.
+      visual:
+        kind: points
+        heading: "Why a manifest?"
+        items:
+          - "kubectl run reaches only a few options"
+          - "A manifest reaches every field of a Pod"
+          - "Reviewable, repeatable, kept in Git"
+          - "Deployments and Jobs embed the same Pod spec"
+    - id: anatomy
+      title: "Four top-level fields"
+      narration: >-
+        Every Kubernetes manifest has the same four top-level fields. The first is the API version, and for a Pod
+        it is simply v1. Kind says what you are creating, and it must be spelled Pod with a capital P. Metadata
+        identifies the object, with a name, a namespace and labels. Spec describes what you want, and for a Pod
+        that is mainly a list of containers. Each container needs at least a name and an image.
+      visual:
+        kind: diagram
+        diagram: manifest-anatomy
+        steps:
+          - [file, api-version, kind, metadata, spec]
+          - [v1, api-version-v1]
+          - [pod, kind-pod]
+          - [meta-fields, metadata-meta-fields]
+          - [containers, spec-containers]
+          - [container-fields, containers-container-fields]
+    - id: manifest
+      title: "Reading a Pod manifest"
+      narration: >-
+        Here is a complete Pod manifest. Line one picks the API version. Line two picks the kind. Under metadata,
+        the name must be unique in its namespace, and the labels are free text that Services and selectors will
+        use later. Under spec, containers is a list, so each container starts with a dash. This container is named
+        web and runs the nginx image. The container port documents where the application listens, but it does not
+        open or publish anything.
+      visual:
+        kind: code
+        heading: "pod.yaml"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: web
+            namespace: shop
+            labels:
+              app: web
+              tier: frontend
+          spec:
+            containers:
+              - name: web
+                image: nginx:1.29
+                ports:
+                  - containerPort: 80
+        steps: ["1-14", "1", "2", "3-8", "9-11", "11-12", "13-14"]
+    - id: yaml-rules
+      title: "Three YAML rules"
+      narration: >-
+        Almost every broken manifest breaks one of three rules. Indentation is the structure, so use two spaces
+        and never a tab. A dash starts a new item in a list, and everything that belongs to that item lines up
+        under its first key. Values have types, so quote anything that should be text but looks like a number or
+        a boolean.
+      visual:
+        kind: points
+        heading: "YAML in three rules"
+        items:
+          - "Three rules cover almost every mistake"
+          - "Indent with two spaces, never tabs"
+          - "A dash starts a list item; its keys line up"
+          - "Quote text that looks like a number or true/false"
+    - id: apply-path
+      title: "What happens when you apply"
+      narration: >-
+        You hand the file to kubectl. It converts the YAML to JSON and sends it to the API server. The API server
+        checks the fields, fills in defaults and saves the Pod in etcd. At this point nothing is running yet. The
+        scheduler sees a Pod without a node and writes a node name into it. The kubelet on that node sees its new
+        Pod and starts the containers, then reports the status back.
+      visual:
+        kind: diagram
+        diagram: apply-path
+        steps:
+          - [you, kubectl, you-kubectl]
+          - [api, kubectl-api]
+          - [etcd, api-etcd]
+          - [etcd]
+          - [scheduler, scheduler-api]
+          - [kubelet, kubelet-api, running, kubelet-running]
+    - id: written-vs-stored
+      title: "The cluster writes back"
+      narration: >-
+        You wrote about fourteen lines. The API server adds a unique ID, default values such as the restart policy,
+        and a volume with a service account token. The scheduler adds the node name. The kubelet writes the whole
+        status section, with the phase and the Pod IP. So the Pod you read back is around a hundred lines, and only
+        the spec part is yours to write.
+      visual:
+        kind: diagram
+        diagram: written-vs-stored
+        steps:
+          - [yours]
+          - [defaults, yours-defaults, defaults-stored, stored]
+          - [sched, sched-stored]
+          - [status, status-stored]
+          - [stored]
+    - id: generate
+      title: "Let kubectl write the manifest"
+      narration: >-
+        In the exam, do not type a manifest from memory: ask kubectl run for a dry run with YAML output, and save
+        it to a file. Open the file and add whatever the command could not set. Check it against the real API
+        server with a server dry run. Then apply it, and confirm that the Pod is running.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl run web -n shop --image=nginx:1.29 --port=80 --labels=app=web,tier=frontend --dry-run=client -o yaml > pod.yaml"
+          - cmd: "vim pod.yaml"
+          - cmd: "kubectl apply -f pod.yaml --dry-run=server"
+            out: "pod/web created (server dry run)"
+          - cmd: "kubectl apply -f pod.yaml && kubectl get pod web -n shop"
+            out: "pod/web created\nNAME   READY   STATUS    RESTARTS   AGE\nweb    1/1     Running   0          4s"
+    - id: errors
+      title: "Reading the errors"
+      narration: >-
+        Each kind of mistake has its own error, and the wording tells you where to look. Error converting YAML
+        means the file itself is broken, usually indentation or a tab, and you get a line number. Unknown field
+        means the YAML is fine but a key is misspelled or sits at the wrong level. Required value means something
+        mandatory is missing. And no matches for kind means the API version or the kind is wrong.
+      visual:
+        kind: points
+        heading: "Four errors, four places to look"
+        items:
+          - "The error text names the layer that failed"
+          - "error converting YAML: indentation or tabs, see the line number"
+          - "unknown field: a typo, or a key at the wrong level"
+          - "Required value: a mandatory field is missing"
+          - "no matches for kind: wrong apiVersion or kind"
+    - id: immutable
+      title: "Changing a running Pod"
+      narration: >-
+        Add a second container to the file and apply it again, and the API server refuses with the word Forbidden.
+        Most of a Pod's spec cannot be changed once the Pod exists, and the container image is the main exception.
+        For everything else, replace the Pod: kubectl replace with the force flag deletes it and creates it again
+        from your file.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl apply -f pod.yaml"
+            out: "The Pod \"web\" is invalid: spec: Forbidden: pod updates may not change fields other than `spec.containers[*].image`, ..."
+          - cmd: "kubectl set image pod/web web=nginx:1.29-alpine -n shop"
+            out: "pod/web image updated"
+          - cmd: "kubectl replace --force -f pod.yaml"
+            out: "pod \"web\" deleted\npod/web replaced"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Generate first and edit second, because a generated file has no typos. When you forget a field name, ask
+        kubectl explain instead of searching the documentation. To start from a Pod that already exists, export
+        it with get and output YAML. And after every apply, look at the Pod, because a valid manifest can still
+        describe a Pod that never starts.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl run ... --dry-run=client -o yaml > pod.yaml"
+          - "kubectl explain pod.spec.containers --recursive"
+          - "kubectl get pod web -o yaml > copy.yaml"
+          - "Always check: kubectl get pod, then describe"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        A Pod manifest has four top-level fields: API version, kind, metadata and spec. Indentation and dashes
+        carry the structure, so most errors are spacing errors. The API server validates the file, adds defaults
+        and stores it, and the kubelet writes the status. Generate the file with a client dry run, and test it
+        with a server dry run. When a change is forbidden, replace the Pod.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "apiVersion, kind, metadata, spec"
+          - "Two spaces, no tabs; a dash per list item"
+          - "You write spec; the cluster writes defaults and status"
+          - "Generate with --dry-run=client, test with --dry-run=server"
+          - "Forbidden change? kubectl replace --force -f"
+---
+
+## Why describe a Pod in a file
+
+In the previous lesson you started a Pod with one command, `kubectl run`. That is fine for a quick test, but the
+command can reach only a few of a Pod's settings: an image, a port, some labels, some environment variables. A Pod
+has more than a hundred possible fields (volumes, probes, security settings, a second container, node placement),
+and the only way to reach all of them is to write the Pod down as a **manifest**: a YAML file that describes the
+object you want.
+
+A manifest has three more advantages that matter long after the exam:
+
+- **It is repeatable.** The same file gives the same Pod today, tomorrow and on another cluster.
+- **It can be reviewed.** A file can live in Git, be read by a colleague and be compared with what is running.
+- **It is the shape of everything else.** A Deployment, a StatefulSet, a DaemonSet, a Job and a CronJob each contain
+  a *Pod template*, which is a Pod manifest without the first two lines. Learn to read and write a Pod and you can
+  read the largest part of every workload.
+
+<KeyIdea>
+A manifest is not a script of steps. It is a description of the object you want to exist. You hand it to the API
+server, and the cluster does the work of making reality match it.
+</KeyIdea>
+
+## What a Pod manifest is made of
+
+<Diagram id="manifest-anatomy" />
+
+Every Kubernetes object, of any kind, is described with the same four top-level fields:
+
+| Field | What it answers | For a Pod |
+|-------|-----------------|-----------|
+| `apiVersion` | Which API group and version understands this object? | `v1` (the core group, which has no group name) |
+| `kind` | What type of object is it? | `Pod` |
+| `metadata` | Which object exactly? | `name` (required), `namespace`, `labels`, `annotations` |
+| `spec` | What do you want it to be? | `containers` (required), then everything optional |
+
+Here is a complete, working manifest:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web
+  namespace: shop
+  labels:
+    app: web
+    tier: frontend
+spec:
+  containers:
+    - name: web
+      image: nginx:1.29
+      ports:
+        - containerPort: 80
+```
+
+Read it from the top:
+
+- **`apiVersion: v1`**. Pods, Services, ConfigMaps, Secrets and Namespaces belong to the oldest API group, called
+  *core*, and its version string is just `v1`. Newer kinds live in named groups, which is why a Deployment says
+  `apps/v1`. If you are ever unsure, `kubectl api-resources` lists the version next to every kind.
+- **`kind: Pod`**. Kinds are case-sensitive and singular: `Pod`, never `pod` or `Pods`.
+- **`metadata.name`**. The name must be unique among Pods in the namespace. Use lowercase letters, digits and
+  hyphens; an uppercase letter or an underscore is rejected.
+- **`metadata.namespace`**. Optional. Leave it out and the Pod goes into whatever namespace `kubectl` is pointed at
+  (the `-n` flag, or the context's default).
+- **`metadata.labels`**. Free key and value pairs that you invent. They do nothing by themselves, but Services,
+  ReplicaSets and `kubectl get -l` all find Pods through them.
+- **`spec.containers`**. A **list**, because a Pod can hold several containers. Each item needs a `name` (unique in
+  the Pod) and an `image`. Everything else on a container is optional.
+
+The fields you will add most often inside one container:
+
+| Field | What it does | Worth knowing |
+|-------|--------------|---------------|
+| `image` | The image to run | Without a tag it means `:latest`, and then the image is pulled on every start |
+| `command` | Replaces the image's `ENTRYPOINT` | A list of strings: `["sleep", "3600"]` |
+| `args` | Replaces the image's `CMD` | Set `args` alone to keep the image's entrypoint and change only its arguments |
+| `env` | Environment variables | A list of `name` and `value`; the value must be a string |
+| `ports` | Ports the container listens on | Informational: see the warning below |
+| `resources` | CPU and memory requests and limits | Covered with scheduling, later in the course |
+
+<Callout kind="warning" title="containerPort does not open anything">
+`ports.containerPort` is documentation. A container that listens on port 8080 is reachable on 8080 from inside the
+cluster whether you list the port or not, and listing port 80 does not make an application listen there. The field
+earns its place when you give the port a `name` that a Service can point at, and because `kubectl expose` reads it.
+</Callout>
+
+### Just enough YAML
+
+YAML has many features, and Kubernetes manifests use three of them.
+
+**1. Maps: `key: value`.** Indentation shows what belongs to what. Use spaces, two per level, and never a tab.
+
+```yaml
+metadata:
+  name: web          # name belongs to metadata
+  labels:
+    app: web         # app belongs to labels, which belongs to metadata
+```
+
+**2. Lists: a dash per item.** The dash starts a new item, and the other keys of that item line up under the first
+key, not under the dash.
+
+```yaml
+containers:
+  - name: web        # first container starts here
+    image: nginx:1.29
+  - name: logger     # second container starts here
+    image: busybox:1.37
+```
+
+**3. Values have types.** `80` is a number, `true` is a boolean, `web` is a string. Kubernetes checks the type of
+every field, so quote a value when you need text that looks like something else:
+
+```yaml
+env:
+  - name: WORKERS
+    value: "4"       # env values must be strings: 4 without quotes is rejected
+  - name: DEBUG
+    value: "true"    # same for true, false, yes, no, on, off
+```
+
+<DeepDive title="Two spellings you will meet for the same manifest">
+YAML allows the dash of a list item to sit at the same indentation as the key above it, and that is how `kubectl`
+prints manifests:
+
+```yaml
+spec:
+  containers:
+  - image: nginx:1.29     # dash directly under "containers"
+    name: web
+```
+
+This is the same data as the indented form used in this lesson. Both are valid; do not "fix" one into the other
+halfway through a file, because a list whose items start at different columns is the classic way to break it.
+
+`kubectl` also sorts keys alphabetically, so `image` comes before `name` and `labels` before `name`. The order of
+keys in a map never matters. The order of items in a list does: the first container in the list is the one that
+`kubectl logs` and `kubectl exec` pick when you do not name a container.
+
+A short list can also be written on one line, in square brackets: `command: ["sh", "-c", "sleep 3600"]`. And one
+file can hold several objects, separated by a line containing only `---`.
+</DeepDive>
+
+## How it works: what the cluster does with your file
+
+<Diagram id="apply-path" />
+
+Nothing in a cluster reads YAML except `kubectl`. When you run `kubectl apply -f pod.yaml`:
+
+1. **kubectl** parses the file, converts it to JSON and sends it over HTTPS to the API server, as a request to
+   create a Pod in the namespace. If the YAML itself is broken, you get the error here and nothing leaves your
+   terminal.
+2. **The API server** authenticates you, checks that you are allowed to create Pods, then validates the object:
+   unknown fields, wrong types and missing required fields are all rejected at this step. It fills in defaults,
+   runs the admission controllers and stores the Pod in **etcd**. `kubectl` prints `pod/web created` now, although
+   no container has started.
+3. **The scheduler** watches for Pods with an empty `spec.nodeName`, chooses a node and writes its name into the Pod.
+4. **The kubelet** on that node watches for Pods assigned to it, asks the container runtime to pull the image and
+   start the containers, and keeps reporting what it sees into the Pod's `status`.
+
+That is why "created" and "running" are different things. A manifest with a misspelled image name is perfectly
+valid: the API server accepts it, the scheduler places it, and only the kubelet finds out that the image does not
+exist. You see it as `ErrImagePull` in `kubectl get pod`, not as an error from `kubectl apply`.
+
+### The cluster writes back
+
+<Diagram id="written-vs-stored" />
+
+Run `kubectl get pod web -n shop -o yaml` after creating the Pod above. Your fourteen lines have grown to about a
+hundred. Everything new was added by the cluster:
+
+| Added by | Examples |
+|----------|----------|
+| API server (defaults) | `restartPolicy: Always`, `dnsPolicy: ClusterFirst`, `imagePullPolicy: IfNotPresent`, `terminationGracePeriodSeconds: 30`, `protocol: TCP` on the port |
+| API server (identity and admission) | `uid`, `creationTimestamp`, `resourceVersion`, `serviceAccountName: default`, a `kube-api-access-…` volume with the service account token, two tolerations |
+| Scheduler | `spec.nodeName` |
+| kubelet | The whole `status`: `phase`, `conditions`, `podIP`, `hostIP`, `containerStatuses` |
+
+Two lessons follow from this. First, **you write `spec`, the cluster writes `status`**: a manifest never needs a
+`status` section, and one that has it is ignored. Second, the stored object is the best documentation there is:
+when you wonder what a default is, create the Pod and read it back.
+
+<DeepDive title="Why most of a Pod cannot be changed afterwards">
+A Pod is a record of something that is already running on a node. Changing its volumes, its command or its ports
+would mean stopping the containers and building new ones, which is a different Pod. Kubernetes makes that explicit:
+after creation, the API server accepts changes to only a few fields of a Pod's spec.
+
+- `spec.containers[*].image` and `spec.initContainers[*].image` (the kubelet restarts that container with the new image)
+- `spec.activeDeadlineSeconds`
+- `spec.tolerations` (you may only add to them)
+- CPU and memory `resources`, on recent clusters, through the Pod's separate `resize` request (`kubectl patch --subresource resize`)
+
+Labels and annotations are metadata, not spec, so they can always be changed.
+
+Anything else is answered with `Forbidden: pod updates may not change fields other than …`. This is the reason
+controllers exist: a Deployment handles a change to its Pod template by creating new Pods and removing the old ones
+for you. With a bare Pod you do that replacement yourself.
+</DeepDive>
+
+## Three ways to get a manifest, and three ways to send it
+
+You will almost never write a manifest starting from an empty file. Choose the fastest source:
+
+| Source | Command | Best when |
+|--------|---------|-----------|
+| Generate | `kubectl run web --image=nginx:1.29 --dry-run=client -o yaml > pod.yaml` | You are creating a new Pod (the usual case) |
+| Export | `kubectl get pod web -o yaml > pod.yaml` | A similar Pod already runs in the cluster |
+| Copy | An example from kubernetes.io, pasted and edited | You need a block `kubectl run` cannot write, such as a volume or a probe |
+
+`--dry-run=client` means "build the object, print it, send nothing". Together with `-o yaml` it turns `kubectl run`
+into a manifest generator.
+
+And there are three verbs for sending a file to the cluster:
+
+| Command | If the Pod does not exist | If it already exists |
+|---------|---------------------------|----------------------|
+| `kubectl create -f pod.yaml` | Creates it | Fails with `AlreadyExists` |
+| `kubectl apply -f pod.yaml` | Creates it | Updates it to match the file (within what a Pod allows) |
+| `kubectl replace --force -f pod.yaml` | Creates it | Deletes it and creates it again |
+
+`apply` is the safe default, and a later lesson is devoted to how it works. `-f` also accepts a directory, a URL, or
+`-` to read the manifest from standard input.
+
+<Callout kind="warning" title="The namespace in the file wins, or the command fails">
+If the manifest says `namespace: shop` and you add `-n dev` on the command line, `kubectl` refuses with *the namespace
+from the provided object "shop" does not match the namespace "dev"*. If the manifest has no namespace, `-n` decides.
+When a task names a namespace, put it in the file: then the file is correct no matter how it is applied.
+</Callout>
+
+## Using it
+
+<Flow label="The routine for every manifest task" steps={["Generate", "Edit", "Dry run on the server", "Apply", "Verify"]} />
+
+<Example title="From a task statement to a running Pod">
+*In namespace `shop`, create a Pod named `web` that runs `nginx:1.29`, has the labels `app=web` and `tier=frontend`,
+and declares container port 80.*
+
+Generate the manifest instead of typing it. Every requirement in this task has a flag:
+
+```bash
+kubectl create namespace shop
+kubectl run web -n shop --image=nginx:1.29 --port=80 \
+  --labels=app=web,tier=frontend --dry-run=client -o yaml > pod.yaml
+```
+
+Look at what you got before you use it:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: web
+    tier: frontend
+  name: web
+  namespace: shop
+spec:
+  containers:
+  - image: nginx:1.29
+    name: web
+    ports:
+    - containerPort: 80
+    resources: {}
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+```
+
+The extra lines (`resources: {}`, `dnsPolicy`, `restartPolicy`, `status: {}` and, on older versions,
+`creationTimestamp: null`) are harmless defaults and empty values. Leave them; deleting them costs time and gains
+nothing. Then test, apply and verify:
+
+```bash
+kubectl apply -f pod.yaml --dry-run=server     # pod/web created (server dry run)
+kubectl apply -f pod.yaml                      # pod/web created
+kubectl get pod web -n shop -o wide --show-labels
+```
+
+`--dry-run=server` sends the object through the API server's real validation and admission, and stops just before
+saving it. It catches everything except problems that only show up on the node, such as a wrong image name.
+</Example>
+
+<Example title="Add what kubectl run cannot write">
+*Extend the Pod: the `web` container gets the environment variable `WORKERS=4`, and a second container named `ticker`
+runs `busybox:1.37` and prints the date every ten seconds.*
+
+`kubectl run` can only create one container, so this is an edit. Open `pod.yaml` and make the `containers` list look
+like this:
+
+```yaml
+spec:
+  containers:
+  - image: nginx:1.29
+    name: web
+    env:
+    - name: WORKERS
+      value: "4"
+    ports:
+    - containerPort: 80
+    resources: {}
+  - image: busybox:1.37
+    name: ticker
+    command: ["sh", "-c"]
+    args: ["while true; do date; sleep 10; done"]
+```
+
+The new container is a new list item: a dash at exactly the same column as the dash of the first container. The Pod
+already exists and adding a container is not an allowed change, so replace it and check both containers:
+
+```bash
+kubectl replace --force -f pod.yaml
+kubectl get pod web -n shop            # READY shows 2/2
+kubectl logs web -n shop -c ticker     # one date line every ten seconds
+```
+</Example>
+
+<Example title="Fix a manifest from its error messages">
+You are given this file and told that it does not apply. It contains three separate mistakes:
+
+```yaml
+apiVersion: apps/v1
+kind: Pod
+metadata:
+  name: cache
+  labels:
+    version: 7
+spec:
+  containers:
+    - name: cache
+      imagee: redis:8
+```
+
+Apply it, read the error, fix one thing and apply again. You see one problem at a time, because each check runs
+only when the one before it has passed:
+
+| What `kubectl apply -f` says | What it means | The fix |
+|------------------------------|---------------|---------|
+| `no matches for kind "Pod" in version "apps/v1"` | That API group has no kind called Pod | `apiVersion: v1` |
+| `cannot unmarshal number into … metadata.labels of type string` | A label value must be text | `version: "7"` |
+| `unknown field "spec.containers[0].imagee"` | The path points at a key the API does not know | Rename it to `image` |
+
+With `image` misspelled, the container also had no image at all. If you had deleted the stray key instead of renaming
+it, the next error would have been `spec.containers[0].image: Required value`: the same line of the file, seen by a
+later check.
+</Example>
+
+## Tricks
+
+<Trick title="Never start from an empty file">
+`kubectl run NAME --image=IMAGE --dry-run=client -o yaml > pod.yaml` gives a manifest with correct indentation and no
+typos in about five seconds. Flags worth knowing: `--port`, `--labels`, `--env=KEY=value` (repeatable), `-n`, and
+`--restart=Never` or `--restart=OnFailure` to set the restart policy. To set the command, put it after two dashes:
+`kubectl run box --image=busybox:1.37 --dry-run=client -o yaml --command -- sleep 3600`. With `--command` the words
+land in `command`; without it they land in `args`.
+</Trick>
+
+<Trick title="Save the flags in a variable">
+At the start of a session run `export do="--dry-run=client -o yaml"`. Then `kubectl run web --image=nginx:1.29 $do`
+prints a manifest, and the same variable works with `kubectl create deployment`, `kubectl create service` and
+`kubectl expose`.
+</Trick>
+
+<Trick title="kubectl explain is the documentation, offline">
+`kubectl explain pod.spec.containers` describes every field of a container, with its type, straight from the
+cluster's own API. Go deeper with dots (`kubectl explain pod.spec.containers.ports`), or print the whole tree of field
+names with `--recursive` and search it: `kubectl explain pod.spec --recursive | grep -i -A3 probe`. It answers "what
+was that field called, and where does it go?" faster than a browser.
+</Trick>
+
+<Trick title="A failed edit is not lost">
+When `kubectl edit pod web` is refused because the field cannot be changed, kubectl saves your edited version and
+prints its path, for example `/tmp/kubectl-edit-1395347318.yaml`. Run `kubectl replace --force -f` on that file and
+the Pod is recreated with your change. No retyping.
+</Trick>
+
+<Trick title="Make your editor safe for YAML">
+Tabs break YAML and are invisible. In vim, put `set expandtab tabstop=2 shiftwidth=2` in `~/.vimrc` once, and the Tab
+key inserts two spaces. To move a block one level in or out, select the lines with `V` and press `>` or `<`. If you
+paste a manifest and the indentation staggers across the screen, run `:set paste` before pasting.
+</Trick>
+
+## Common mistakes
+
+- **A tab instead of spaces.** The error is `found character that cannot start any token`, with a line number.
+- **A key at the wrong level.** `containers` indented under `metadata`, or `image` one level too shallow. The file is
+  valid YAML, so the error comes from the API server as `unknown field`, and the path in the message shows where the
+  server found the key.
+- **A map where a list belongs.** `containers:` followed by `name: web` without a dash. Remember which fields are
+  lists: `containers`, `ports`, `env`, `volumes`, `volumeMounts`, `args`, `command`.
+- **The wrong `apiVersion`.** `apps/v1` for a Pod, or `V1` with a capital V. The message is `no matches for kind`.
+- **Unquoted numbers and booleans where text is required.** Label values, annotation values and `env` values are
+  strings. The message contains `cannot unmarshal number` (or `bool`) `… of type string`.
+- **Believing `created`.** The API server accepted the object; that is all. Always follow with `kubectl get pod`,
+  and when the status is not `Running`, read the Events at the bottom of `kubectl describe pod`.
+- **Editing a Pod as if it were a Deployment.** Changing anything except the image of a running Pod is `Forbidden`.
+  Replace the Pod instead of fighting the error.
+- **Exporting and re-applying without thinking.** A manifest from `kubectl get pod -o yaml` carries `status`, `uid`,
+  `resourceVersion` and `nodeName`. Remove `nodeName` at least, or the copy is pinned to the same node and skips the
+  scheduler.
+
+## Recap
+
+- A manifest describes the object you want: `apiVersion: v1`, `kind: Pod`, `metadata` (who) and `spec` (what).
+- YAML structure is indentation and dashes: two spaces, no tabs, one dash per list item, quotes around text that
+  looks like a number or a boolean.
+- kubectl converts and sends; the **API server** validates, defaults and stores; the scheduler and kubelet do the rest
+  and write the `status`.
+- Generate with `kubectl run … --dry-run=client -o yaml`, look up fields with `kubectl explain`, test with
+  `--dry-run=server`, then apply and **verify**.
+- Almost nothing in a running Pod's spec can be changed: use `kubectl replace --force -f`.
