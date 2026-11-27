@@ -104,16 +104,18 @@ test("the mid learner runs a review session from the queue", async ({ page }) =>
 test("marking a lesson done, saving it and writing a note show up on Saved", async ({ page }) => {
   await signIn(page, "new@example.com");
   await page.goto("/certs/cka/domains/troubleshooting/competencies/troubleshoot-clusters-nodes");
-  const markDone = page.getByRole("button", { name: "Mark as done" });
+  // Scoped to the lesson's own section: other lessons share this competency page.
+  const lesson = page.locator('section[aria-labelledby="lesson-cka-course-introduction"]');
+  const markDone = lesson.getByRole("button", { name: "Mark as done" });
   if (await markDone.isVisible()) {
     await markDone.click();
-    await expect(page.getByRole("button", { name: /Done · mark as not done/ })).toBeVisible();
+    await expect(lesson.getByRole("button", { name: /Done · mark as not done/ })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
-  await page.getByLabel("Your private note").fill("Remember: alias k=kubectl and its completion.");
-  await page.getByRole("button", { name: "Save note" }).click();
-  await expect(page.getByText("Saved", { exact: true }).last()).toBeVisible();
+  await lesson.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(lesson.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await lesson.getByLabel("Your private note").fill("Remember: alias k=kubectl and its completion.");
+  await lesson.getByRole("button", { name: "Save note" }).click();
+  await expect(lesson.getByText("Saved", { exact: true }).last()).toBeVisible();
 
   await page.goto("/saved");
   await expect(page.getByText("Remember: alias k=kubectl and its completion.")).toBeVisible();
