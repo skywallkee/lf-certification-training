@@ -1,0 +1,574 @@
+---
+id: cka-kubectl-apply-command
+title: "kubectl apply: how Kubernetes merges your file into a live object"
+summary: "What kubectl apply really does: the three versions of an object it compares, why some fields are removed and others survive, server-side apply, and the habits that make it safe and fast in the exam."
+minutes: 20
+competencies:
+  - cka/workloads-scheduling/application-deployments-perform-rolling-update
+docs:
+  - title: "Kubernetes docs: Declarative management of objects using configuration files"
+    url: https://kubernetes.io/docs/tasks/manage-kubernetes-objects/declarative-config/
+  - title: "Kubernetes docs: Server-Side Apply"
+    url: https://kubernetes.io/docs/reference/using-api/server-side-apply/
+  - title: "kubectl reference: kubectl apply"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_apply/
+  - title: "kubectl reference: kubectl diff"
+    url: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_diff/
+  - title: "Kubernetes docs: Update API objects in place using kubectl patch"
+    url: https://kubernetes.io/docs/tasks/manage-kubernetes-objects/update-api-object-kubectl-patch/
+diagrams:
+  apply-decision:
+    title: "One command, three possible outcomes"
+    caption: "kubectl apply first reads the object from the cluster. What it does next depends on what it finds, and the word at the end of the output line tells you which path it took."
+    nodes:
+      - { id: file, label: "web.yaml", sub: "what you want", icon: file, col: 0, row: 1 }
+      - { id: apply, label: "kubectl apply", sub: "reads the live object", icon: process, col: 1, row: 1, tone: primary }
+      - { id: create, label: "Not found", sub: "create: created", icon: generic, col: 2, row: 0, tone: success }
+      - { id: patch, label: "Found, differs", sub: "patch: configured", icon: generic, col: 2, row: 1, tone: warning }
+      - { id: same, label: "Found, identical", sub: "no write: unchanged", icon: generic, col: 2, row: 2, tone: muted }
+    edges:
+      - { from: file, to: apply, label: "-f" }
+      - { from: apply, to: create }
+      - { from: apply, to: patch }
+      - { from: apply, to: same }
+  three-way-merge:
+    title: "The three versions kubectl apply compares"
+    caption: "The local file says what to set. The last applied configuration, an annotation stored on the object itself, says what you set before, which is the only way kubectl can tell that you removed something. The live object supplies the current values."
+    nodes:
+      - { id: local, label: "Local file", sub: "web.yaml, edited", icon: file, col: 0, row: 0 }
+      - { id: last, label: "Last applied", sub: "annotation, old file", icon: config, col: 0, row: 1, tone: warning }
+      - { id: live, label: "Live object", sub: "what the API has now", icon: deployment, col: 0, row: 2 }
+      - { id: merge, label: "kubectl apply", sub: "three-way diff", icon: process, col: 1, row: 1, tone: primary }
+      - { id: api, label: "API server", sub: "validates the patch", icon: control-plane, col: 2, row: 1 }
+      - { id: stored, label: "etcd", sub: "new live object", icon: database, col: 2, row: 2, tone: success }
+    edges:
+      - { from: local, to: merge, label: "to set" }
+      - { from: last, to: merge, label: "to delete" }
+      - { from: live, to: merge, label: "current" }
+      - { from: merge, to: api, label: "PATCH" }
+      - { from: api, to: stored, label: "saves" }
+    groups:
+      - { id: on-cluster, label: "Stored in the cluster", nodes: [last, live] }
+  field-managers:
+    title: "Server-side apply: every field has an owner"
+    caption: "With server-side apply the API server records which manager set each field, in metadata.managedFields. Applying a different value to a field that someone else owns is refused with a conflict instead of silently overwriting it."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl apply", icon: user, col: 0, row: 0 }
+      - { id: hpa, label: "Autoscaler", sub: "sets replicas", icon: process, col: 0, row: 1 }
+      - { id: ctrl, label: "Controllers", sub: "write status", icon: control-plane, col: 0, row: 2, tone: muted }
+      - { id: obj, label: "Deployment web", sub: "managedFields", icon: deployment, col: 1, row: 1, tone: primary }
+      - { id: mate, label: "Second applier", sub: "also sets replicas", icon: user, col: 2, row: 1, tone: warning }
+    edges:
+      - { from: you, to: obj, label: "image, labels" }
+      - { from: hpa, to: obj, label: "replicas" }
+      - { from: ctrl, to: obj, label: "status" }
+      - { from: mate, to: obj, label: "conflict", dashed: true }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "kubectl apply"
+      narration: >-
+        You will type kubectl apply more often than any other command in the exam. It looks simple: point it at a
+        file and the cluster matches the file. In this lesson you will see what really happens underneath, why some
+        of your changes survive and others disappear, and the habits that make apply safe and fast.
+      visual:
+        kind: title
+        heading: "kubectl apply"
+        subheading: "How Kubernetes merges your file into a live object"
+    - id: problem
+      title: "The problem apply solves"
+      narration: >-
+        The create command only works once, and fails if the object already exists. The replace command overwrites
+        the whole object, and throws away everything that is not in your file. But a live object is shared: the
+        autoscaler, the controllers and your teammates all write to it. Apply changes only what you asked for, and
+        you can run it again and again.
+      visual:
+        kind: points
+        heading: "Why not create or replace?"
+        items:
+          - "create fails when the object already exists"
+          - "replace overwrites fields you did not mention"
+          - "Live objects are shared with controllers and people"
+          - "apply changes only your fields, and is safe to repeat"
+    - id: decision
+      title: "Three possible outcomes"
+      narration: >-
+        You give apply a file. Apply first asks the API server for the object with that kind, name and namespace. If
+        the object is not found, apply creates it. If the object exists but differs from the file, apply sends a
+        patch, and the output says configured. If nothing differs, no write is sent at all, and the output says
+        unchanged.
+      visual:
+        kind: diagram
+        diagram: apply-decision
+        steps:
+          - [file]
+          - [apply, file-apply]
+          - [create, apply-create]
+          - [patch, apply-patch]
+          - [same, apply-same]
+    - id: three-sources
+      title: "Three versions of one object"
+      narration: >-
+        To build that patch, apply compares three versions of the object. The first is your local file, which holds
+        the fields you want to set. The second is the live object, with everything the cluster and other tools have
+        added. The third is the last applied configuration, a copy of the file from the previous apply. It is the
+        only way to know that you removed a field. From the three, apply computes one patch and sends it to the API
+        server. The API server validates it and saves the new object.
+      visual:
+        kind: diagram
+        diagram: three-way-merge
+        steps:
+          - [merge]
+          - [local, local-merge]
+          - [live, live-merge]
+          - [last, last-merge, on-cluster]
+          - [last]
+          - [merge-api, api]
+          - [api-stored, stored]
+    - id: annotation
+      title: "Where the last applied copy lives"
+      narration: >-
+        Here is a live Deployment that was created with apply. The last applied copy is stored on the object itself,
+        in an annotation, as one line of JSON. It holds exactly what your file said, nothing more. Notice that the
+        live object has more: five replicas after someone scaled it, while the annotation still says three.
+      visual:
+        kind: code
+        heading: "kubectl get deployment web -o yaml"
+        lang: yaml
+        code: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: web
+            namespace: shop
+            annotations:
+              kubectl.kubernetes.io/last-applied-configuration: |
+                {"apiVersion":"apps/v1","kind":"Deployment",
+                 "metadata":{"name":"web","namespace":"shop"},
+                 "spec":{"replicas":3,"minReadySeconds":5, ...}}
+          spec:
+            replicas: 5
+            minReadySeconds: 5
+            strategy:
+              type: RollingUpdate
+        steps: ["1-5", "6-7", "8-10", "12"]
+    - id: rules
+      title: "The merge rules"
+      narration: >-
+        Four rules decide every field. A field in your file is set to the file's value, whatever the live value was.
+        A field you removed from the file, but that the last applied copy still has, is deleted from the live object.
+        A field that only the live object has is left alone, because you never claimed it. And lists such as
+        containers are merged item by item, matched by name.
+      visual:
+        kind: points
+        heading: "What happens to each field"
+        items:
+          - "The four cases"
+          - "In the file: set to the file's value"
+          - "Removed from the file, in last applied: deleted"
+          - "Only in the live object: kept"
+          - "Lists like containers: merged by name"
+    - id: demo
+      title: "Apply in practice"
+      narration: >-
+        Start by applying the file, and the Deployment is created. Then someone scales it by hand. Now change the
+        image in the file. Ask for a diff before you touch the cluster: it shows the new image, and it also shows
+        replicas going back to three, because the file says three. Apply the file, and the output says configured.
+        Finally, watch the rollout finish.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl apply -f web.yaml"
+            out: "deployment.apps/web created"
+          - cmd: "kubectl -n shop scale deployment web --replicas=5"
+            out: "deployment.apps/web scaled"
+          - cmd: "sed -i 's/nginx:1.28/nginx:1.29/' web.yaml"
+          - cmd: "kubectl diff -f web.yaml"
+            out: "-  replicas: 5\n+  replicas: 3\n-        image: nginx:1.28\n+        image: nginx:1.29"
+          - cmd: "kubectl apply -f web.yaml"
+            out: "deployment.apps/web configured"
+          - cmd: "kubectl -n shop rollout status deployment web"
+            out: "deployment \"web\" successfully rolled out"
+    - id: server-side
+      title: "Server-side apply"
+      narration: >-
+        There is a newer way to apply, where the API server does the merge instead of kubectl. The server records an
+        owner for every field in the object. You own the fields you applied, such as the image and the labels. The
+        autoscaler owns replicas, and the controllers own the status. If a second applier sends a different value
+        for a field it does not own, the server answers with a conflict instead of overwriting it.
+      visual:
+        kind: diagram
+        diagram: field-managers
+        steps:
+          - [obj]
+          - [obj]
+          - [you, you-obj]
+          - [hpa, hpa-obj, ctrl, ctrl-obj]
+          - [mate, mate-obj]
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Run kubectl diff before you apply, and you see exactly what will change. Add dry run server to have the API
+        server check the file without saving anything. If apply answers that a field is immutable, recreate the
+        object with replace and the force flag. Leave replicas out of the file when something else scales the
+        workload. And remember that apply accepts a folder, a web address, or a manifest typed straight into the
+        terminal.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl diff -f shows the change before it happens"
+          - "--dry-run=server validates without saving"
+          - "Immutable field? kubectl replace --force -f"
+          - "Leave replicas out when an autoscaler owns it"
+          - "-f takes a folder, a URL, or - for stdin"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Apply creates the object when it is missing and patches it when it exists. The patch comes from three
+        versions: your file, the live object and the last applied copy. Fields in the file are set, fields you
+        removed are deleted, and everything else is kept. Server-side apply moves the merge into the API server and
+        tracks who owns each field. Now try it yourself in the practice questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Missing: create. Exists: patch. Same: unchanged"
+          - "Local file + live object + last applied"
+          - "Set what is in the file, delete what you removed, keep the rest"
+          - "Server-side apply: the server merges and tracks owners"
+---
+
+## Why kubectl apply exists
+
+The first two commands most people learn for manifests are `kubectl create -f` and `kubectl replace -f`. Both break
+down as soon as an object has a life of its own:
+
+- `kubectl create` works once. Run it again and you get `Error from server (AlreadyExists)`.
+- `kubectl replace` sends your file as the **whole** object. Anything that is not in the file is reset: the replica
+  count the autoscaler chose, a label a teammate added, an annotation a controller relies on.
+
+A live object is shared. You wrote part of it, the API server filled in defaults, controllers write the status, an
+autoscaler may own the replica count, and other people patch it. What you need is a command that says "make **my**
+fields look like this file, and leave the rest alone", and that you can run any number of times with the same
+result. That command is `kubectl apply`.
+
+<KeyIdea>
+`kubectl apply` does not upload your file. It works out the smallest change that makes the live object agree with
+the file, and to do that it compares three things: your file, the live object, and a saved copy of what you applied
+last time.
+</KeyIdea>
+
+## What apply does
+
+<Diagram id="apply-decision" />
+
+For every object in the file, `kubectl apply` reads the object with the same kind, name and namespace from the
+cluster, then takes one of three paths. The last word of the output line tells you which:
+
+| Output | What apply found | What it sent |
+|--------|------------------|--------------|
+| `deployment.apps/web created` | No such object | A create request, with the last applied annotation added |
+| `deployment.apps/web configured` | The object exists and the file changes something | One patch with only the differences |
+| `deployment.apps/web unchanged` | The object exists and the file changes nothing | Nothing at all |
+
+Because the outcome depends only on the file and the current state, apply is **idempotent**: running it twice is the
+same as running it once. That is what makes it the declarative command: you describe the result, and you never have
+to remember whether the object is already there.
+
+`-f` is flexible about where the manifest comes from:
+
+| Form | Reads |
+|------|-------|
+| `kubectl apply -f web.yaml` | One file, which may hold several objects separated by `---` |
+| `kubectl apply -f manifests/` | Every `.yaml`, `.yml` and `.json` file in the folder (add `-R` for subfolders) |
+| `kubectl apply -f https://example.com/install.yaml` | A manifest downloaded from a URL, the usual way to install a network plugin |
+| `kubectl apply -f -` | Standard input, so you can pipe or paste a manifest |
+| `kubectl apply -k overlays/prod/` | The output of a Kustomize folder instead of plain files |
+
+## How it works: the three-way merge
+
+<Diagram id="three-way-merge" />
+
+If apply only compared your file with the live object, it could never delete anything. A field that is in the live
+object but not in your file might be a default, something a controller added, or something **you** set last week and
+have now removed on purpose. The file and the live object alone cannot tell those apart.
+
+So every time apply writes an object, it also saves a copy of the file's content on the object, as JSON, in the
+annotation `kubectl.kubernetes.io/last-applied-configuration`. The next apply then has three versions to compare:
+
+- **The local file**: what you want now.
+- **The last applied configuration**: what you wanted last time.
+- **The live object**: what exists, including everything other writers added.
+
+From those it builds one patch in three steps:
+
+1. **Fields to delete**: everything that is in the last applied configuration but no longer in the file.
+2. **Fields to set**: everything in the file whose value differs from the live object, or is missing there.
+3. **The annotation itself**: updated to the new content of the file.
+
+Each field therefore lands in one of four cases:
+
+| In the file | In last applied | In the live object | What apply does |
+|-------------|-----------------|--------------------|-----------------|
+| Yes | either | Yes, other value | Sets the live value to the file's value |
+| Yes | either | No | Adds the field |
+| No | Yes | either | **Deletes** the field from the live object |
+| No | No | Yes | Leaves it alone |
+
+A worked example makes it concrete. You applied a Deployment with `replicas: 3`, `minReadySeconds: 5` and the image
+`nginx:1.28`. Since then someone ran `kubectl scale --replicas=5` and `kubectl label deployment web owner=alice`. Now
+you edit the file: the image becomes `nginx:1.29` and you delete the `minReadySeconds` line.
+
+| Field | File now | Last applied | Live | After apply | Why |
+|-------|----------|--------------|------|-------------|-----|
+| `image` | `nginx:1.29` | `nginx:1.28` | `nginx:1.28` | `nginx:1.29` | In the file, differs from live |
+| `minReadySeconds` | absent | `5` | `5` | removed (back to the default, 0) | You applied it before and took it out |
+| `replicas` | `3` | `3` | `5` | `3` | In the file, differs from live: the manual scale is undone |
+| label `owner` | absent | absent | `alice` | `alice` | Never applied by you, so not yours to delete |
+| `strategy` | absent | absent | `RollingUpdate` | `RollingUpdate` | A default, never applied by you |
+
+The `replicas` row surprises people: apply does not "respect" the manual scale. If a field is in your file, the file
+wins every time.
+
+<DeepDive title="How lists are merged, and why custom resources behave differently">
+For built-in kinds, apply sends a **strategic merge patch**. It knows from the API definitions how each list should
+be treated:
+
+- Lists with a merge key are merged **item by item**. `containers`, `env`, `volumes` and `volumeMounts` are matched
+  by `name`, and container `ports` by `containerPort`. You can add one container to the file without disturbing a
+  sidecar that an admission webhook injected into the live Pod template.
+- Lists without a merge key, such as `args`, `command` and `tolerations`, are **replaced as a whole**.
+- The order of merged lists is not guaranteed to follow your file.
+
+Custom resources carry no merge keys, so client-side apply falls back to a plain **JSON merge patch** for them, in
+which every list is replaced as a whole. Server-side apply (below) fixes this, because CRD authors can declare list
+types in the schema.
+
+To delete a field that you never applied, set it to `null` in the file. Apply clears fields that are explicitly null
+even when the last applied configuration does not mention them.
+</DeepDive>
+
+<Callout kind="warning" title="Imperative changes do not update the annotation">
+`kubectl scale`, `kubectl set image`, `kubectl label`, `kubectl patch` and `kubectl edit` change the live object but
+leave the last applied configuration as it was. Your file, the annotation and the cluster drift apart, and the next
+apply puts back whatever the file says. Pick one way to manage an object: either change the file and apply it, or
+use imperative commands, but do not mix them on the same fields.
+</Callout>
+
+## Client-side and server-side apply
+
+Everything so far is **client-side apply**: kubectl does the comparison and sends a patch. Since Kubernetes 1.22
+there is a stable second mode, **server-side apply**, where kubectl sends the file as it is and the API server does
+the merge.
+
+<Diagram id="field-managers" />
+
+Instead of one annotation, the API server keeps a record of **who set which field** in `metadata.managedFields`.
+Every writer has a manager name: `kubectl` for server-side apply, `kubectl-client-side-apply` for the classic mode,
+`kube-controller-manager` for the built-in controllers, and so on. When you apply:
+
+- Fields you send become yours.
+- Fields you sent last time and have now left out are removed, if nobody else owns them. This is the same deletion
+  rule as before, without needing the annotation.
+- A field that another manager owns, with a different value from yours, is a **conflict**. The request fails with
+  `Apply failed with 1 conflict` and names the manager and the field. You then choose: drop the field from your file
+  and let the other manager keep it, or take it over with `--force-conflicts`.
+
+| | Client-side apply (default) | Server-side apply (`--server-side`) |
+|---|---|---|
+| Who computes the change | kubectl | The API server |
+| Memory of your last apply | The `last-applied-configuration` annotation | `metadata.managedFields` |
+| Two writers set the same field | The last one silently wins | Conflict, unless you force it |
+| Very large objects | Can fail: the annotation doubles the object and annotations are limited to 262144 bytes | Works: there is no annotation |
+| Custom resources | Lists replaced as a whole | Lists merged as the CRD's schema declares |
+| Output line | `configured` | `serverside-applied` |
+
+Plain `kubectl apply` is still client-side by default, and it is all you need for most exam tasks. Know that the
+other mode exists, what a conflict means, and that `--server-side` is the fix when a huge manifest is rejected with
+`metadata.annotations: Too long`.
+
+<DeepDive title="Looking at field ownership">
+`kubectl get` hides `managedFields` because it is long. Ask for it when you want to know who set a field:
+
+```bash
+kubectl -n shop get deployment web -o yaml --show-managed-fields
+```
+
+Each entry lists a `manager`, an `operation` (`Apply` for server-side apply, `Update` for everything else) and the
+fields it owns in `fieldsV1`. An object that was first managed with client-side apply can be moved over simply by
+running `kubectl apply --server-side -f` on the same file: kubectl uses the old annotation to hand ownership over
+without conflicts, as long as the annotation is still accurate.
+</DeepDive>
+
+## Using it
+
+<Example title="Create, change and roll out a Deployment from one file">
+Keep the manifest in a file and let apply work out what to do each time.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28
+```
+
+```bash
+kubectl apply -f web.yaml                 # deployment.apps/web created
+kubectl apply -f web.yaml                 # deployment.apps/web unchanged
+
+# edit web.yaml: image nginx:1.29
+kubectl diff -f web.yaml                  # shows the image change
+kubectl apply -f web.yaml                 # deployment.apps/web configured
+kubectl -n shop rollout status deployment web
+```
+
+The second apply sends nothing. The third changes the Pod template, so the Deployment starts a rolling update, and
+`kubectl rollout undo` can take it back. A change outside the Pod template, such as `replicas`, is applied without a
+rollout.
+</Example>
+
+<Example title="Adopt an object that was created imperatively">
+A task gives you a running Deployment `api` that somebody created with `kubectl create deployment`, and asks for a
+change that has no quick imperative command, such as adding a volume. Export it, edit it, apply it:
+
+```bash
+kubectl -n shop get deployment api -o yaml > api.yaml
+# edit api.yaml: add the volume and the volumeMount; you may delete the status: block
+kubectl apply -f api.yaml
+```
+
+```text
+Warning: resource deployments/api is missing the kubectl.kubernetes.io/last-applied-configuration
+annotation which is required by kubectl apply. kubectl apply should only be used on resources created
+declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be
+patched automatically.
+deployment.apps/api configured
+```
+
+The warning is harmless here: with no last applied configuration, apply cannot delete anything on this first run, so
+it only sets what your file changes, and it writes the annotation for next time. Leaving `status` in the exported
+file is harmless too, because writes to the main resource ignore it. Do delete the `resourceVersion` line if you keep
+the file for later: it pins the file to one version of the object, and a later apply fails with "the object has been
+modified" once anything else has changed the object.
+</Example>
+
+<Example title="A field that cannot be changed in place">
+You are asked to change the command of a running Pod, or the selector of a Deployment. Apply reports that the API
+server refused the patch:
+
+```text
+The Pod "probe" is invalid: spec: Forbidden: pod updates may not change fields other than
+`spec.containers[*].image`, ...
+```
+
+```text
+The Deployment "web" is invalid: spec.selector: Invalid value: ...: field is immutable
+```
+
+Apply cannot patch an immutable field, so the object has to be deleted and created again. One command does both
+from your edited file:
+
+```bash
+kubectl replace --force -f probe.yaml     # delete, then create
+```
+
+For a bare Pod that is the normal way to change it. For a Deployment, remember that this deletes its Pods too, so
+there is no rolling update.
+</Example>
+
+## Tricks
+
+<Trick title="Look before you apply">
+`kubectl diff -f web.yaml` asks the API server what the object **would** look like and prints the difference from
+the live object, including the defaults and anything an admission webhook would add. It exits with 0 when nothing
+would change and 1 when something would, so it also works in scripts. `kubectl apply -f web.yaml --dry-run=server`
+goes one step less far: it only tells you whether the server would accept the file.
+</Trick>
+
+<Trick title="Apply straight from the terminal">
+For a small object, skip the file and paste the manifest into a here-document:
+
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+EOF
+```
+
+The same form turns any generator into an idempotent command. `kubectl create namespace shop` fails the second time;
+this never does:
+
+```bash
+kubectl create namespace shop --dry-run=client -o yaml | kubectl apply -f -
+```
+</Trick>
+
+<Trick title="Read what you applied last time">
+`kubectl apply view-last-applied deployment/web` prints the saved copy as YAML. It answers "what did the file look
+like when this was applied?" even when the file is gone, and it is a clean starting point for a new manifest because
+it has no status, no defaults and no managed fields. Its sibling `kubectl apply edit-last-applied` lets you correct
+the saved copy without touching the live object.
+</Trick>
+
+<Trick title="Leave replicas out when something else scales the workload">
+If a HorizontalPodAutoscaler manages a Deployment, a `replicas` line in your file resets the count on every apply.
+Do not just delete the line, though: it is in the last applied configuration, so the next apply would delete the
+field and the Deployment would drop to the default of **one** replica until the autoscaler reacts. First run
+`kubectl apply edit-last-applied deployment/web` and remove `replicas` there, then remove it from the file.
+</Trick>
+
+<Trick title="Apply a whole folder, in the right order">
+`kubectl apply -f manifests/` applies the files in alphabetical order. A Deployment can be applied before its
+ConfigMap, because Pods simply wait, but a namespaced object fails if its Namespace does not exist yet. Name the
+files so that the Namespace comes first, such as `00-namespace.yaml`, or put it first in a single file.
+</Trick>
+
+## Common mistakes
+
+- **Expecting apply to keep a manual change.** If the field is in the file, the file wins. `kubectl diff` before the
+  apply shows that a manual scale or image change is about to be undone.
+- **Expecting apply to delete an object.** Removing a manifest from a folder removes nothing from the cluster; apply
+  only looks at the objects it is given. Delete with `kubectl delete -f old.yaml`. The `--prune` flag exists for
+  this, but it is still alpha and can delete more than you meant, so stay away from it in the exam.
+- **A typo in a field name.** Current versions reject it: `strict decoding error: unknown field "spec.replica"`. Read
+  the path in the message, fix the indentation or the name, and apply again. `kubectl explain deployment.spec` shows
+  the right names.
+- **The wrong namespace.** Apply uses the namespace in the file's metadata, or else your current one. If the file
+  names a namespace and you pass a different one with `-n`, apply stops with "the namespace from the provided object
+  does not match". If the file names none, the object quietly lands wherever your context points.
+- **Applying a huge manifest.** Large CRD bundles can be rejected with `metadata.annotations: Too long`, because the
+  saved copy does not fit in an annotation. Use `kubectl apply --server-side -f`, or `kubectl create -f` for a first
+  install.
+- **Treating the missing annotation warning as an error.** It is a warning, and the line after it tells you the
+  apply went through.
+
+## Recap
+
+- `kubectl apply -f` creates an object that is missing and patches one that exists; the output says `created`,
+  `configured` or `unchanged`.
+- The patch comes from three versions: the **local file**, the **live object** and the **last applied
+  configuration** stored in an annotation.
+- Fields in the file are set, fields you removed from the file are deleted, and fields you never applied are kept.
+- **Server-side apply** (`--server-side`) moves the merge into the API server, tracks an owner per field and reports
+  conflicts.
+- In the exam: `kubectl diff` first, `--dry-run=server` to check a file, and `kubectl replace --force -f` when a
+  field is immutable.
