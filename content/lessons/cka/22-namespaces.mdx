@@ -1,0 +1,590 @@
+---
+id: cka-namespaces
+title: "Namespaces: many teams, one cluster"
+summary: "What a namespace really is, what it separates and what it does not, how quotas, limits, RBAC and DNS hang off it, and the kubectl habits that stop you working in the wrong one."
+minutes: 20
+competencies:
+  - cka/workloads-scheduling/configure-pod-admission-scheduling-limits
+docs:
+  - title: "Kubernetes docs: Namespaces"
+    url: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+  - title: "Kubernetes docs: Share a cluster with namespaces"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/namespaces/
+  - title: "Kubernetes docs: Resource Quotas"
+    url: https://kubernetes.io/docs/concepts/policy/resource-quotas/
+  - title: "Kubernetes docs: Limit Ranges"
+    url: https://kubernetes.io/docs/concepts/policy/limit-range/
+  - title: "Kubernetes docs: DNS for Services and Pods"
+    url: https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/
+mock: false
+diagrams:
+  one-cluster:
+    title: "Two namespaces and the objects that belong to none"
+    caption: "dev and prod each hold a Service, a Deployment and a Secret with the same names, and they never clash. Nodes, PersistentVolumes and ClusterRoles sit outside every namespace and are shared by the whole cluster."
+    nodes:
+      - { id: dev-svc, label: "Service web", sub: "web.dev.svc", icon: service, col: 0, row: 0 }
+      - { id: dev-deploy, label: "Deployment web", sub: "2 replicas", icon: deployment, col: 0, row: 1 }
+      - { id: dev-secret, label: "Secret db-pass", sub: "dev password", icon: secret, col: 0, row: 2 }
+      - { id: prod-svc, label: "Service web", sub: "web.prod.svc", icon: service, col: 1, row: 0, tone: primary }
+      - { id: prod-deploy, label: "Deployment web", sub: "6 replicas", icon: deployment, col: 1, row: 1, tone: primary }
+      - { id: prod-secret, label: "Secret db-pass", sub: "prod password", icon: secret, col: 1, row: 2, tone: primary }
+      - { id: nodes, label: "Nodes", sub: "run Pods of both", icon: node, col: 2, row: 0, tone: muted }
+      - { id: pvs, label: "PersistentVolumes", sub: "claimed from any", icon: volume, col: 2, row: 1, tone: muted }
+      - { id: roles, label: "ClusterRoles", sub: "usable in any", icon: policy, col: 2, row: 2, tone: muted }
+    edges:
+      - { from: dev-svc, to: dev-deploy, label: "selects Pods" }
+      - { from: dev-deploy, to: dev-secret, label: "uses" }
+      - { from: prod-svc, to: prod-deploy, label: "selects Pods" }
+      - { from: prod-deploy, to: prod-secret, label: "uses" }
+    groups:
+      - { id: dev, label: "Namespace dev", nodes: [dev-svc, dev-deploy, dev-secret] }
+      - { id: prod, label: "Namespace prod", nodes: [prod-svc, prod-deploy, prod-secret] }
+      - { id: cluster-scoped, label: "No namespace", nodes: [nodes, pvs, roles] }
+  request-path:
+    title: "Where the namespace shows up in one request"
+    caption: "The namespace is part of the URL. RBAC and admission use it to pick the rules that apply, and etcd stores the object under a key that contains it."
+    nodes:
+      - { id: kubectl, label: "kubectl -n shop", sub: "create a Pod", icon: user, col: 0, row: 1 }
+      - { id: rbac, label: "RBAC", sub: "Roles in shop", icon: policy, col: 1, row: 0 }
+      - { id: api, label: "API server", sub: "namespaces/shop/pods", icon: control-plane, col: 1, row: 1, tone: primary }
+      - { id: admission, label: "Admission", sub: "quota and limits", icon: policy, col: 1, row: 2 }
+      - { id: etcd, label: "etcd", sub: "/registry/pods/shop/", icon: database, col: 2, row: 1, tone: muted }
+    edges:
+      - { from: kubectl, to: api, label: "POST" }
+      - { from: api, to: rbac, label: "allowed?", dashed: true }
+      - { from: api, to: admission, label: "within quota?", dashed: true }
+      - { from: api, to: etcd, label: "stores" }
+  guardrails:
+    title: "The rules you attach to a namespace"
+    caption: "A namespace separates nothing but names until you add rules. Each of these four objects lives inside the namespace and applies only there."
+    nodes:
+      - { id: limits, label: "LimitRange", sub: "per container", icon: config, col: 1, row: 0 }
+      - { id: quota, label: "ResourceQuota", sub: "total for all", icon: policy, col: 0, row: 1, tone: warning }
+      - { id: ns, label: "Namespace shop", sub: "names and scope", icon: cluster, col: 1, row: 1, tone: primary }
+      - { id: rbac, label: "RoleBinding", sub: "who may do what", icon: user, col: 2, row: 1 }
+      - { id: netpol, label: "NetworkPolicy", sub: "who may connect", icon: proxy, col: 1, row: 2 }
+    edges:
+      - { from: quota, to: ns, label: "caps" }
+      - { from: limits, to: ns, label: "defaults" }
+      - { from: rbac, to: ns, label: "grants" }
+      - { from: netpol, to: ns, label: "filters" }
+  cross-namespace:
+    title: "One short name, two different Services"
+    caption: "The short name db resolves inside the caller's own namespace. To reach the Service in namespace data, the Pod must add the namespace: db.data."
+    nodes:
+      - { id: local, label: "Service db", sub: "db.shop.svc", icon: service, col: 1, row: 0, tone: success }
+      - { id: dns, label: "CoreDNS", sub: "search shop.svc...", icon: dns, col: 0, row: 1, tone: muted }
+      - { id: client, label: "frontend Pod", sub: "in namespace shop", icon: pod, col: 1, row: 1 }
+      - { id: remote, label: "Service db", sub: "db.data.svc", icon: service, col: 2, row: 1, tone: primary }
+    edges:
+      - { from: client, to: dns, label: "db?", dashed: true }
+      - { from: client, to: local, label: "db" }
+      - { from: client, to: remote, label: "db.data" }
+    groups:
+      - { id: shop, label: "Namespace shop", nodes: [local, client] }
+      - { id: data, label: "Namespace data", nodes: [remote] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Namespaces"
+      narration: >-
+        One cluster is usually shared by many teams, many applications and several environments. Namespaces are how
+        Kubernetes keeps them apart. In this lesson you will see what a namespace really separates, what it does
+        not, and the habits that keep you out of the wrong namespace in the exam.
+      visual:
+        kind: title
+        heading: "Namespaces"
+        subheading: "Many teams, one cluster"
+    - id: problem
+      title: "The problem a namespace solves"
+      narration: >-
+        Imagine two teams that both want a Deployment called web. Without namespaces, the second one would be
+        refused, because the name is taken. You also could not say that one team may only touch its own objects.
+        And nothing would stop one application from using every CPU in the cluster.
+      visual:
+        kind: points
+        heading: "One flat cluster does not scale"
+        items:
+          - "Two teams want the same object names"
+          - "A name can only be used once"
+          - "Permissions need a boundary"
+          - "Resource use needs a budget"
+    - id: what-it-is
+      title: "What a namespace is"
+      narration: >-
+        A namespace is a named scope inside the cluster. Here is namespace dev, with a Service, a Deployment and a
+        Secret. Namespace prod holds objects with exactly the same names, and they never clash. Some objects belong
+        to no namespace at all: nodes, persistent volumes and cluster roles are shared by everyone.
+      visual:
+        kind: diagram
+        diagram: one-cluster
+        steps:
+          - [dev]
+          - [dev-svc, dev-deploy, dev-secret, dev-svc-dev-deploy, dev-deploy-dev-secret]
+          - [prod, prod-svc, prod-deploy, prod-secret, prod-svc-prod-deploy, prod-deploy-prod-secret]
+          - [cluster-scoped, nodes, pvs, roles]
+    - id: built-in
+      title: "The four namespaces you start with"
+      narration: >-
+        Every new cluster starts with four namespaces. Default is where your objects land when you name no
+        namespace. Kube system holds the cluster's own components, such as CoreDNS and kube-proxy. Kube public is
+        readable by everyone, even without logging in. Kube node lease holds one small heartbeat object per node.
+      visual:
+        kind: points
+        heading: "Present in every cluster"
+        items:
+          - "Four namespaces from the first minute"
+          - "default: used when you name none"
+          - "kube-system: the cluster's own components"
+          - "kube-public: readable by everyone"
+          - "kube-node-lease: node heartbeats"
+    - id: how-it-works
+      title: "How it works underneath"
+      narration: >-
+        A namespace is not a wall around machines; it is a field on the object and a part of its address. When you
+        create a Pod in namespace shop, the namespace is part of the request path. The API server asks RBAC whether
+        you may create Pods in that namespace. Admission then checks the quota and limits that belong to that
+        namespace. Finally the Pod is stored in etcd, under a key that contains the namespace.
+      visual:
+        kind: diagram
+        diagram: request-path
+        steps:
+          - [kubectl]
+          - [api, kubectl-api]
+          - [rbac, api-rbac]
+          - [admission, api-admission]
+          - [etcd, api-etcd]
+    - id: guardrails
+      title: "Rules make the boundary"
+      narration: >-
+        On its own, a namespace separates names and nothing else. A resource quota caps the total that the whole
+        namespace may use. A limit range gives each container defaults and a maximum. A role binding decides who
+        may do what in this namespace. And a network policy decides who may connect, because without one, Pods in
+        every namespace can reach each other.
+      visual:
+        kind: diagram
+        diagram: guardrails
+        steps:
+          - [ns]
+          - [quota, quota-ns]
+          - [limits, limits-ns]
+          - [rbac, rbac-ns]
+          - [netpol, netpol-ns]
+    - id: dns
+      title: "Names across namespaces"
+      narration: >-
+        Service names follow the namespace too. A Pod in namespace shop asks cluster DNS for the short name db. The
+        answer is the Service called db in its own namespace. To reach the other one, in namespace data, the Pod
+        adds the namespace to the name: db, dot, data.
+      visual:
+        kind: diagram
+        diagram: cross-namespace
+        steps:
+          - [client, shop]
+          - [dns, client-dns]
+          - [local, client-local]
+          - [remote, data, client-remote]
+    - id: example
+      title: "Create a namespace and work in it"
+      narration: >-
+        Creating a namespace is one short command. Add the namespace flag to put a Deployment inside it. If you
+        will stay there for a while, make it the default for your current context. From then on, plain commands
+        work in that namespace. And always check where you are before you change anything.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl create namespace shop"
+            out: "namespace/shop created"
+          - cmd: "kubectl -n shop create deployment web --image=nginx:1.29 --replicas=2"
+            out: "deployment.apps/web created"
+          - cmd: "kubectl config set-context --current --namespace=shop"
+            out: "Context \"kubernetes-admin@kubernetes\" modified."
+          - cmd: "kubectl get pods"
+            out: "NAME                   READY   STATUS    RESTARTS   AGE\nweb-6c8d9f7b5d-4xkqp   1/1     Running   0          20s\nweb-6c8d9f7b5d-n7z2m   1/1     Running   0          20s"
+          - cmd: "kubectl config view --minify -o jsonpath='{..namespace}'"
+            out: "shop"
+    - id: quota
+      title: "Give the namespace a budget"
+      narration: >-
+        Here is a resource quota for namespace shop. It lives inside the namespace it limits. It allows ten Pods at
+        most. All containers together may request two CPUs and four gibibytes of memory. Their limits may add up to
+        four CPUs and eight gibibytes. One catch: once CPU and memory are under quota, every new Pod must state its
+        own requests and limits, or it is refused.
+      visual:
+        kind: code
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata:
+            name: shop-quota
+            namespace: shop
+          spec:
+            hard:
+              pods: "10"
+              requests.cpu: "2"
+              requests.memory: 4Gi
+              limits.cpu: "4"
+              limits.memory: 8Gi
+        steps: ["2", "5", "8", "9-10", "11-12", "9-12"]
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Read the namespace in the task before you type anything. Use the short flag, dash n, on every command, or
+        set the context default and check it. Use dash capital A to search all namespaces when you cannot find
+        something. If a Deployment shows fewer Pods than it should, look at the events in that namespace, because a
+        quota may be refusing them. And remember that deleting a namespace deletes everything inside it.
+      visual:
+        kind: points
+        heading: "Save minutes, avoid lost points"
+        items:
+          - "Read the task's namespace first"
+          - "-n on every command, or set and check the default"
+          - "-A searches every namespace"
+          - "Missing Pods? Check events for a quota"
+          - "Deleting a namespace deletes its contents"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        A namespace is a scope for names, permissions and budgets. Most objects live in one; nodes, volumes and
+        cluster roles live in none. It becomes a real boundary only when you add quotas, limits, role bindings and
+        network policies. Short Service names resolve in the caller's namespace, and longer names reach the others.
+        Now try it yourself in the practice questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "A scope for names, permissions and budgets"
+          - "Nodes, PVs and ClusterRoles have no namespace"
+          - "Quota, LimitRange, RBAC and NetworkPolicy make the boundary"
+          - "db is local; db.data crosses namespaces"
+          - "Always know which namespace you are in"
+---
+
+## Why namespaces exist
+
+A cluster is expensive to run and tedious to maintain, so in practice one cluster is shared: several teams, many
+applications, often a few environments such as dev and staging. A flat, shared cluster runs into three problems
+quickly:
+
+- **Names collide.** Two teams both want a Deployment called `web` and a Secret called `db-pass`.
+- **Permissions have no edge.** You cannot say "team A may change its own objects and nothing else" if there is no
+  such thing as "its own".
+- **Resources have no budget.** One runaway application can take every CPU, and there is nothing to charge it against.
+
+A **namespace** is the answer to all three: a named scope inside the cluster that object names, permissions and
+resource budgets are attached to.
+
+<KeyIdea>
+A namespace is a scope, not a sandbox. It separates **names**, and it gives RBAC, quotas and policies something to
+attach to. It does not, by itself, separate network traffic, nodes or anything in the kernel.
+</KeyIdea>
+
+## What a namespace is
+
+<Diagram id="one-cluster" />
+
+A namespace is itself a small Kubernetes object (`kind: Namespace`, short name `ns`). Other objects point to it with
+`metadata.namespace`, and the pair **namespace + name** must be unique for each kind. That is why `web` in `dev` and
+`web` in `prod` can live side by side.
+
+Not every object lives in a namespace. Anything that describes the cluster itself, or that namespaces themselves
+depend on, is **cluster-scoped**:
+
+| Namespaced (most things) | Cluster-scoped (no namespace) |
+|--------------------------|-------------------------------|
+| Pods, Deployments, ReplicaSets, StatefulSets, DaemonSets, Jobs | Nodes |
+| Services, EndpointSlices, Ingresses, NetworkPolicies | Namespaces |
+| ConfigMaps, Secrets, ServiceAccounts | PersistentVolumes, StorageClasses |
+| PersistentVolumeClaims | ClusterRoles, ClusterRoleBindings |
+| Roles, RoleBindings | CustomResourceDefinitions, IngressClasses, PriorityClasses |
+| ResourceQuotas, LimitRanges, Events | CertificateSigningRequests |
+
+You never need to memorise the list. The cluster tells you:
+
+```bash
+kubectl api-resources --namespaced=true    # lives in a namespace
+kubectl api-resources --namespaced=false   # cluster-scoped
+```
+
+Every cluster starts with four namespaces:
+
+| Namespace | What it is for |
+|-----------|----------------|
+| `default` | Where objects go when you name no namespace. Fine for experiments, a poor home for real workloads |
+| `kube-system` | The cluster's own components: CoreDNS, kube-proxy, and on kubeadm clusters the control plane's static Pods |
+| `kube-public` | Readable by everyone, even unauthenticated clients. kubeadm puts the `cluster-info` ConfigMap here so joining nodes can find the cluster |
+| `kube-node-lease` | One Lease object per node. The kubelet renews it every few seconds as a cheap heartbeat |
+
+Each new namespace is not quite empty. Two controllers fill it in within a second or so: a ServiceAccount called
+`default`, which Pods use when they name no other, and a ConfigMap called `kube-root-ca.crt`, which holds the
+cluster's CA certificate so Pods can verify the API server.
+
+## How it works underneath
+
+<Diagram id="request-path" />
+
+Nothing is "inside" a namespace in a physical sense. Pods from ten namespaces run next to each other on the same
+node, in the same kernel, on the same Pod network. The namespace is **a field on the object and a segment of its
+address**, and four parts of the control plane read it:
+
+- **The API path.** Namespaced objects are served under `/api/v1/namespaces/shop/pods/web-1` (or
+  `/apis/apps/v1/namespaces/shop/deployments/web`). Cluster-scoped objects have no such segment: `/api/v1/nodes/node-1`.
+  `kubectl -n shop` simply builds the first kind of URL.
+- **Authorization.** RBAC sees the namespace in every request. A Role and a RoleBinding live in one namespace and
+  can only grant access there; a ClusterRoleBinding grants in all of them.
+- **Admission.** Before an object is stored, admission plugins apply the namespace's own rules: its ResourceQuotas,
+  its LimitRanges and its Pod Security level.
+- **Storage.** etcd keeps the object under a key that contains the namespace, such as `/registry/pods/shop/web-1`.
+  A node is at `/registry/minions/node-1`, with no namespace in the key.
+
+<DeepDive title="Why a namespace is not a security boundary on its own">
+- **Network.** The Pod network is flat. Without a NetworkPolicy, a Pod in `dev` can open a connection to any Pod
+  or Service in `prod`.
+- **Nodes.** The scheduler places Pods from every namespace on the same nodes. A container that escapes to the
+  node can reach its neighbours whatever their namespace.
+- **Cluster-scoped objects.** Anyone who can create PersistentVolumes, ClusterRoles or CustomResourceDefinitions
+  affects every namespace at once.
+- **Linux namespaces are something else.** The kernel's PID, network and mount namespaces isolate the processes of
+  a container. Kubernetes namespaces are an API concept with the same name and no technical relation.
+
+What a namespace does give you is a place to attach the rules that *do* isolate: RBAC, quotas, NetworkPolicies and
+Pod Security Admission. Real multi-tenancy is a namespace plus all of those.
+</DeepDive>
+
+<DeepDive title="What happens when you delete a namespace">
+`kubectl delete namespace shop` does not remove the namespace at once. The API server sets a deletion timestamp and
+the namespace's phase changes from `Active` to `Terminating`. From that moment nothing new can be created in it.
+
+The namespace controller then asks the API server for every namespaced resource type and deletes everything of
+each type found in `shop`. Only when the namespace is empty does it remove the `kubernetes` entry from the
+namespace's `spec.finalizers`, and the namespace disappears.
+
+That is why a namespace can hang in `Terminating`: either some object inside has a finalizer of its own that
+nobody is removing, or a resource type cannot be listed, typically because an aggregated API (such as metrics-server)
+is registered but down. The namespace's `status.conditions` say which.
+</DeepDive>
+
+## The rules that make it a boundary
+
+<Diagram id="guardrails" />
+
+Four namespaced objects turn a namespace from a naming scope into a boundary. All of them are created **inside** the
+namespace they govern, and none of them affects any other namespace.
+
+| Object | Question it answers | When it is checked |
+|--------|---------------------|--------------------|
+| `ResourceQuota` | How much may the whole namespace use: CPU, memory, storage, object counts? | At admission, when an object is created or updated |
+| `LimitRange` | What does one container or Pod get by default, and what is the minimum and maximum? | At admission, when a Pod is created |
+| `Role` + `RoleBinding` | Who may do what to which resources here? | On every API request |
+| `NetworkPolicy` | Which Pods may connect to the Pods here, and where may they connect to? | By the CNI plugin, on every connection |
+
+Two more settings live on the Namespace object itself, as labels. `pod-security.kubernetes.io/enforce` sets the Pod
+Security level (`privileged`, `baseline` or `restricted`) for every Pod in the namespace. And the API server labels
+each namespace with `kubernetes.io/metadata.name: <its name>`, which you cannot change, so that a NetworkPolicy's
+`namespaceSelector` can always select a namespace by name.
+
+<Callout kind="warning" title="A quota changes the rules for every Pod">
+As soon as a ResourceQuota covers `requests.cpu`, `limits.memory` or the like, **every** new Pod in the namespace
+must set that request or limit, or the API server rejects it with `403 Forbidden`. Pair the quota with a LimitRange
+that supplies defaults and the problem goes away: the LimitRange fills in the missing values first, then the quota
+counts them.
+</Callout>
+
+## Names across namespaces
+
+<Diagram id="cross-namespace" />
+
+Every Service gets the DNS name `<service>.<namespace>.svc.cluster.local`. The kubelet writes a search list into
+each Pod's `/etc/resolv.conf` that starts with the Pod's own namespace:
+
+```text
+search shop.svc.cluster.local svc.cluster.local cluster.local
+nameserver 10.96.0.10
+options ndots:5
+```
+
+So in a Pod in `shop`, the short name `db` is tried as `db.shop.svc.cluster.local` first and finds the local
+Service. `db.data` is tried as `db.data.svc.cluster.local` on the second entry and reaches the Service in namespace
+`data`. This is deliberate: the same manifest, calling plain `db`, works unchanged in `dev`, `staging` and `prod`.
+
+DNS is the only thing that crosses namespaces this easily. Most references between objects are **local by design**:
+
+| Reference | Can it cross namespaces? |
+|-----------|--------------------------|
+| A Pod mounting a ConfigMap, Secret or PersistentVolumeClaim | No. Same namespace only |
+| A Pod's `serviceAccountName` | No |
+| A Service selecting Pods | No. The selector only sees Pods in the Service's namespace |
+| An Ingress pointing at a backend Service | No |
+| An owner reference (a ReplicaSet owning Pods) | No |
+| A Pod calling a Service by DNS name | Yes: `service.namespace` |
+| A RoleBinding naming a ServiceAccount as its subject | Yes: the subject has its own `namespace` field |
+| A NetworkPolicy allowing traffic from elsewhere | Yes, with a `namespaceSelector` |
+| A Gateway API route pointing at a Service elsewhere | Only if the target namespace allows it with a ReferenceGrant |
+
+## Using it
+
+<Example title="Create a namespace and work inside it">
+Create the namespace `shop`, run a Deployment in it, and make it the default for your current context.
+
+```bash
+kubectl create namespace shop
+kubectl -n shop create deployment web --image=nginx:1.29 --replicas=2
+kubectl -n shop get pods
+
+kubectl config set-context --current --namespace=shop   # from now on, no -n needed
+kubectl get pods                                         # the same two Pods
+kubectl config view --minify -o jsonpath='{..namespace}' # prints: shop
+```
+
+The default namespace is stored in your kubeconfig, per context. It is a setting of **your client**, not of the
+cluster, and switching context brings that context's own default with it.
+</Example>
+
+<Example title="Write the namespace as a manifest, with labels">
+When the namespace needs labels, for example a Pod Security level, generate the manifest and add them:
+
+```bash
+kubectl create namespace shop --dry-run=client -o yaml > shop-ns.yaml
+```
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels:
+    team: storefront
+    pod-security.kubernetes.io/enforce: baseline
+```
+
+```bash
+kubectl apply -f shop-ns.yaml
+kubectl label namespace shop env=prod          # labels can also be added afterwards
+```
+
+A namespace name must be a DNS label: lowercase letters, digits and dashes, 63 characters at most. Avoid the
+`kube-` prefix, which is reserved for the system.
+</Example>
+
+<Example title="Give the namespace a budget and sensible defaults">
+Limit `shop` to 10 Pods, 2 CPUs of requests and 4 CPUs of limits, and give containers default values so that Pods
+without a `resources` block are still accepted.
+
+```bash
+kubectl -n shop create quota shop-quota \
+  --hard=pods=10,requests.cpu=2,requests.memory=4Gi,limits.cpu=4,limits.memory=8Gi
+```
+
+There is no `kubectl create limitrange`, so this one is a manifest:
+
+```yaml
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: shop-defaults
+  namespace: shop
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      default:
+        cpu: 500m
+        memory: 256Mi
+```
+
+```bash
+kubectl apply -f shop-defaults.yaml
+kubectl -n shop describe quota shop-quota      # Used and Hard, side by side
+kubectl -n shop describe limitrange shop-defaults
+```
+
+`default` is the default **limit** and `defaultRequest` the default request. Both rules apply only to Pods created
+from now on; Pods that are already running are neither changed nor evicted.
+</Example>
+
+<Example title="Reach a Service in another namespace">
+From a throwaway Pod in `shop`, call the Service `db` in namespace `data`:
+
+```bash
+kubectl -n shop run tmp --rm -it --restart=Never --image=busybox:1.37 -- nslookup db.data
+kubectl -n shop run tmp --rm -it --restart=Never --image=busybox:1.37 -- nc -zv db.data 5432
+```
+
+If the name resolves but the connection times out, look for a NetworkPolicy in `data`: DNS crossing namespaces does
+not mean traffic may.
+</Example>
+
+## Tricks
+
+<Trick title="Know where you are before you type">
+`kubectl config view --minify -o jsonpath='{..namespace}'` prints the current default namespace (nothing means
+`default`). In the exam every task names its namespace: read it first, and put `-n` on every command unless you have
+just set the default yourself. A correct object in the wrong namespace earns nothing.
+</Trick>
+
+<Trick title="Find it anywhere with -A">
+`kubectl get pods -A` (short for `--all-namespaces`) lists across the whole cluster, with a NAMESPACE column. Add
+a filter when you only know a name: `kubectl get deploy,svc -A | grep web`.
+</Trick>
+
+<Trick title="`get all` does not get all">
+`kubectl -n shop get all` shows Pods, Services and workload controllers, but not ConfigMaps, Secrets, PVCs, Roles,
+NetworkPolicies or quotas. To really list everything in a namespace:
+
+```bash
+kubectl api-resources --verbs=list --namespaced -o name \
+  | xargs -n 1 kubectl -n shop get --ignore-not-found --show-kind
+```
+</Trick>
+
+<Trick title="Missing Pods? Ask the events, not the Deployment">
+When a quota is full, `kubectl create deployment` still succeeds and the Deployment just shows `0/3` ready. The
+refusal is recorded against the ReplicaSet. `kubectl -n shop get events --sort-by=.lastTimestamp` or
+`kubectl -n shop describe rs` shows it: `exceeded quota: shop-quota, requested: pods=1, used: pods=10, limited: pods=10`.
+</Trick>
+
+<Trick title="Unstick a namespace that stays Terminating">
+Ask the namespace why, then fix the cause:
+
+```bash
+kubectl get namespace shop -o jsonpath='{.status.conditions}'
+kubectl get apiservices | grep False           # a broken aggregated API blocks every namespace deletion
+```
+
+If an object with a finalizer is left over, remove that finalizer (or repair the controller that should). Clearing
+the namespace's own finalizer through the `finalize` subresource is the last resort, because it can leave orphaned
+objects behind in etcd.
+</Trick>
+
+## Common mistakes
+
+- **Working in the wrong namespace.** By far the most common way to lose points. `kubectl get pods` saying
+  `No resources found in default namespace` is the hint: the message names the namespace it looked in.
+- **A manifest and a flag that disagree.** If the file says `namespace: dev` and you run `kubectl apply -n prod`,
+  kubectl refuses: "the namespace from the provided object does not match". If the file names no namespace, `-n`
+  (or your context's default) decides.
+- **Trying to move an object.** `metadata.namespace` cannot be changed. To "move" something, export it, change the
+  namespace, create it in the new place and delete the old one.
+- **Expecting a Secret or ConfigMap from another namespace.** A Pod can only mount what is in its own namespace.
+  Copy the object: `kubectl -n dev get secret db-pass -o yaml`, edit the namespace, apply.
+- **Putting `-n` on a cluster-scoped object.** `kubectl -n shop get nodes` works and silently ignores the flag, and
+  a `namespace:` in a PersistentVolume or ClusterRole manifest means nothing. Do not let it suggest the object is
+  namespaced.
+- **Deleting a namespace to "clean up".** It deletes every object inside, including PersistentVolumeClaims and, with
+  the usual `Delete` reclaim policy, the data behind them. There is no undo.
+- **Assuming isolation.** Without NetworkPolicies, `dev` can talk to `prod`. Without RBAC, anyone with cluster-wide
+  rights can read the Secrets of both.
+
+## Recap
+
+- A namespace is a **scope** for names, permissions and budgets; `namespace + name` is unique per kind.
+- Most objects are namespaced; Nodes, PersistentVolumes, StorageClasses, ClusterRoles and Namespaces are not.
+  `kubectl api-resources --namespaced=false` lists them.
+- It becomes a boundary only with **ResourceQuota, LimitRange, RBAC and NetworkPolicy** attached.
+- DNS: `db` is the Service in your own namespace; `db.data` reaches namespace `data`. Mounts and selectors never cross.
+- In the exam: read the task's namespace, use `-n` or `set-context --current --namespace`, and search with `-A`.
