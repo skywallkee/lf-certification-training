@@ -1,0 +1,582 @@
+---
+id: cka-services-cluster-ip
+title: "ClusterIP Services: a private address inside the cluster"
+summary: "How the default Service type gives your internal tiers one stable virtual IP and name, where that IP comes from, how the kernel turns it into a Pod address, and the commands that make it quick in the exam."
+minutes: 20
+competencies:
+  - cka/servicing-networking/clusterip-nodeport-loadbalancer-service-types
+  - cka/troubleshooting/troubleshoot-services-networking
+docs:
+  - title: "Kubernetes docs: Service (type ClusterIP)"
+    url: https://kubernetes.io/docs/concepts/services-networking/service/#type-clusterip
+  - title: "Kubernetes docs: Service ClusterIP allocation"
+    url: https://kubernetes.io/docs/concepts/services-networking/cluster-ip-allocation/
+  - title: "Kubernetes docs: Virtual IPs and Service proxies"
+    url: https://kubernetes.io/docs/reference/networking/virtual-ips/
+  - title: "Kubernetes docs: Service internal traffic policy"
+    url: https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+  - title: "Kubernetes docs: DNS for Services and Pods"
+    url: https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/
+diagrams:
+  internal-tiers:
+    title: "ClusterIP Services between the tiers of an application"
+    caption: "Each tier calls the next one through a ClusterIP Service. Nothing outside the cluster has a route to those addresses."
+    nodes:
+      - { id: outside, label: "Outside client", sub: "no route in", icon: internet, col: 0, row: 0, tone: muted }
+      - { id: front, label: "frontend Pod", sub: "calls api:80", icon: pod, col: 0, row: 1 }
+      - { id: api-svc, label: "Service api", sub: "10.96.14.20:80", icon: service, col: 1, row: 1, tone: primary }
+      - { id: api-1, label: "api Pod", sub: "10.244.1.7:8080", icon: pod, col: 2, row: 1, tone: success }
+      - { id: api-2, label: "api Pod", sub: "10.244.2.4:8080", icon: pod, col: 2, row: 2, tone: success }
+      - { id: db-svc, label: "Service db", sub: "10.96.201.8:5432", icon: service, col: 3, row: 1, tone: primary }
+      - { id: db, label: "db Pod", sub: "10.244.2.9:5432", icon: database, col: 4, row: 1, tone: success }
+    edges:
+      - { from: front, to: api-svc, label: "api:80" }
+      - { from: api-svc, to: api-1 }
+      - { from: api-svc, to: api-2 }
+      - { from: api-1, to: db-svc, label: "db:5432" }
+      - { from: api-2, to: db-svc }
+      - { from: db-svc, to: db }
+      - { from: outside, to: api-svc, label: "blocked", dashed: true }
+    groups:
+      - { id: cluster, label: "Cluster", nodes: [front, api-svc, api-1, api-2, db-svc, db] }
+  allocation:
+    title: "What happens when you create a ClusterIP Service"
+    caption: "The API server picks the address. Three watchers then react on their own: one lists the ready Pods, one writes kernel rules on every node, one publishes the DNS name."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl expose", icon: user, col: 0, row: 1 }
+      - { id: range, label: "Service range", sub: "10.96.0.0/12", icon: config, col: 1, row: 0, tone: muted }
+      - { id: api, label: "API server", sub: "picks a free IP", icon: control-plane, col: 1, row: 1, tone: primary }
+      - { id: esc, label: "EndpointSlice ctrl", sub: "finds ready Pods", icon: process, col: 2, row: 0 }
+      - { id: proxy, label: "kube-proxy", sub: "on every node", icon: process, col: 2, row: 1 }
+      - { id: dns, label: "CoreDNS", sub: "api.shop.svc", icon: dns, col: 2, row: 2 }
+      - { id: slice, label: "EndpointSlice", sub: "Pod IPs and ports", icon: file, col: 3, row: 0, tone: muted }
+      - { id: rules, label: "Kernel rules", sub: "iptables / nftables", icon: proxy, col: 3, row: 1, tone: primary }
+      - { id: record, label: "DNS record", sub: "api → 10.96.14.20", icon: file, col: 3, row: 2, tone: muted }
+    edges:
+      - { from: you, to: api, label: "create" }
+      - { from: range, to: api, dashed: true }
+      - { from: api, to: esc, label: "watch" }
+      - { from: api, to: proxy, label: "watch" }
+      - { from: api, to: dns, label: "watch" }
+      - { from: esc, to: slice, label: "writes" }
+      - { from: proxy, to: rules, label: "writes" }
+      - { from: dns, to: record, label: "serves" }
+  packet-path:
+    title: "One connection to a ClusterIP"
+    caption: "The translation happens on the client's own node, before the packet leaves it. The connection tracking table remembers the choice so every later packet, and every reply, follows the same Pod."
+    nodes:
+      - { id: client, label: "frontend Pod", sub: "to 10.96.14.20:80", icon: pod, col: 0, row: 0 }
+      - { id: rules, label: "Kernel rules", sub: "pick one backend", icon: proxy, col: 1, row: 0, tone: primary }
+      - { id: conntrack, label: "Conntrack table", sub: "remembers the choice", icon: file, col: 1, row: 1, tone: muted }
+      - { id: pod-1, label: "api Pod", sub: "10.244.2.4:8080", icon: pod, col: 2, row: 0, tone: success }
+      - { id: pod-2, label: "api Pod", sub: "10.244.2.6:8080", icon: pod, col: 2, row: 1, tone: success }
+    edges:
+      - { from: client, to: rules, label: "packet" }
+      - { from: rules, to: pod-1, label: "DNAT" }
+      - { from: rules, to: pod-2, label: "next time", dashed: true }
+      - { from: rules, to: conntrack, label: "records", both: true }
+    groups:
+      - { id: node-a, label: "Node A", nodes: [client, rules, conntrack] }
+      - { id: node-b, label: "Node B", nodes: [pod-1, pod-2] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "ClusterIP Services"
+      narration: >-
+        Most of the traffic in a cluster never leaves it. A web tier calls an API, and the API calls a database.
+        ClusterIP is the Service type built for exactly that, and it is the default. In this lesson you will see
+        where the cluster IP comes from, how one packet finds a Pod, and how to create and debug these Services fast.
+      visual:
+        kind: title
+        heading: "ClusterIP Services"
+        subheading: "A private, stable address inside the cluster"
+    - id: problem
+      title: "Why internal traffic needs a Service"
+      narration: >-
+        Pod addresses change every time a Pod is replaced. A tier with several replicas has several addresses at
+        once. The callers need one name and one address that stay put. And an internal tier, like a database,
+        should not be reachable from outside at all.
+      visual:
+        kind: points
+        heading: "The problem inside the cluster"
+        items:
+          - "Pod IPs change on every replacement"
+          - "Replicas mean many addresses at once"
+          - "Callers need one stable name and address"
+          - "Internal tiers must stay internal"
+    - id: tiers
+      title: "Services between tiers"
+      narration: >-
+        Here is a frontend Pod. It calls the next tier by the name of its Service, on port 80. The Service sends
+        each connection to one of the ready API Pods, on the port the container really listens on. The API Pods
+        reach the database the same way, through a second Service. A client outside the cluster has no route to
+        either address.
+      visual:
+        kind: diagram
+        diagram: internal-tiers
+        steps:
+          - [front]
+          - [api-svc, front-api-svc]
+          - [api-1, api-2, api-svc-api-1, api-svc-api-2]
+          - [db-svc, db, api-1-db-svc, api-2-db-svc, db-svc-db]
+          - [outside, outside-api-svc, cluster]
+    - id: allocation
+      title: "Where the cluster IP comes from"
+      narration: >-
+        You create the Service, with kubectl expose or a manifest. The API server picks a free address from the
+        service range, a block of addresses reserved for Services alone. From then on, three components react by
+        themselves. The EndpointSlice controller finds the ready Pods that match the selector and writes their
+        addresses down. Kube-proxy, on every node, turns the Service and that list into kernel rules. And cluster
+        DNS starts answering the Service's name with its new address.
+      visual:
+        kind: diagram
+        diagram: allocation
+        steps:
+          - [you, you-api]
+          - [api, range, range-api]
+          - [esc, proxy, dns, api-esc, api-proxy, api-dns]
+          - [slice, esc-slice]
+          - [rules, proxy-rules]
+          - [record, dns-record]
+    - id: packet
+      title: "Following one connection"
+      narration: >-
+        Now the frontend opens a connection to the cluster IP. Nothing listens on that address, but the kernel on
+        the frontend's own node has a rule for it. The rule picks one backend and rewrites the destination to that
+        Pod's real address. The choice is stored in the connection tracking table, so the rest of the connection and
+        its replies follow the same Pod. A new connection gets a new pick, and may land on a different Pod.
+      visual:
+        kind: diagram
+        diagram: packet-path
+        steps:
+          - [client, client-rules, node-a]
+          - [rules]
+          - [pod-1, rules-pod-1, node-b]
+          - [conntrack, rules-conntrack]
+          - [pod-2, rules-pod-2]
+    - id: manifest
+      title: "Reading the manifest"
+      narration: >-
+        Here is the whole Service. The type line is optional, because ClusterIP is the default. The selector must
+        match the labels on the Pods, letter for letter. Port is what callers use, and target port is where the
+        container listens. There is no cluster IP field here, so the API server chooses one for you.
+      visual:
+        kind: code
+        heading: "api-svc.yaml"
+        lang: yaml
+        code: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: api
+            namespace: shop
+          spec:
+            type: ClusterIP
+            selector:
+              app: api
+            ports:
+              - name: http
+                port: 80
+                targetPort: 8080
+        steps: ["1-5", "7", "8-9", "11-13", "6"]
+    - id: example
+      title: "Create it and prove it works"
+      narration: >-
+        In the exam, let kubectl write it. One expose command creates the Service with the Deployment's own
+        selector. Describe shows the address, the ports and the endpoints in one screen. Then call the Service by
+        name from a throwaway Pod, using the real protocol.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl -n shop get deploy api"
+            out: "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\napi    2/2     2            2           3m"
+          - cmd: "kubectl -n shop expose deployment api --port=80 --target-port=8080"
+            out: "service/api exposed"
+          - cmd: "kubectl -n shop describe svc api | grep -E 'Type|IP:|Port|Endpoints'"
+            out: "Type:              ClusterIP\nIP:                10.96.14.20\nPort:              <unset>  80/TCP\nTargetPort:        8080/TCP\nEndpoints:         10.244.1.7:8080,10.244.2.4:8080"
+          - cmd: "kubectl -n shop run tmp --rm -it --restart=Never --image=busybox:1.37 -- wget -qO- http://api"
+            out: "{\"status\":\"ok\"}"
+    - id: variants
+      title: "Variations worth knowing"
+      narration: >-
+        You can ask for a specific cluster IP, as long as it is free and inside the service range. Setting cluster IP
+        to none makes a headless Service, where DNS returns the Pod addresses directly. Session affinity keeps one
+        client on one Pod. And internal traffic policy local keeps traffic on the caller's own node.
+      visual:
+        kind: points
+        heading: "Same type, different behaviour"
+        items:
+          - "clusterIP: 10.96.0.50 picks the address yourself"
+          - "clusterIP: None is headless: DNS returns Pod IPs"
+          - "sessionAffinity: ClientIP sticks a client to one Pod"
+          - "internalTrafficPolicy: Local stays on the caller's node"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Prefer kubectl expose, because it copies the selector for you. If a Service is silent, read its endpoints
+        before anything else. Do not test with ping, because only the Service's ports have rules. And remember the
+        cluster IP cannot be edited: to change it, delete the Service and create it again.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl expose copies the selector"
+          - "Empty endpoints? Selector or readiness"
+          - "Test with wget, curl or nc, never ping"
+          - "clusterIP is immutable: delete and recreate"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        ClusterIP is the default Service type, and it is reachable only from inside the cluster. The API server
+        allocates its virtual address from the service range. Kube-proxy writes the rules, and the kernel on the
+        caller's node sends each connection to a ready Pod. Check the endpoints first when something fails. Now
+        practise it in the questions below.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Default type, internal only"
+          - "Virtual IP from the service range"
+          - "Kernel on the caller's node picks a ready Pod"
+          - "Debug from the endpoints inward"
+---
+
+## Why ClusterIP exists
+
+Most traffic in a cluster never leaves it. A frontend calls an API, the API calls a database, a worker calls a
+queue. Each of those tiers is a set of Pods, and Pods are replaced constantly: every rollout, every node failure and
+every eviction brings a new Pod with a **new IP address**. A tier with three replicas even has three addresses at
+the same moment.
+
+Callers cannot chase that. They need one address for "the API", and they need somebody else to decide which replica
+gets each connection. At the same time, a database or an internal API should **not** be reachable from the internet
+just because other Pods must reach it.
+
+`ClusterIP` is the Service type made for this. It is also the default: a Service with no `type` is a ClusterIP
+Service, and every other type you will meet (NodePort, LoadBalancer) is a ClusterIP Service with something added on
+top.
+
+<KeyIdea>
+A ClusterIP Service is one virtual IP address and one DNS name, valid only inside the cluster, in front of a changing
+set of Pods. If only other workloads in the cluster need to reach something, ClusterIP is the right type.
+</KeyIdea>
+
+## What a ClusterIP Service is
+
+<Diagram id="internal-tiers" />
+
+The Service object itself is small. It says **which Pods** (the selector), **which ports**, and it carries the
+address Kubernetes gave it:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: shop
+spec:
+  type: ClusterIP        # optional: this is the default
+  selector:
+    app: api             # Pods in namespace shop with this label are the backends
+  ports:
+    - name: http
+      port: 80           # what callers use
+      targetPort: 8080   # where the container listens
+```
+
+After you create it, `spec.clusterIP` is filled in for you. What you get:
+
+| You get | Example | Notes |
+|---------|---------|-------|
+| A virtual IP | `10.96.14.20` | Taken from the cluster's service range. Stays the same until the Service is deleted |
+| A DNS name | `api.shop.svc.cluster.local` | Also `api` from namespace `shop`, and `api.shop` from any namespace |
+| Load spreading | one of the ready Pods per connection | Only Pods that pass their readiness probe are used |
+| No way in from outside | | The address is not routed outside the cluster, and no port is opened on the nodes |
+
+The fields you will actually set or read:
+
+| Field | Meaning | Default |
+|-------|---------|---------|
+| `spec.type` | The Service type | `ClusterIP` |
+| `spec.clusterIP` | The virtual IP. Leave it out to get a free one, set an address to choose it, or set `None` for a headless Service | allocated |
+| `spec.selector` | Labels the backend Pods must carry. Only Pods in the Service's own namespace count | none |
+| `spec.ports[].port` | The port callers connect to on the Service | required |
+| `spec.ports[].targetPort` | The container port: a number, or the **name** of a container port | same as `port` |
+| `spec.ports[].protocol` | `TCP`, `UDP` or `SCTP` | `TCP` |
+| `spec.ports[].name` | Required as soon as the Service has more than one port | none |
+
+<Callout kind="note" title="Three address ranges, never overlapping">
+A cluster has three separate ranges: node addresses (your network), Pod addresses (handed out by the CNI plugin, for
+example `10.244.0.0/16`) and Service addresses (handed out by the API server, for example `10.96.0.0/12` on a
+kubeadm cluster). When you see an address in `kubectl` output, the range tells you what kind of thing it is.
+</Callout>
+
+## How it works
+
+### Where the address comes from
+
+<Diagram id="allocation" />
+
+The API server owns the service range. It is set with the `--service-cluster-ip-range` flag, and on a kubeadm cluster
+you can read it from the static Pod manifest on the control plane node. When a Service is created without a
+`clusterIP`, the API server picks a free address from that range and stores it in the object. Nothing on the network
+is configured at that moment: the address is only a number in etcd.
+
+Three components watch the API server and each do one job:
+
+1. The **EndpointSlice controller** (inside kube-controller-manager) finds the Pods that match the selector and
+   writes their IPs, ports and readiness into EndpointSlice objects.
+2. **kube-proxy**, on every node, combines the Service with its EndpointSlices and writes kernel rules: "a new
+   connection to `10.96.14.20:80` goes to one of these Pod addresses".
+3. **CoreDNS** starts answering `api.shop.svc.cluster.local` with `10.96.14.20`.
+
+Because these are independent watchers, a Service can exist and have an IP while being useless: with no matching
+ready Pod, the EndpointSlice is empty and the kernel rule rejects the connection.
+
+<DeepDive title="Two addresses you will find in every cluster">
+- The **first** address of the service range belongs to the Service `kubernetes` in namespace `default`
+  (`10.96.0.1` on kubeadm). It points at the API server, and it is how Pods reach the API.
+- kubeadm gives cluster DNS the **tenth** address (`10.96.0.10`, Service `kube-dns` in `kube-system`). The kubelet
+  writes that address into every Pod's `/etc/resolv.conf`, which is why DNS needs a fixed, well-known ClusterIP.
+
+To make fixed addresses like that safe, the range is split into two bands. Automatic allocation uses the upper band
+first; the lower band (the first 256 addresses in a large range such as `10.96.0.0/12`, fewer in small ranges, never
+fewer than 16) is left for addresses you choose yourself. If you must pin a ClusterIP, pick it from the low end.
+
+On current clusters each allocated address is also visible as an object: `kubectl get ipaddresses` lists them, and
+`kubectl get servicecidr` shows the range without logging in to the control plane.
+</DeepDive>
+
+### What happens to a packet
+
+<Diagram id="packet-path" />
+
+The ClusterIP is **virtual**. No network interface owns it and no process listens on it. It only means something to
+the kernel rules that kube-proxy wrote, and those rules exist on every node.
+
+1. The frontend Pod opens a TCP connection to `10.96.14.20:80`.
+2. The packet enters the kernel of **the frontend's own node**. A rule matches the destination address and port.
+3. The rule picks one ready backend and rewrites the destination (DNAT) to that Pod, for example `10.244.2.4:8080`.
+4. The choice is saved in the kernel's connection tracking table (conntrack). Every later packet of this connection
+   is rewritten the same way, and replies are rewritten back, so the client only ever sees the ClusterIP.
+5. From here it is ordinary Pod to Pod traffic, carried by the CNI plugin, to whatever node the backend runs on.
+
+Three consequences follow from this design, and each of them shows up in real troubleshooting:
+
+- **Load is spread per connection, not per request.** A client that keeps one connection open (HTTP keep-alive, gRPC,
+  a database pool) stays on the same Pod. Scaling a Deployment up does not move existing connections.
+- **kube-proxy is not in the data path.** If kube-proxy stops, existing rules keep working. What breaks is
+  *updates*: new Services do not work on that node, and removed Pods still receive connections.
+- **It works from nodes too.** A node has the same rules as its Pods, so `curl 10.96.14.20` works from a node's
+  shell. The *name* does not, because a node's resolver does not use cluster DNS.
+
+<DeepDive title="Seeing the rules with your own eyes">
+In iptables mode (the default), each Service gets a chain and each backend gets a chain. On a node:
+
+```bash
+sudo iptables -t nat -L KUBE-SERVICES -n | grep shop/api
+sudo iptables -t nat -L KUBE-SVC-XXXXXXXXXXXXXXXX -n     # the chain name from the line above
+```
+
+The Service chain holds one rule per backend with a random probability (1/2 for the first of two, then the rest),
+each jumping to a `KUBE-SEP-...` chain that does the DNAT to one Pod IP. A Service with **no** ready backends gets a
+`REJECT` rule instead, which is why a client sees "connection refused" immediately rather than a timeout.
+
+kube-proxy can also run in nftables or IPVS mode. The rules look different, the behaviour described in this lesson is
+the same. Check the mode with `kubectl -n kube-system get cm kube-proxy -o yaml | grep mode` (empty means the
+default).
+</DeepDive>
+
+### How Pods find the Service
+
+**DNS** is the way to do it. CoreDNS creates an A record for every Service, and each Pod's `/etc/resolv.conf` has
+search domains for its own namespace, so the short name works:
+
+| Called from | Names that resolve |
+|-------------|--------------------|
+| A Pod in `shop` | `api`, `api.shop`, `api.shop.svc`, `api.shop.svc.cluster.local` |
+| A Pod in another namespace | `api.shop`, `api.shop.svc`, `api.shop.svc.cluster.local` |
+| A node's shell | none (use the IP) |
+
+There is an older, second mechanism: **environment variables**. When a container starts, the kubelet injects
+`API_SERVICE_HOST` and `API_SERVICE_PORT` for every Service in the Pod's namespace. They are a snapshot: a Pod that
+started **before** the Service existed does not have them. Prefer DNS, and know the variables exist because you will
+see them in `kubectl exec ... -- env`.
+
+## Variations of ClusterIP
+
+All of these are still `type: ClusterIP`. One field changes the behaviour.
+
+| Setting | What changes | Use it when |
+|---------|--------------|-------------|
+| `clusterIP: 10.96.0.50` | You choose the address. It must be free and inside the service range | Something is configured with a fixed IP, such as cluster DNS |
+| `clusterIP: None` | **Headless**: no virtual IP and no kube-proxy rules. DNS returns the ready Pod IPs themselves | StatefulSets, or clients that do their own load balancing |
+| No `selector` | Kubernetes creates no EndpointSlice. You write one yourself | Pointing a cluster name at something outside the cluster, such as an external database |
+| `sessionAffinity: ClientIP` | Connections from one client IP go to the same Pod (for three hours by default) | The app keeps session state in memory |
+| `internalTrafficPolicy: Local` | A connection only goes to backends on the caller's own node | Node-local agents, such as a log collector per node |
+
+<Callout kind="warning" title="internalTrafficPolicy: Local can drop traffic">
+With `Local`, a Pod on a node that runs **no** backend of the Service gets no answer at all: the traffic is dropped,
+it is not sent to another node. Only use it when every node that has callers also has a backend, typically a
+DaemonSet.
+</Callout>
+
+<Callout kind="warning" title="The ClusterIP cannot be changed">
+`spec.clusterIP` is immutable. `kubectl edit` and `kubectl apply` with a different address are rejected. To move a
+Service to another address, or to turn a normal Service into a headless one, delete it and create it again. Changing
+`type` from ClusterIP to NodePort is fine: the address is kept.
+</Callout>
+
+## Using it
+
+<Example title="Expose a Deployment inside the cluster and prove it works">
+The Deployment `api` in namespace `shop` runs two Pods labelled `app: api` that listen on port 8080. Other Pods should
+reach it as `api` on port 80.
+
+```bash
+kubectl -n shop expose deployment api --port=80 --target-port=8080
+kubectl -n shop get svc api -o wide          # TYPE ClusterIP, a CLUSTER-IP, and the SELECTOR
+kubectl -n shop describe svc api             # Endpoints: two Pod IPs with port 8080
+kubectl -n shop run tmp --rm -it --restart=Never --image=busybox:1.37 -- wget -qO- http://api
+```
+
+`kubectl expose` leaves `--type` at ClusterIP and copies the Deployment's selector into the Service, so the two
+things that usually go wrong are right by construction. `EXTERNAL-IP` shows `<none>`: that is correct for this type.
+</Example>
+
+<Example title="Write the manifest: two ports and a named target port">
+The Pods also serve metrics on 9090. A Service with more than one port must name each of them, and `targetPort` can
+refer to the **name** of a container port instead of its number. Then the Pod template can change the number later
+without touching the Service.
+
+```yaml
+# In the Deployment's Pod template
+ports:
+  - name: http
+    containerPort: 8080
+  - name: metrics
+    containerPort: 9090
+```
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: shop
+spec:
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+```
+
+`kubectl -n shop describe svc api` now shows two `Endpoints` lines, one per port.
+</Example>
+
+<Example title="Give a Service a fixed ClusterIP">
+A task asks for the Service `cache` in namespace `shop` at the address `10.96.0.50`, in front of Pods labelled
+`app: cache`, port 6379. First check that the address is inside the range and free, then set it in the manifest
+(`kubectl expose` has a `--cluster-ip` flag for this too).
+
+```bash
+# On the control plane node of a kubeadm cluster
+sudo grep service-cluster-ip-range /etc/kubernetes/manifests/kube-apiserver.yaml
+kubectl get svc -A | grep -w 10.96.0.50      # no output: the address is free
+```
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache
+  namespace: shop
+spec:
+  clusterIP: 10.96.0.50
+  selector:
+    app: cache
+  ports:
+    - port: 6379
+```
+
+An address outside the range, or one that is already taken, is rejected when you apply the manifest, and the error
+message tells you which of the two it was.
+</Example>
+
+<Example title="A Service is silent: find out why in three commands">
+`wget http://api` from another Pod in `shop` fails. Work from the Service inward:
+
+```bash
+kubectl -n shop describe svc api             # 1. read Selector, TargetPort and Endpoints
+kubectl -n shop get pods -l app=api -o wide  # 2. do Pods match the selector, and are they READY?
+kubectl -n shop get pod <pod> -o jsonpath='{.spec.containers[*].ports}'   # 3. which port does the app use?
+```
+
+| What you see | Cause | Fix |
+|--------------|-------|-----|
+| `Endpoints: <none>` and step 2 lists no Pods | The selector matches nothing | Fix `spec.selector` or the Pod labels |
+| `Endpoints: <none>` and Pods show `0/1` READY | Pods fail their readiness probe | Fix the Pod, not the Service |
+| Endpoints listed, connection refused | `targetPort` is not the port the app listens on | Fix `targetPort` |
+| "bad address" or "could not resolve" | DNS: wrong name, or calling from another namespace | Use `api.shop` |
+</Example>
+
+## Tricks
+
+<Trick title="Pick the right generator">
+`kubectl expose deployment api --port=80 --target-port=8080` copies the workload's real selector. `kubectl create
+service clusterip api --tcp=80:8080` does **not** look at any workload: it always sets the selector to `app: api`,
+after the Service's own name. Use `create service` only when the Pods carry exactly that label. Add
+`--dry-run=client -o yaml` to either one to get a manifest to edit.
+</Trick>
+
+<Trick title="A Pod and its Service in one command">
+`kubectl run web --image=nginx:1.29 --port=80 --expose` creates the Pod and a ClusterIP Service with the same name
+and a matching selector. It is the fastest way to get something to test against.
+</Trick>
+
+<Trick title="Read the endpoints first">
+`kubectl describe svc <name>` shows selector, ports and endpoints on one screen. For the full list, use
+`kubectl get endpointslices -l kubernetes.io/service-name=<name>`. The older `kubectl get endpoints <name>` still
+works but prints a deprecation warning on current versions.
+</Trick>
+
+<Trick title="Reach a ClusterIP Service from your terminal">
+A ClusterIP is not reachable from outside, but `kubectl -n shop port-forward svc/api 8080:80` tunnels a local port
+through the API server to one Pod behind the Service. Then `curl localhost:8080` works from where you ran kubectl.
+It is a debugging tool: it picks a single Pod and does not load balance.
+</Trick>
+
+<Trick title="Get just the address">
+`kubectl -n shop get svc api -o jsonpath='{.spec.clusterIP}'` prints only the IP, which is handy when a task asks you
+to write it to a file.
+</Trick>
+
+## Common mistakes
+
+- **Expecting access from outside.** A ClusterIP has no route from your laptop or from another network. If a task
+  says "reachable from outside the cluster", you need NodePort, LoadBalancer, an Ingress or a Gateway.
+- **Testing with ping.** Rules exist only for the Service's ports, so ICMP to a ClusterIP usually gets no reply even
+  when the Service is healthy. Test with the real protocol: `wget`, `curl` or `nc -zv api 80`.
+- **Swapping `port` and `targetPort`.** Callers use `port`; the container listens on `targetPort`. If you leave
+  `targetPort` out it equals `port`, which is wrong whenever the two differ.
+- **A selector that matches nothing.** `app: Api` and `app: api` are different labels, and a Service only selects Pods
+  in its own namespace. The Service is created without complaint and simply has no endpoints.
+- **Trying to edit the address.** `spec.clusterIP` is immutable. Delete and recreate the Service.
+- **Short names across namespaces.** `api` only resolves inside namespace `shop`. From anywhere else use `api.shop`.
+- **Trusting environment variables.** `API_SERVICE_HOST` is missing in Pods that started before the Service was
+  created. Use the DNS name.
+
+## Recap
+
+- `ClusterIP` is the default Service type: a stable virtual IP and DNS name, reachable only from inside the cluster.
+- The **API server** allocates the address from the service range; it never changes and cannot be edited.
+- **kube-proxy** writes rules on every node; the kernel on the caller's node sends each *connection* to a ready Pod.
+- `clusterIP: None` makes a headless Service; a fixed `clusterIP` must be free and inside the range.
+- In the exam: `kubectl expose`, then `kubectl describe svc` and read the endpoints before anything else.
