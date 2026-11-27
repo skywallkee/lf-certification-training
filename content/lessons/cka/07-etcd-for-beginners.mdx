@@ -1,0 +1,616 @@
+---
+id: cka-etcd-for-beginners
+title: "etcd for beginners: the small database that remembers everything"
+summary: "What etcd is before Kubernetes enters the picture: a key-value store, why it runs as a cluster, how Raft and quorum keep every copy the same, and your first etcdctl commands."
+minutes: 17
+competencies:
+  - cka/cluster-architecture-installation-configuration/implement-configure-highly-available-control
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "etcd docs: Quickstart"
+    url: https://etcd.io/docs/v3.6/quickstart/
+  - title: "etcd docs: Interacting with etcd"
+    url: https://etcd.io/docs/v3.6/dev-guide/interacting_v3/
+  - title: "etcd docs: Frequently asked questions (cluster size and failure tolerance)"
+    url: https://etcd.io/docs/v3.6/faq/
+  - title: "etcd docs: KV API guarantees"
+    url: https://etcd.io/docs/v3.6/learning/api_guarantees/
+  - title: "Kubernetes docs: Operating etcd clusters for Kubernetes"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/
+mock: false
+diagrams:
+  etcd-cluster:
+    title: "An etcd cluster of three members"
+    caption: "Clients talk to any member on port 2379. Members talk to each other on port 2380. One member is the leader; the others follow it and hold the same data."
+    nodes:
+      - { id: client, label: "Client", sub: "etcdctl or an app", icon: user, col: 0, row: 1 }
+      - { id: m1, label: "etcd-1", sub: "leader", icon: database, col: 1, row: 1, tone: primary }
+      - { id: m2, label: "etcd-2", sub: "follower", icon: database, col: 2, row: 0 }
+      - { id: m3, label: "etcd-3", sub: "follower", icon: database, col: 2, row: 2 }
+    edges:
+      - { from: client, to: m1, label: ":2379" }
+      - { from: m1, to: m2, label: "peer :2380", both: true }
+      - { from: m1, to: m3, label: "peer :2380", both: true }
+      - { from: m2, to: m3, label: "peer :2380", both: true, dashed: true }
+    groups:
+      - { id: cluster, label: "etcd cluster", nodes: [m1, m2, m3] }
+  write-path:
+    title: "What happens to one write"
+    caption: "A write is only answered with OK after a majority of members have it in their logs. One slow or dead follower does not hold it up."
+    nodes:
+      - { id: client, label: "Client", sub: "put color blue", icon: user, col: 0, row: 0 }
+      - { id: leader, label: "Leader", sub: "orders every write", icon: database, col: 1, row: 0, tone: primary }
+      - { id: follower-a, label: "Follower A", sub: "logs it, says yes", icon: database, col: 2, row: 0, tone: success }
+      - { id: store, label: "Key-value store", sub: "color = blue, rev 8", icon: volume, col: 0, row: 1, tone: success }
+      - { id: log, label: "Leader's log", sub: "written to disk", icon: file, col: 1, row: 1 }
+      - { id: follower-b, label: "Follower B", sub: "down, catches up", icon: database, col: 2, row: 1, tone: muted }
+    edges:
+      - { from: client, to: leader, label: "1 write" }
+      - { from: leader, to: log, label: "2 log" }
+      - { from: leader, to: follower-a, label: "3 copy", both: true }
+      - { from: leader, to: follower-b, label: "3 copy", dashed: true }
+      - { from: log, to: store, label: "4 commit" }
+      - { from: store, to: client, label: "5 OK" }
+  split:
+    title: "A network split in a five-member cluster"
+    caption: "The side with three members still has a majority, so it keeps working. The side with two cannot reach a majority and refuses writes, so the two sides can never disagree."
+    nodes:
+      - { id: writer, label: "Client", sub: "write accepted", icon: user, col: 0, row: 0 }
+      - { id: a, label: "etcd-1", sub: "leader", icon: database, col: 1, row: 0, tone: primary }
+      - { id: b, label: "etcd-2", sub: "follower", icon: database, col: 2, row: 0, tone: success }
+      - { id: c, label: "etcd-3", sub: "follower", icon: database, col: 3, row: 0, tone: success }
+      - { id: blocked, label: "Client", sub: "write refused", icon: user, col: 0, row: 1 }
+      - { id: d, label: "etcd-4", sub: "cannot win a vote", icon: database, col: 1, row: 1, tone: warning }
+      - { id: e, label: "etcd-5", sub: "cannot win a vote", icon: database, col: 2, row: 1, tone: warning }
+    edges:
+      - { from: writer, to: a, label: "put" }
+      - { from: a, to: b }
+      - { from: b, to: c }
+      - { from: blocked, to: d, label: "put", dashed: true }
+      - { from: d, to: e, both: true, dashed: true }
+    groups:
+      - { id: majority, label: "3 of 5: quorum", nodes: [a, b, c] }
+      - { id: minority, label: "2 of 5: no quorum", nodes: [d, e] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "etcd for beginners"
+      narration: >-
+        Every Kubernetes cluster has a memory, and that memory is a small database called etcd. Before we look at
+        what Kubernetes stores in it, this lesson treats etcd on its own. You will see what a key-value store is,
+        why etcd runs as a group of servers that vote, and how to read and write your first keys.
+      visual:
+        kind: title
+        heading: "etcd for beginners"
+        subheading: "The small database that remembers everything"
+    - id: problem
+      title: "The problem etcd solves"
+      narration: >-
+        A system made of many machines needs one place that holds the truth. If that place is a single server, one
+        broken disk takes the whole system down. If you simply keep several copies, they can start to disagree.
+        What you want is several copies that are guaranteed to say the same thing. That is exactly what etcd gives
+        you.
+      visual:
+        kind: points
+        heading: "One truth, many machines"
+        items:
+          - "A distributed system needs one source of truth"
+          - "One server: a single point of failure"
+          - "Plain copies: they drift apart"
+          - "The goal: copies that always agree"
+          - "etcd: a consistent, replicated key-value store"
+    - id: key-value
+      title: "A key-value store"
+      narration: >-
+        Here is everything etcd knows how to store: a key on the left and a value on the right. There are no
+        tables, no columns and no joins. Keys are kept in sorted order, so keys that start the same way sit next to
+        each other. That is how you get something that feels like folders: you ask for every key that begins with a
+        prefix. The slashes mean nothing to etcd, they are only a naming habit.
+      visual:
+        kind: code
+        heading: "Keys and values"
+        lang: text
+        code: |
+          KEY                     VALUE
+          /shop/db/replicas       1
+          /shop/web/image         nginx:1.29
+          /shop/web/replicas      3
+          /users/alice/role       admin
+          /users/bob/role         viewer
+        steps: ["2-6", "1-6", "2-4", "3-4", "5-6"]
+    - id: cluster
+      title: "A cluster of members"
+      narration: >-
+        In production, etcd runs as a cluster, usually of three members. Each member holds a full copy of the data.
+        One of them is the leader, and the others are followers. Clients connect on port 2379, to any member. The
+        members talk to each other on port 2380.
+      visual:
+        kind: diagram
+        diagram: etcd-cluster
+        steps:
+          - [cluster, m1, m2, m3]
+          - [m1, m2, m3]
+          - [m1]
+          - [client, client-m1]
+          - [m1-m2, m1-m3, m2-m3]
+    - id: write-path
+      title: "How a write is agreed"
+      narration: >-
+        Follow one write through the cluster. The client asks to set color to blue, and the request reaches the
+        leader. The leader first writes the change to its own log on disk. Then it sends the same entry to the
+        followers. As soon as a majority has it, here the leader and follower A, the write is committed and applied
+        to the key-value store. Only then does the client get its OK. Follower B was down, and it simply catches up
+        when it comes back.
+      visual:
+        kind: diagram
+        diagram: write-path
+        steps:
+          - [client]
+          - [leader, client-leader]
+          - [log, leader-log]
+          - [follower-a, leader-follower-a]
+          - [store, log-store]
+          - [store-client]
+          - [follower-b, leader-follower-b]
+    - id: quorum
+      title: "Quorum and network splits"
+      narration: >-
+        That majority has a name: quorum. Picture five members, and a network fault that cuts them into a group of
+        three and a group of two. The group of three still has a majority, so it keeps a leader and keeps accepting
+        writes. The group of two cannot win a vote, so it refuses writes. Because only one side can ever have a
+        majority, the two sides can never store different truths.
+      visual:
+        kind: diagram
+        diagram: split
+        steps:
+          - [a, b, c, d, e]
+          - [majority, minority]
+          - [writer, writer-a, a-b, b-c]
+          - [blocked, blocked-d, d-e]
+          - [majority]
+    - id: sizes
+      title: "How many members?"
+      narration: >-
+        Quorum is half the members, rounded down, plus one. One member tolerates no failure at all. Three members
+        survive the loss of one. Four members still survive only one, which is why even numbers buy you nothing.
+        Five members survive two, and that is as large as most clusters ever need to be.
+      visual:
+        kind: points
+        heading: "Members and failures survived"
+        items:
+          - "Quorum = floor(n / 2) + 1"
+          - "1 member: quorum 1, survives 0"
+          - "3 members: quorum 2, survives 1"
+          - "4 members: quorum 3, survives 1"
+          - "5 members: quorum 3, survives 2"
+    - id: first-keys
+      title: "Your first keys"
+      narration: >-
+        Now the hands-on part: with the etcd command line client, put writes a key and its value. Get reads it
+        back, and prints the key and then the value. Add the prefix flag to read every key that starts the same
+        way. And delete removes a key and tells you how many keys it removed.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "etcdctl put /shop/web/replicas 3"
+            out: "OK"
+          - cmd: "etcdctl get /shop/web/replicas"
+            out: "/shop/web/replicas\n3"
+          - cmd: "etcdctl get /shop --prefix"
+            out: "/shop/db/replicas\n1\n/shop/web/image\nnginx:1.29\n/shop/web/replicas\n3"
+          - cmd: "etcdctl del /shop/db/replicas"
+            out: "1"
+    - id: health
+      title: "Is the cluster healthy?"
+      narration: >-
+        Endpoint health proves that a member can commit a write
+        right now. Member list shows who belongs to the cluster. And the version command confirms which client you
+        are holding, which matters because old tutorials use commands that no longer exist.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "etcdctl endpoint health"
+            out: "127.0.0.1:2379 is healthy: successfully committed proposal: took = 1.9ms"
+          - cmd: "etcdctl member list"
+            out: "8e9e05c52164694d, started, etcd-1, http://10.0.0.11:2380, http://10.0.0.11:2379, false\n91bc3c398fb3c146, started, etcd-2, http://10.0.0.12:2380, http://10.0.0.12:2379, false\nfd422379fda50e48, started, etcd-3, http://10.0.0.13:2380, http://10.0.0.13:2379, false"
+          - cmd: "etcdctl version"
+            out: "etcdctl version: 3.6.6\nAPI version: 3.6"
+    - id: tricks
+      title: "Tricks to remember"
+      narration: >-
+        Port 2379 is for clients and port 2380 is for peers. Always choose an odd
+        number of members. Ask for table output when you want to read a result quickly. And when a get returns
+        nothing, check whether you meant to ask for a prefix.
+      visual:
+        kind: points
+        heading: "Worth keeping"
+        items:
+          - "2379 = clients, 2380 = peers"
+          - "Odd member counts: 1, 3 or 5"
+          - "-w table makes output readable"
+          - "No result? You probably need --prefix"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Etcd is a key-value store that keeps several identical copies of a small amount of important data. A leader
+        orders every write, and a write counts only when a majority has it. Lose the majority and the cluster stops
+        accepting changes instead of risking two truths. Three members survive one failure, and five survive two.
+        In the next lesson you will see what Kubernetes keeps in there.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "A replicated key-value store for small, critical data"
+          - "The leader orders writes; a majority commits them"
+          - "No quorum, no writes: consistency comes first"
+          - "3 members survive 1 failure, 5 survive 2"
+          - "Next: what Kubernetes stores in etcd"
+---
+
+## Why etcd exists
+
+Any system that runs on more than one machine has to answer an awkward question: **where does the truth live?**
+Which servers exist, what should be running, who holds a lock, what the current configuration is. Every part of
+the system needs to read the same answers, and the answers must survive a machine dying.
+
+The two obvious designs both fail:
+
+- **One database server.** Simple, and everyone agrees because there is only one copy. But when that server or
+  its disk breaks, the whole system is blind until you restore it.
+- **Several independent copies.** Now a broken machine is survivable, but the copies drift. Two clients write to
+  two different copies at the same moment, or a network cable is pulled, and the copies give different answers.
+  A system with two versions of the truth is worse than one that is down.
+
+**etcd** is the answer to that problem: a small database that keeps several copies of its data on different
+machines and *guarantees* that they agree. The name says where it comes from: `/etc` is the directory where Linux
+keeps configuration, and the `d` stands for *distributed*. It was created at CoreOS in 2013, is written in Go and
+is a graduated CNCF project. Kubernetes uses it as its only database, but etcd is a separate project that knows
+nothing about Pods or Deployments. This lesson looks at etcd on its own; the next one opens it up inside a
+cluster.
+
+<KeyIdea>
+etcd is a key-value store that keeps identical copies of a small amount of critical data on several machines. A
+change only counts once a majority of those machines have it, so the copies can never disagree.
+</KeyIdea>
+
+## What etcd is
+
+### A key-value store, not a table database
+
+A relational database such as PostgreSQL or MySQL stores rows in tables. Every row in a table has the same
+columns, and you ask questions with SQL:
+
+| name | role | team |
+|------|------|------|
+| alice | admin | platform |
+| bob | viewer | shop |
+
+A **key-value store** is much simpler. It is one big dictionary: you hand it a key, it hands back the value. There
+are no tables, no columns, no joins and no query language.
+
+| Key | Value |
+|-----|-------|
+| `/users/alice/role` | `admin` |
+| `/users/alice/team` | `platform` |
+| `/users/bob/role` | `viewer` |
+| `/shop/web/replicas` | `3` |
+
+Three things about etcd's keyspace are worth knowing from the start:
+
+- **Keys and values are just bytes.** etcd does not look inside a value. It can be a number, a line of text, a
+  JSON document or binary data. The meaning belongs to whoever wrote it.
+- **The keyspace is flat and sorted.** There are no real folders. `/users/alice/role` is one key whose name
+  happens to contain slashes. Because keys are stored in sorted order, all keys that begin with `/users/` sit
+  next to each other, and you can ask for the whole range at once. That is called a **prefix** query, and it is
+  how a flat store behaves like a tree.
+- **It is built for small data.** One request can carry about 1.5 MiB at most, and the whole database is limited
+  to 2 GB by default (8 GB is the suggested ceiling). etcd is for configuration and state, never for images, logs
+  or user uploads.
+
+### More than put and get
+
+Four features turn a plain dictionary into something a system like Kubernetes can be built on:
+
+| Feature | What it does | Why it matters |
+|---------|--------------|----------------|
+| **Revisions** | Every change raises one cluster-wide counter, the *revision*. Old versions of a key are kept until they are compacted away. | You can read the store as it was at an earlier revision, and tell exactly which of two changes came first. |
+| **Watch** | A client asks to be told about every change to a key or prefix, starting from a given revision. | Programs react to changes the moment they happen instead of polling, and miss nothing. |
+| **Transactions** | "Only write this if the key still has the revision I last saw." | Two clients cannot silently overwrite each other. |
+| **Leases** | A key can be tied to a lease that expires unless it is renewed. | Dead clients clean up after themselves: the base for locks and leader election. |
+
+### Members, leader and ports
+
+<Diagram id="etcd-cluster" />
+
+An etcd **cluster** is a group of etcd processes called **members**, normally one per machine. Every member has a
+full copy of the data on its own disk. At any moment one member is the **leader** and the rest are **followers**.
+You do not choose the leader; the members elect it, and they elect a new one within about a second if it
+disappears.
+
+Each member listens on two ports, and mixing them up is a classic mistake:
+
+| Port | Used by | For |
+|------|---------|-----|
+| **2379** | Clients: `etcdctl`, applications, the Kubernetes API server | Reading and writing keys |
+| **2380** | Other members (peers) | Replicating data and holding elections |
+
+A client can connect to any member. If it sends a write to a follower, the follower passes it on to the leader.
+
+## How it works
+
+### Raft: one leader, one ordered log
+
+The copies stay identical because etcd uses a consensus algorithm called **Raft**. The idea is easier than its
+reputation: if every member applies **the same changes in the same order**, every member ends up with the same
+data. So the whole job is to agree on one ordered list of changes, the **log**, and Raft does that by letting a
+single leader decide the order.
+
+<Diagram id="write-path" />
+
+1. The client sends a write, for example `put color blue`. It reaches the leader.
+2. The leader appends the change to its own log on disk (the *write-ahead log*). Nothing has changed in the
+   key-value store yet.
+3. The leader sends the log entry to every follower. Each follower writes it to its own disk and acknowledges.
+4. As soon as a **majority** of members (the leader counts as one) have the entry on disk, it is **committed**.
+   Each member then applies it to its key-value store, and the revision goes up by one.
+5. The client gets `OK`.
+
+A follower that was slow or switched off does not block anything. When it returns, the leader sends it the
+entries it missed and it catches up.
+
+That is also why the answer `OK` means so much in etcd: the change is already on the disks of most of the
+cluster, so it survives the loss of any minority of machines.
+
+### Quorum: why a majority, and not everyone
+
+The majority that Raft needs is called the **quorum**. For a cluster of *n* members:
+
+```text
+quorum = floor(n / 2) + 1
+```
+
+Requiring *everyone* would mean one broken machine stops all writes, which defeats the point of having copies.
+Requiring *fewer than half* would allow two separate groups to both accept writes. A majority is the smallest
+number with a useful property: **any two majorities share at least one member**. That shared member carries the
+committed data forward, so a new leader always knows every write that was ever answered with `OK`.
+
+<Diagram id="split" />
+
+The diagram shows the property at work. A network fault splits five members into a group of three and a group of
+two. The group of three is a majority: it keeps (or elects) a leader and carries on. The group of two can never
+collect three votes, so it has no leader and refuses writes. When the network heals, the two members see that the
+other side has a newer log and copy it. There was never a moment with two truths. Running with two leaders that
+both accept writes is called **split brain**, and quorum is what makes it impossible.
+
+<Callout kind="warning" title="Losing quorum stops writes, on purpose">
+If more than half of the members are gone, the survivors still have the data but will not accept a single change,
+and normal reads fail too. etcd chooses to be *unavailable* rather than *wrong*. In Kubernetes this looks like a
+cluster where running containers keep running but nothing can be created, changed or deleted.
+</Callout>
+
+<DeepDive title="Elections, terms and timing">
+- Raft divides time into numbered **terms**. Each term has at most one leader. You can see the current term in
+  `etcdctl endpoint status -w table` (the RAFT TERM column); a term that keeps climbing means leaders keep
+  being lost, usually because of a slow disk or network.
+- The leader sends a **heartbeat** to every follower every 100 ms by default. A follower that hears nothing for
+  the **election timeout** (1000 ms by default, with some random spread so that members do not all start at
+  once) becomes a *candidate*, raises the term and asks the others for their vote.
+- A member votes for a candidate only if the candidate's log is at least as up to date as its own. That rule is
+  why a newly elected leader can never be missing a committed write.
+- A candidate that collects a majority of votes becomes leader. If the vote is split, the timeout runs again
+  with new random delays.
+- etcd is very sensitive to **disk speed**, because every write waits for an `fsync` on a majority of members.
+  This is why etcd wants SSDs, and why a slow disk on the control plane makes a whole cluster feel slow.
+</DeepDive>
+
+<DeepDive title="Why reads need the leader too">
+By default a read in etcd is **linearizable**: it is guaranteed to reflect every write that finished before it.
+To promise that, the member answering the read first confirms with a quorum that the leader is still the
+leader. That is why even reads fail when quorum is lost.
+
+`etcdctl get --consistency=s` asks for a **serializable** read instead: the member answers from its own copy
+without asking anyone. It is faster and works without quorum, but the answer may be slightly stale. It is a
+handy way to look at the data of a cluster that is otherwise stuck.
+</DeepDive>
+
+## How many members
+
+| Members | Quorum | Failures survived | Notes |
+|---------|--------|-------------------|-------|
+| 1 | 1 | 0 | Fine for learning and for the single control plane node of a practice cluster |
+| 2 | 2 | 0 | Worse than 1: two machines that can each stop the cluster |
+| 3 | 2 | 1 | The usual choice for production |
+| 4 | 3 | 1 | No gain over 3, and one more machine that can fail |
+| 5 | 3 | 2 | For clusters that must survive a failure during maintenance |
+| 7 | 4 | 3 | Rarely worth it: every write waits for more disks |
+
+Two rules follow from the table:
+
+- **Use an odd number.** Going from 3 to 4 raises the quorum from 2 to 3 but still tolerates only one failure. An
+  even number also allows a network split into two equal halves, where neither side has a majority and the whole
+  cluster stops.
+- **More members do not make etcd faster.** Every write must reach a majority, so more members mean more waiting.
+  Members add safety, not speed. Beyond five there is almost never a reason.
+
+<Callout kind="tip" title="This is the high-availability control plane">
+When the CKA curriculum talks about a highly available control plane, this table is the heart of it. Three control
+plane nodes with an etcd member on each survive the loss of one node. Two control plane nodes are *not* highly
+available, because losing either one loses quorum.
+</Callout>
+
+### One more variant: API version 2 and 3
+
+etcd has had two very different APIs, and old tutorials still show the first one:
+
+| | API v2 (historic) | API v3 (current) |
+|---|-------------------|------------------|
+| Data model | Real directories and keys | Flat keyspace, prefixes |
+| Protocol | HTTP and JSON | gRPC |
+| Commands | `etcdctl set`, `ls`, `mkdir`, `rm` | `etcdctl put`, `get`, `del`, `watch` |
+
+Kubernetes has stored its data with v3 for many years, `etcdctl` has spoken v3 by default since etcd 3.4, and
+etcd 3.6 no longer serves the v2 API at all. If a guide tells you to run `export ETCDCTL_API=3`, it was written
+for etcd 3.3 or older: the line is harmless today, and no longer needed.
+
+## Using it
+
+<Example title="Start a single etcd and store your first keys">
+etcd is a single binary. A release archive from the etcd GitHub releases page contains three programs:
+
+| Binary | What it is |
+|--------|------------|
+| `etcd` | The server |
+| `etcdctl` | The client. It talks to a running server over the network |
+| `etcdutl` | The offline tool. It works directly on data files and snapshots, with no server needed |
+
+Start a server with no options. It keeps its data in `./default.etcd` and listens for clients on
+`localhost:2379`, which is also where `etcdctl` connects by default:
+
+```bash
+./etcd                     # terminal 1: a one-member cluster, logs to the screen
+```
+
+```bash
+# terminal 2
+etcdctl put /shop/web/replicas 3        # OK
+etcdctl put /shop/web/image nginx:1.29  # OK
+etcdctl put /shop/db/replicas 1         # OK
+
+etcdctl get /shop/web/replicas          # prints the key, then the value on the next line
+etcdctl get /shop/web/replicas --print-value-only   # 3
+etcdctl get /shop --prefix              # every key that starts with /shop
+etcdctl get /shop --prefix --keys-only  # only the names
+etcdctl del /shop/db/replicas           # 1  (the number of keys deleted)
+```
+
+Note what `get /shop` *without* `--prefix` returns: nothing. There is no key named exactly `/shop`, and etcd has
+no folders to open.
+</Example>
+
+<Example title="Watch a key and travel back in time">
+Leave a watch running in one terminal:
+
+```bash
+etcdctl watch /shop --prefix
+```
+
+Change a key twice in another terminal, and the watch prints each event as it happens:
+
+```bash
+etcdctl put /shop/web/replicas 5
+etcdctl put /shop/web/replicas 2
+```
+
+```text
+PUT
+/shop/web/replicas
+5
+PUT
+/shop/web/replicas
+2
+```
+
+Now look at the bookkeeping etcd holds for the key. JSON output shows it (shortened here; keys and values are base64
+encoded in JSON, because they are bytes):
+
+```bash
+etcdctl get /shop/web/replicas -w json
+```
+
+```json
+{"header":{"revision":7, "raft_term":2},
+ "kvs":[{"key":"L3Nob3Avd2ViL3JlcGxpY2Fz","create_revision":2,"mod_revision":7,"version":3,"value":"Mg=="}],
+ "count":1}
+```
+
+`create_revision` is the cluster revision when the key was created, `mod_revision` when it last changed, and
+`version` counts the changes to this one key. Because old revisions are kept, you can read the past:
+
+```bash
+etcdctl get /shop/web/replicas --rev=6 --print-value-only    # 5
+```
+
+This is exactly the machinery behind `kubectl get --watch` and the `resourceVersion` you see on every Kubernetes
+object.
+</Example>
+
+<Example title="Check the health of a cluster">
+Against a cluster of several members, name them with `--endpoints` (with one local member you can leave it out):
+
+```bash
+export ETCDCTL_ENDPOINTS=10.0.0.11:2379,10.0.0.12:2379,10.0.0.13:2379
+
+etcdctl endpoint health                 # can each member commit a write right now?
+etcdctl endpoint status -w table        # version, database size, who is leader, Raft term
+etcdctl member list -w table            # who belongs to the cluster, with peer and client addresses
+```
+
+`endpoint health` answers for the endpoints you named. Add `--cluster` to ask every member of the cluster, even if
+you only know the address of one:
+
+```bash
+etcdctl --endpoints=10.0.0.11:2379 endpoint health --cluster
+```
+
+In `endpoint status`, exactly one row should show `true` under IS LEADER, and all members should show the same
+RAFT TERM and nearly the same RAFT INDEX. A member whose index falls behind is struggling to keep up.
+</Example>
+
+## Tricks
+
+<Trick title="Do the quorum sum in your head">
+Halve the member count, drop the fraction, add one: that is the quorum. Whatever is left over is the number of
+failures you can survive. 3 members: quorum 2, survive 1. 5 members: quorum 3, survive 2. 6 members: quorum 4,
+survive 2, so the sixth member bought nothing.
+</Trick>
+
+<Trick title="2379 comes before 2380, clients come before peers">
+You (the client) come first: **2379**. The members talking among themselves come second: **2380**. When
+`etcdctl` hangs and then times out, check first that you are pointing at 2379 and not 2380.
+</Trick>
+
+<Trick title="Every etcdctl flag is also an environment variable">
+Any flag can be set as `ETCDCTL_` plus the flag name in capitals: `--endpoints` is `ETCDCTL_ENDPOINTS`,
+`--cacert` is `ETCDCTL_CACERT`. Export them once and your commands stay short. This pays off in Kubernetes,
+where every command also needs three certificate flags.
+</Trick>
+
+<Trick title="Ask for the output you can read">
+`-w table` turns `endpoint status`, `endpoint health` and `member list` into aligned tables. `-w json` shows
+the revisions behind a key. `--print-value-only` and `--keys-only` trim `get` down to the half you need, and
+`--limit=5` keeps a prefix query from flooding the terminal.
+</Trick>
+
+<Trick title="Let the tool remind you">
+`etcdctl --help` lists every command, and `etcdctl get --help` (or any other command) lists its flags with
+examples. That is quicker than searching the documentation for a flag you half remember.
+</Trick>
+
+## Common mistakes
+
+- **Choosing an even number of members.** Two members are less reliable than one, and four are no safer than
+  three. Always 1, 3 or 5.
+- **Expecting folders.** `etcdctl get /shop` prints nothing when the keys are `/shop/web/...`. Add `--prefix`.
+- **Confusing the ports.** 2379 is for clients, 2380 for peers. Pointing `etcdctl` at 2380 does not work.
+- **Following a v2 tutorial.** `etcdctl set`, `ls` and `mkdir` belong to the old API and fail on a current
+  etcd. The v3 commands are `put`, `get` and `del`.
+- **A careless prefix delete.** `etcdctl del /shop --prefix` removes every key under `/shop` without asking, and
+  `etcdctl del "" --prefix` empties the whole store. Run the same line with `get --keys-only` first.
+- **Treating etcd as a general database.** It is for small, critical data. Large values and millions of keys
+  make it slow, and a full database stops accepting writes until space is freed.
+- **Thinking more members means more speed.** Every write waits for a majority of disks. Add members for
+  safety only.
+
+## Recap
+
+- etcd is a **key-value store**: flat, sorted keys, values that are just bytes, and prefix queries instead of
+  folders.
+- It runs as a **cluster of members** with one elected **leader**; clients use port **2379**, peers **2380**.
+- **Raft** keeps the copies identical: the leader orders writes, and a write is committed once a **majority
+  (quorum)** has it on disk.
+- Without quorum etcd refuses writes rather than risk two truths, so use **3 or 5 members**: they survive 1 or 2
+  failures.
+- `etcdctl put`, `get --prefix`, `del`, `watch`, `endpoint health` and `member list -w table` are the commands
+  to know before the next lesson looks inside a Kubernetes cluster.
