@@ -70,7 +70,7 @@ export function CertTile({
       {readinessPct !== null && (view.status === "studying" || view.status === "booked") ? (
         <Progress value={readinessPct} label={`${cert.code} readiness`} />
       ) : null}
-      {!focus && view.status !== "passed" && view.status !== "expiring" ? (
+      {!focus ? (
         <form action={setFocusAction} className="mt-auto pt-1">
           <input type="hidden" name="cert" value={cert.code} />
           <button type="submit" className="min-h-6 text-sm text-primary underline-offset-4 hover:underline">
