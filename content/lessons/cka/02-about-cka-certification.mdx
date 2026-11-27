@@ -1,0 +1,492 @@
+---
+id: cka-about-cka-certification
+title: "About the CKA certification: what the exam is and how it runs"
+summary: "What the Certified Kubernetes Administrator exam proves, how the two hours work, what the exam desktop looks like, which docs you may open, and the habits that protect your score."
+minutes: 16
+competencies:
+  - cka/cluster-architecture-installation-configuration/manage-lifecycle-kubernetes-clusters
+docs:
+  - title: "Linux Foundation: Certified Kubernetes Administrator (CKA)"
+    url: https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/
+  - title: "Linux Foundation: Important Instructions for CKA and CKAD"
+    url: https://docs.linuxfoundation.org/tc-docs/certification/tips-cka-and-ckad
+  - title: "Linux Foundation: Frequently Asked Questions for CKA, CKAD and CKS"
+    url: https://docs.linuxfoundation.org/tc-docs/certification/faq-cka-ckad-cks
+  - title: "Linux Foundation: Resources allowed during the exam"
+    url: https://docs.linuxfoundation.org/tc-docs/certification/certification-resources-allowed
+  - title: "Linux Foundation: Candidate handbook"
+    url: https://docs.linuxfoundation.org/tc-docs/certification/lf-handbook2
+  - title: "CNCF: CKA curriculum"
+    url: https://github.com/cncf/curriculum
+diagrams:
+  exam-journey:
+    title: "From buying the exam to holding the certificate"
+    caption: "One purchase covers two exam attempts and two simulator sessions. Everything, including the second attempt, has to happen within 12 months of buying."
+    nodes:
+      - { id: buy, label: "Buy the exam", sub: "12 months to use it", icon: user, col: 0, row: 0 }
+      - { id: sim, label: "Exam simulator", sub: "2 sessions, 36 h each", icon: process, col: 1, row: 0, tone: muted }
+      - { id: exam, label: "The exam", sub: "2 hours, proctored", icon: cluster, col: 2, row: 0, tone: primary }
+      - { id: result, label: "Result", sub: "email within 24 h", icon: file, col: 3, row: 0 }
+      - { id: retake, label: "Second attempt", sub: "included once", icon: process, col: 2, row: 1, tone: warning }
+      - { id: certified, label: "Certified", sub: "valid for 2 years", icon: secret, col: 3, row: 1, tone: success }
+    edges:
+      - { from: buy, to: sim, label: "practise" }
+      - { from: sim, to: exam, label: "book" }
+      - { from: exam, to: result }
+      - { from: result, to: certified, label: "66% or more" }
+      - { from: result, to: retake, label: "below 66%", dashed: true }
+      - { from: retake, to: exam, dashed: true }
+  exam-environment:
+    title: "Where you work during the exam"
+    caption: "Your computer only shows a remote Linux desktop. From its terminal, on a machine called base, you ssh to the host named in each task, do the work there, and exit back to base."
+    nodes:
+      - { id: proctor, label: "Proctor", sub: "camera, mic, screen", icon: user, col: 0, row: 0, tone: muted }
+      - { id: laptop, label: "Your computer", sub: "PSI Secure Browser", icon: user, col: 0, row: 1 }
+      - { id: desktop, label: "Remote desktop", sub: "terminal on base", icon: process, col: 1, row: 1, tone: primary }
+      - { id: docs, label: "Firefox", sub: "allowed docs only", icon: file, col: 1, row: 2, tone: muted }
+      - { id: host-a, label: "Host for task 1", sub: "kubectl, k, yq", icon: cluster, col: 2, row: 0, tone: success }
+      - { id: host-b, label: "Host for task 2", sub: "kubectl, k, yq", icon: cluster, col: 2, row: 1, tone: success }
+    edges:
+      - { from: proctor, to: laptop, label: "watches", dashed: true }
+      - { from: laptop, to: desktop, label: "shows" }
+      - { from: desktop, to: docs, label: "read", dashed: true }
+      - { from: desktop, to: host-a, label: "ssh" }
+      - { from: desktop, to: host-b, label: "ssh" }
+  domain-weights:
+    title: "What the score is made of"
+    caption: "The five domains of the CKA curriculum and their share of the exam. Troubleshooting and cluster architecture together are more than half."
+    nodes:
+      - { id: troubleshooting, label: "Troubleshooting", sub: "30%", icon: process, col: 0, row: 0, tone: primary }
+      - { id: architecture, label: "Cluster architecture", sub: "25%: install, configure", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: networking, label: "Services, networking", sub: "20%", icon: service, col: 2, row: 0 }
+      - { id: workloads, label: "Workloads, scheduling", sub: "15%", icon: deployment, col: 0, row: 1 }
+      - { id: storage, label: "Storage", sub: "10%", icon: volume, col: 1, row: 1 }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "About the CKA"
+      narration: >-
+        Before you study a single Kubernetes object, it pays to know the exam you are studying for. The Certified
+        Kubernetes Administrator exam is not a quiz. It is two hours of real work on real clusters, and in this
+        lesson you will see exactly how those two hours run.
+      visual:
+        kind: title
+        heading: "About the CKA certification"
+        subheading: "What the exam is and how it runs"
+    - id: why
+      title: "Why the exam is hands-on"
+      narration: >-
+        A multiple choice test can show that you recognise the right answer. It cannot show that you can fix a
+        broken node at the command line. So the CKA gives you a terminal and a list of tasks. Only the state you
+        leave behind is checked, and any path that produces the correct result is accepted.
+      visual:
+        kind: points
+        heading: "A test of doing, not of recalling"
+        items:
+          - "Recognising an answer is not the same as doing the work"
+          - "Administrators fix clusters from a command line"
+          - "You get a terminal and a list of tasks"
+          - "Any path counts if the result is correct"
+    - id: journey
+      title: "From purchase to certificate"
+      narration: >-
+        It starts when you buy the exam, and from that day you have twelve months to use it. The purchase includes
+        two sessions in an exam simulator, each open for thirty six hours once you activate it. When you feel
+        ready, you book a slot and sit the two hour exam with a remote proctor. The result arrives by email within
+        twenty four hours. With sixty six percent or more you are certified for two years. Below that, one second
+        attempt is included in the price.
+      visual:
+        kind: diagram
+        diagram: exam-journey
+        steps:
+          - [buy]
+          - [sim, buy-sim]
+          - [exam, sim-exam]
+          - [result, exam-result]
+          - [certified, result-certified]
+          - [retake, result-retake, retake-exam]
+    - id: format
+      title: "The two hours"
+      narration: >-
+        You have two hours, and the timer cannot be paused. In that time you solve fifteen to twenty tasks, which
+        is six to eight minutes each. Every task is practical: create something, change something, or repair
+        something. Scoring is automatic and looks at the result, not at how you got there. You pass with sixty six
+        percent, so you can miss several tasks and still succeed.
+      visual:
+        kind: points
+        heading: "The format in numbers"
+        items:
+          - "2 hours, and the timer never pauses"
+          - "15 to 20 tasks: about 6 to 8 minutes each"
+          - "Every task is hands-on at a command line"
+          - "Scored automatically on the result"
+          - "Pass mark: 66%"
+    - id: environment
+      title: "Where you work"
+      narration: >-
+        Your own computer runs only one program, the PSI Secure Browser. Through it a proctor watches your camera,
+        your microphone and your screen. Inside the browser you get a remote Linux desktop, with a terminal on a
+        machine called base. Each task names a host, and you reach it with one ssh command. When the task is done
+        you exit back to base, and connect to the next host. A Firefox browser on the same desktop opens the
+        documentation you are allowed to read.
+      visual:
+        kind: diagram
+        diagram: exam-environment
+        steps:
+          - [laptop]
+          - [proctor, proctor-laptop]
+          - [desktop, laptop-desktop]
+          - [host-a, desktop-host-a]
+          - [host-b, desktop-host-b]
+          - [docs, desktop-docs]
+    - id: domains
+      title: "What the score is made of"
+      narration: >-
+        The curriculum has five domains. Troubleshooting is the largest, with thirty percent of the score. Cluster
+        architecture, installation and configuration follows with twenty five. Services and networking is worth
+        twenty percent. Workloads and scheduling is fifteen, and storage is ten.
+      visual:
+        kind: diagram
+        diagram: domain-weights
+        steps:
+          - [troubleshooting, architecture, networking, workloads, storage]
+          - [troubleshooting]
+          - [architecture]
+          - [networking]
+          - [workloads, storage]
+    - id: routine
+      title: "The routine for every task"
+      narration: >-
+        Every task begins the same way: connect to the host named in the task. If the work needs root, become
+        root. Check that you are where you think you are before you change anything. Then exit, until the prompt
+        shows base again.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "ssh cka-task-07"
+            out: "candidate@cka-task-07:~$"
+          - cmd: "sudo -i"
+            out: "root@cka-task-07:~#"
+          - cmd: "hostname && kubectl get nodes"
+            out: "cka-task-07\nNAME           STATUS   ROLES           AGE   VERSION\ncka-task-07    Ready    control-plane   41d   v1.37.0\ncka-worker-1   Ready    <none>          41d   v1.37.0"
+          - cmd: "exit"
+            out: "candidate@base:~$"
+    - id: allowed-docs
+      title: "What you may read"
+      narration: >-
+        The exam is open book, but the bookshelf is short. You may read the Kubernetes documentation and the
+        Kubernetes blog. You may read the Helm documentation, and for the CKA the Gateway API documentation. Some
+        tasks add links of their own in a quick reference box. Your own notes, bookmarks and every other site stay
+        closed.
+      visual:
+        kind: points
+        heading: "Open book, short bookshelf"
+        items:
+          - "The exam is open book"
+          - "kubernetes.io/docs and kubernetes.io/blog"
+          - "helm.sh/docs and gateway-api.sigs.k8s.io"
+          - "Links in a task's Quick Reference box"
+          - "No notes, no bookmarks, no other sites"
+    - id: exam-day
+      title: "Exam day"
+      narration: >-
+        You can start checking in thirty minutes before your slot. Arrive more than thirty minutes late and the
+        attempt is lost, with no refund. You need a government photo identity document whose name matches your
+        registration exactly. The room must be private and quiet, with a clear desk and a single monitor. And you
+        may only drink clear liquid from a clear container without a label.
+      visual:
+        kind: points
+        heading: "Before you press Take Exam"
+        items:
+          - "Check-in opens 30 minutes before the slot"
+          - "More than 30 minutes late is a no-show"
+          - "Photo ID with exactly your registered name"
+          - "Private room, clear desk, one monitor"
+          - "Only clear liquid in a clear, label-free container"
+    - id: tricks
+      title: "Habits that protect your score"
+      narration: >-
+        Spend your time where the points are: if a task is stuck after eight minutes, move on and come back.
+        Always exit to base before the next task, because work done on the wrong host earns nothing. Copy names
+        from the task instead of typing them. And use both simulator sessions, the last one about a week before
+        the exam.
+      visual:
+        kind: points
+        heading: "Protect your score"
+        items:
+          - "Stuck after 8 minutes? Move on and come back"
+          - "Exit to base before every new task"
+          - "Copy names from the task, never retype them"
+          - "Use both simulator sessions before exam day"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The CKA is two hours of hands-on tasks, and sixty six percent passes. You work on a remote desktop, and
+        ssh to a new host for every task. Troubleshooting and cluster architecture are more than half of the
+        score. Only a short list of documentation sites is open to you. And one purchase gives you two attempts
+        and two simulator sessions, to use within twelve months.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "2 hours, 15 to 20 hands-on tasks, 66% to pass"
+          - "Remote desktop, then ssh to a host per task"
+          - "Troubleshooting 30% + architecture 25%"
+          - "Kubernetes, Helm and Gateway API docs only"
+          - "2 attempts and 2 simulator sessions in 12 months"
+---
+
+<Callout kind="note" title="Facts checked in November 2026">
+Prices, versions and rules in this lesson come from the Linux Foundation pages linked at the end, as they stood in
+November 2026. The exam changes a few times a year: read the **Important Instructions** page again in the week
+before your exam.
+</Callout>
+
+## Why the CKA exists
+
+Anyone can read about Kubernetes. What an employer wants to know is whether you can sit down at a cluster you have
+never seen, find out why a node is `NotReady`, and bring it back. A multiple-choice test cannot show that: it only
+proves you recognise the right answer when it is in front of you.
+
+The **Certified Kubernetes Administrator (CKA)** exam was created by the Cloud Native Computing Foundation (CNCF)
+and the Linux Foundation to test the doing. It is a **performance-based** exam: you get a terminal, real clusters
+and a list of tasks, and you are scored on the state you leave behind.
+
+<KeyIdea>
+The CKA does not ask what you know. It asks what you can get done in two hours at a command line. Study by doing
+every topic in a terminal until your hands know it, because there is no time in the exam to work things out for the
+first time.
+</KeyIdea>
+
+That one fact shapes how this whole course is built: every lesson ends in commands you can run, and the labs and
+mock exams matter more than rereading.
+
+## What the certification is
+
+<Diagram id="exam-journey" />
+
+The facts that decide how you plan:
+
+| | |
+|---|---|
+| **Format** | Online, proctored, performance-based: tasks solved at a command line |
+| **Length** | 2 hours for 15 to 20 tasks |
+| **Pass mark** | 66% |
+| **Kubernetes version** | v1.37 in November 2026; the exam follows each new minor release within about 4 to 8 weeks |
+| **Price** | $445 for the exam on its own |
+| **Included** | Two exam attempts and two exam simulator sessions (Killer.sh), 36 hours of access each |
+| **Time to use it** | 12 months from purchase to schedule and take the exam, second attempt included |
+| **Result** | By email within 24 hours of finishing, and in the Linux Foundation portal |
+| **Valid for** | 2 years |
+| **Prerequisites** | None |
+| **Languages** | English, Simplified Chinese and Japanese |
+
+Where it sits among the other certifications:
+
+- The CKA is one of the five exams of the **Kubestronaut** title, with KCNA, KCSA, CKAD and CKS.
+- A passed CKA is the **prerequisite for the CKS** (Certified Kubernetes Security Specialist). No other exam requires it.
+- The CKAD covers the same platform from the application developer's side. The two overlap in Pods, Deployments,
+  Services and configuration, so studying for one is a long way toward the other.
+
+<DeepDive title="Keeping the certification after two years">
+- To renew, you take and pass the exam again **before** the certificate expires. The new certificate then runs for
+  two more years from the day you pass.
+- Passing or renewing the **CKS** on or after 18 June 2026 automatically extends your CKA as well, so if you plan to
+  take the CKS anyway, time it to do both jobs.
+- A CKA earned before 1 April 2024 was issued for three years rather than two.
+- The exam you renew with is the current one. Because the exam tracks new Kubernetes releases, expect topics that
+  were not in the curriculum the first time (the Gateway API, Helm and Kustomize are recent additions).
+</DeepDive>
+
+## How the exam works
+
+<Diagram id="exam-environment" />
+
+**You sit at home, and a proctor watches.** On your own computer you install one program when the exam starts, the
+**PSI Secure Browser**. It shares your camera, microphone and every screen with a remote proctor, and nothing else
+may be running. Virtual machines are not accepted, and neither is a second monitor.
+
+**You work on a remote Linux desktop.** The secure browser shows a full Linux desktop with the task list, a terminal
+and Firefox. The terminal opens on a machine with the hostname `base`.
+
+**Every task has its own host.** At the top of each task, a box gives you the `ssh` command for the host that task
+must be solved on. You connect, do the work, and `exit` back to `base` before the next task. Three rules follow from
+that design, and each one costs points when it is forgotten:
+
+- **Tools live on the hosts, not on `base`.** Each host has `kubectl` with the alias `k` and Bash completion, `yq`,
+  `curl`, `wget` and man pages. `base` has none of them. If `kubectl` is "not found", you are still on `base`.
+- **Nested ssh is not supported.** You cannot hop from one task's host to the next. Go back to `base` first.
+- **Never reboot `base`.** It does not restart your exam environment; it only loses you time you cannot get back.
+
+On any host, `sudo -i` makes you root, which you need for work on the node itself: the kubelet, static Pod
+manifests, certificates, etcd.
+
+**Scoring is automatic and looks only at the result.** The Linux Foundation states that there may be more than one
+way to do a task, and that any path is fine "as long as it produces the correct result". Nobody reads your shell
+history. A Deployment created with one imperative command scores exactly like one written by hand in YAML, so the
+fastest correct way is always the right way.
+
+<DeepDive title="Why the exam is built this way">
+- **A fresh host per task** keeps tasks independent: a mistake in task 3 cannot break task 9. It is also why a
+  shell setup you make on one host is gone on the next one, so keep any personal setup to one or two lines.
+- **The result is what is graded** because that is what matters in operations. It also means a task that is
+  *almost* done can score nothing: a Pod in the wrong namespace, or a file saved under the wrong name, is a
+  different result. Read the names in the task twice.
+- **The exam follows the newest Kubernetes release** within about 4 to 8 weeks, so study on the current version.
+  An API that was removed or a flag that changed in the latest release is fair game from that moment.
+- **You get no breakdown.** The score report gives your result, not which tasks you missed, and the Linux Foundation
+  does not answer requests for more detail. The simulator and the mock exams in this app are where you find your
+  weak spots, because they do show you every check.
+</DeepDive>
+
+<Callout kind="warning" title="The timer never pauses">
+There is no way to pause the exam or get time back, not even after a lost connection. If you disconnect, you go
+through check-in again while the clock runs. Use a wired connection if you can, close everything that could use
+bandwidth, and go to the toilet before you start.
+</Callout>
+
+## What you are tested on
+
+<Diagram id="domain-weights" />
+
+| Domain | Share | What it covers |
+|--------|-------|----------------|
+| Troubleshooting | 30% | Clusters and nodes, cluster components, resource usage, container logs, Services and networking |
+| Cluster Architecture, Installation and Configuration | 25% | RBAC, kubeadm, cluster lifecycle and upgrades, a highly available control plane, Helm and Kustomize, CNI/CSI/CRI, CRDs and operators |
+| Services and Networking | 20% | Pod connectivity, NetworkPolicies, Service types, the Gateway API, Ingress, CoreDNS |
+| Workloads and Scheduling | 15% | Deployments and rollouts, ConfigMaps and Secrets, autoscaling, self-healing, scheduling and limits |
+| Storage | 10% | StorageClasses and dynamic provisioning, volume types and access modes, PersistentVolumes and claims |
+
+Two things in this table should change how you study:
+
+1. **Troubleshooting is the biggest domain, and it cannot be memorised.** A broken kubelet, a wrong certificate path
+   or a Service with no endpoints are found by a routine: look at the status, read the events, read the logs, check
+   the config file. You build that routine only by breaking clusters and fixing them, which is what the labs are for.
+2. **The percentages are shares of the score, not of the reading.** Storage is 10% of the exam and a small topic;
+   those are some of the cheapest points available. Troubleshooting is 30% and draws on everything else.
+
+With a pass mark of 66%, you can lose a third of the points and still pass. The exam is not asking for perfection;
+it is asking you not to waste twenty minutes on one task.
+
+## Using it: the two hours in practice
+
+<Example title="The routine for every task">
+The same five steps, every time. The host name here is made up; yours is in the box at the top of the task.
+
+```bash
+ssh cka-task-07              # 1. the exact command from the task
+sudo -i                      # 2. only if the task touches the node itself
+hostname && kubectl get nodes   # 3. prove where you are before changing anything
+# 4. do the task, then verify the result the way a checker would
+exit                         # 5. once for root, once more for ssh, until the prompt says base
+```
+
+Step 3 takes three seconds and catches the most expensive mistake in the exam: doing a perfect job on the wrong
+cluster. Step 4's "verify" means reading back what you made (`kubectl get`, `kubectl describe`, `cat` the file) and
+comparing names and namespaces with the task, character by character.
+</Example>
+
+<Example title="A time plan for 120 minutes">
+With 15 to 20 tasks you have 6 to 8 minutes per task on average, but tasks are not equal: some take two minutes,
+a cluster upgrade or an etcd restore can take fifteen.
+
+| Minutes | What to do |
+|---------|------------|
+| 0 to 80 | **First pass.** Take the tasks in order. Do everything you know how to do. If a task has made no progress after about 8 minutes, write its number in a text file in the terminal and move on. |
+| 80 to 110 | **Second pass.** Return to the tasks on your list, the ones closest to done first. |
+| 110 to 120 | **Check.** Re-read the tasks you finished early and confirm names, namespaces and file paths. Do not start anything new. |
+
+Keep your list in a file in the exam terminal. Writing on paper, or on anything outside the exam screen, is against
+the rules.
+</Example>
+
+<Example title="Finding an answer in the allowed documentation">
+You may open these sites in the Firefox browser on the exam desktop, and nothing else:
+
+| Site | Use it for |
+|------|-----------|
+| `kubernetes.io/docs` | Everything: concepts, tasks, the kubectl and kubeadm reference |
+| `kubernetes.io/blog` | Rarely needed |
+| `helm.sh/docs` | Helm commands and flags |
+| `gateway-api.sigs.k8s.io` | Gateway, HTTPRoute and GatewayClass examples (CKA only) |
+| The task's **Quick Reference** box | Links to the documentation of a tool that task needs |
+
+The search box on kubernetes.io is allowed, but you must not open results that lead outside these sites.
+Translations are allowed too; the English pages are the most up to date.
+
+The fastest pattern is: search for the object's name, open the **Tasks** or **Concepts** page, copy the smallest
+complete manifest, paste it into a file on the host, and edit the names. For example, for a NetworkPolicy search
+`network policy`, copy the example from the concepts page, and change the selectors and ports.
+</Example>
+
+## Tricks
+
+<Trick title="The documentation is already in your terminal">
+`kubectl explain` and `--help` answer most questions faster than a browser, and they always match the cluster's
+version:
+
+```bash
+kubectl explain pod.spec.containers.livenessProbe      # fields, types and what they mean
+kubectl explain deployment.spec.strategy --recursive   # the whole tree at a glance
+kubectl create role --help                             # ready-made examples at the top
+```
+</Trick>
+
+<Trick title="Keep your shell setup to two lines">
+Each task's host is a fresh machine, so anything you set up is gone after `exit`. `k` and completion are already
+there. If you want more, type only what pays for itself within one task:
+
+```bash
+export do="--dry-run=client -o yaml"      # then: k create deploy web --image=nginx $do > web.yaml
+k config set-context --current --namespace=shop   # when a task lives in one namespace
+```
+
+Practise on a plain shell without your own aliases, so the exam's terminal feels normal.
+</Trick>
+
+<Trick title="Learn the desktop's keys before exam day">
+In the exam terminal, copy is **Ctrl+Shift+C** and paste is **Ctrl+Shift+V** (or use the right-click menu). In
+Firefox it is the usual Ctrl+C and Ctrl+V. **Ctrl+W closes your browser tab**, so to delete a word in the shell use
+**Ctrl+Alt+W**. The Insert key is blocked; in `vim`, press `i` to type and `Esc` to stop.
+</Trick>
+
+<Trick title="Spend the simulator sessions on purpose">
+You get two Killer.sh sessions of 36 hours each. Both sessions contain the same set of questions, so the usual plan
+works well: use the first about two weeks before the exam to find your weak topics, and the second a few days
+before as a timed rehearsal. Within the 36 hours you can reset and repeat, and the solutions stay available, so
+block out the time before you activate one. The simulator is widely found harder than the real exam: a score
+near the pass mark there is a good sign.
+</Trick>
+
+<Trick title="Paste, do not type">
+Copy every name, namespace, image and file path from the task text. A Pod called `web-fronted` instead of
+`web-frontend` is a task with zero points, and you will not see why.
+</Trick>
+
+## Common mistakes
+
+- **Working on the wrong host.** Forgetting to `exit` and solving the next task on the previous task's cluster. The
+  prompt tells you where you are: look at it before the first command of every task.
+- **Leaving a task half verified.** The object exists but the Pod is `Pending`, or the file is in your home
+  directory instead of the path the task named. Always read the result back.
+- **Fighting one task for twenty minutes.** No single task is worth it. The pass mark leaves room to skip the
+  hardest ones entirely.
+- **Missing the slot.** You can check in from 30 minutes before the booked time. If you have not started within 30
+  minutes after it, you are marked as a no-show: the fee is lost and so is the second attempt. Changes to a booking
+  are only possible up to 24 hours before it starts.
+- **An ID that does not match.** The name on your government-issued photo ID must match the name on your Linux
+  Foundation account exactly. Fix the account days before, not at check-in.
+- **Breaking a room rule.** Notes on the desk, a second monitor, headphones, reading tasks aloud, leaving the
+  camera's view, or a drink that is not a clear liquid in a clear, label-free container can each end the exam.
+- **Booking too late.** Slots need at least 24 hours of lead time, and the 12 months cover the second attempt too.
+  Leave yourself a few weeks at the end in case you need it.
+
+## Recap
+
+- The CKA is **2 hours of 15 to 20 hands-on tasks**, scored automatically on the result; **66%** passes.
+- You work on a remote Linux desktop: **`ssh` to the task's host, do the work, `exit` to `base`**, every time.
+- **Troubleshooting (30%)** and **cluster architecture (25%)** are more than half of the score; practise them in labs.
+- Only the **Kubernetes, Helm and Gateway API docs** are open, plus `kubectl explain` and `--help`.
+- One purchase gives **two attempts and two simulator sessions within 12 months**; the certificate lasts **2 years**.
