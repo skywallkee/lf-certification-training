@@ -18,18 +18,19 @@ export async function seedDiscussions(db: NodePgDatabase<typeof schema>, ids: Id
   };
   let n = 0;
 
-  const lesson = { targetType: "lesson" as const, targetId: "sample-cka-rbac" };
+  // On the CKA Course introduction lesson, the first real lesson, so it exists in every database.
+  const lesson = { targetType: "lesson" as const, targetId: "cka-course-introduction" };
   const q1 = await post({
     ...lesson,
     userId: ids.mid,
-    body: "(Sample post) Why does `kubectl auth can-i list pods --as=system:serviceaccount:dev:app` say **no** after I created the Role? The RoleBinding is in `default`.",
+    body: "(Sample post) I set `alias k=kubectl`, but Tab completion stopped working for `k`. It still works for `kubectl`. What am I missing?",
     createdAt: at(30),
   });
   const a1 = await post({
     ...lesson,
     parentId: q1,
     userId: ids.golden,
-    body: "(Sample post) A RoleBinding only grants access in its own namespace. Create it in `dev`, where the service account and the pods are.",
+    body: "(Sample post) Completion is registered for the name `kubectl` only. Register it for the alias too, after loading the kubectl completion script.",
     accepted: true,
     createdAt: at(28),
   });
@@ -37,14 +38,14 @@ export async function seedDiscussions(db: NodePgDatabase<typeof schema>, ids: Id
     ...lesson,
     parentId: q1,
     userId: ids.admin,
-    body: "(Sample post) The full fix, if you want it:\n\n```sh\nkubectl -n dev create rolebinding app-read --role=pod-reader --serviceaccount=dev:app\n```",
+    body: "(Sample post) The two lines for your `~/.bashrc`:\n\n```sh\nsource <(kubectl completion bash)\ncomplete -o default -F __start_kubectl k\n```",
     spoiler: true,
     createdAt: at(27),
   });
   const tip = await post({
     ...lesson,
     userId: ids.golden,
-    body: "(Sample post) Exam tip: `kubectl create role --dry-run=client -o yaml` writes the YAML for you, so you never type `apiGroups` by hand.",
+    body: "(Sample post) Exam tip: `kubectl explain deployment.spec --recursive` shows every field, so you rarely need to search the docs for a field name.",
     createdAt: at(50),
   });
   n += 4;
@@ -94,7 +95,7 @@ export async function seedDiscussions(db: NodePgDatabase<typeof schema>, ids: Id
   ]);
   n += 1;
 
-  // The mid-path learner follows the RBAC lesson discussion (they posted in it).
+  // The mid-path learner follows the lesson discussion (they posted in it).
   await db.insert(schema.discussionFollow).values([
     { userId: ids.mid, ...lesson },
     { userId: ids.golden, ...lesson },

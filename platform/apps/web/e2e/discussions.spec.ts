@@ -1,9 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectAccessible, query, signIn, signOut } from "./helpers";
 
-/** The RBAC sample lesson's page, where the seeded lesson discussion lives (scripts/seed-discussions.ts). */
+/** The CKA Course introduction lesson's page, where the seeded lesson discussion lives (scripts/seed-discussions.ts). */
 async function lessonPath(): Promise<string> {
-  const [row] = await query<{ ref: string }>("select competency_refs[1] as ref from lesson where id = 'sample-cka-rbac'");
+  const [row] = await query<{ ref: string }>("select competency_refs[1] as ref from lesson where id = 'cka-course-introduction'");
   const [cert, d, c] = row!.ref.split("/");
   return `/certs/${cert}/domains/${d}/competencies/${c}`;
 }
@@ -13,9 +13,9 @@ function para(scope: Page | Locator, text: string) {
   return scope.locator("p", { hasText: text });
 }
 
-/** The sample lesson's own discussion: other lessons on the same competency page have theirs. */
+/** The lesson's own discussion: other lessons on the same competency page have theirs. */
 function discussion(page: Page) {
-  return page.locator('section[aria-labelledby="lesson-sample-cka-rbac"]').getByRole("region", { name: /^Discussion/ });
+  return page.locator('section[aria-labelledby="lesson-cka-course-introduction"]').getByRole("region", { name: /^Discussion/ });
 }
 
 test("a learner reads a lesson discussion, opens a spoiler, posts a thread, and gets a reply by email", async ({ page }) => {
@@ -25,9 +25,9 @@ test("a learner reads a lesson discussion, opens a spoiler, posts a thread, and 
   const d = discussion(page);
   await expect(d.getByText("Accepted answer")).toBeVisible();
   // The spoiler stays folded until opened.
-  await expect(d.getByText("kubectl -n dev create rolebinding")).toBeHidden();
+  await expect(d.getByText("complete -o default -F __start_kubectl k")).toBeHidden();
   await d.getByRole("button", { name: "Show spoiler" }).click();
-  await expect(d.getByText("kubectl -n dev create rolebinding")).toBeVisible();
+  await expect(d.getByText("complete -o default -F __start_kubectl k")).toBeVisible();
   await expectAccessible(page, "lesson with discussion");
 
   await d.getByText("Start a new thread").click();
@@ -63,7 +63,7 @@ test("a learner reads a lesson discussion, opens a spoiler, posts a thread, and 
 });
 
 async function lessonTitle(): Promise<string> {
-  const [row] = await query<{ title: string }>("select title from lesson where id = 'sample-cka-rbac'");
+  const [row] = await query<{ title: string }>("select title from lesson where id = 'cka-course-introduction'");
   return row!.title;
 }
 

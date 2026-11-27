@@ -11,13 +11,14 @@ describe("content in the repository", () => {
     curriculum = await loadCurriculum();
   });
 
-  // These tests count the sample set only (items marked `mock: true`), so real lessons and questions can be added
-  // without touching them.
-  it("loads the sample set: 13 lessons and 74 questions across KCNA, KCSA, CKA and CKNE, all under sample/", async () => {
+  // The sample set is questions, labs and mock exams only: the sample lessons were removed when the real CKA lessons
+  // arrived. These tests count the sample items alone, so real content can be added without touching them.
+  it("has no sample lessons, and loads the 74 sample questions across KCNA, KCSA, CKA and CKNE, all under sample/", async () => {
     const content = await loadContent(curriculum);
-    const sample = [...content.lessons, ...content.questions].filter((i) => i.mock);
-    expect(content.lessons.filter((l) => l.mock)).toHaveLength(13);
-    expect(content.questions.filter((q) => q.mock)).toHaveLength(74);
+    expect(content.lessons.filter((l) => l.mock)).toEqual([]);
+    expect(content.lessons.every((l) => !l.file.includes("/sample/") && !l.id.startsWith("sample-"))).toBe(true);
+    const sample = content.questions.filter((q) => q.mock);
+    expect(sample).toHaveLength(74);
     expect(new Set(sample.map((i) => i.cert))).toEqual(new Set(["KCNA", "KCSA", "CKA", "CKNE"]));
     expect(sample.every((i) => i.file.includes("/sample/"))).toBe(true);
     expect([...content.lessons, ...content.questions].filter((i) => !i.mock).every((i) => !i.file.includes("/sample/"))).toBe(true);

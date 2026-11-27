@@ -30,7 +30,7 @@ so content changes ship without an app release.
 | `curriculum/schema/` | Generated JSON Schemas (`pnpm curriculum:schema`); editors use them via the `yaml-language-server` comment |
 | `lessons/` | MDX lessons with YAML front matter |
 | `questions/` | Multiple-choice question banks in YAML |
-| `lessons/sample/`, `questions/sample/` | The mock sample set (see below) |
+| `questions/sample/`, `labs/sample/`, `mocks/sample/` | The mock sample set (see below) |
 | `labs/` | Lab definitions with tasks, Chainsaw or shell checks, hints and reference solutions |
 | `mocks/` | Mock exams: practical ones in the lab format, multiple-choice ones with `format: multiple-choice` |
 
@@ -65,8 +65,10 @@ Markdown are available. Keep imports and expressions out.
 ### Rich lessons
 
 A lesson should teach more than the documentation does: what the thing is, how and why it works, how to use it,
-and the tricks that save time in the exam. [`lessons/sample/cka/services.mdx`](lessons/sample/cka/services.mdx) is
-the template ([ADR 0023](../docs/adr/0023-rich-lessons-and-lesson-videos.md)). Its sections, in order:
+and the tricks that save time in the exam ([ADR 0023](../docs/adr/0023-rich-lessons-and-lesson-videos.md)). The real
+CKA lessons in `lessons/cka/` follow this format; [`lessons/cka/01-course-introduction.mdx`](lessons/cka/01-course-introduction.mdx)
+is a good one to copy from. Name a lesson file after its place in the course (`NN-slug.mdx`): lessons are listed in
+file order. The sections, in order:
 
 | Section | What goes in it | Components |
 |---------|-----------------|------------|
@@ -288,12 +290,14 @@ file format described above, and it validates with the same schemas as the inges
 
 ## The sample set
 
-The app ships with **mock content only**: 13 lessons (one of them, CKA Services, the template for the rich lesson format), 74 questions, 4 labs, 4 practical mock exams (CKA full and
-half, CKAD, CKS) and 3 multiple-choice mock exams (KCNA full and quick, KCSA) across KCNA, KCSA, CKA, CKAD, CKS and
-CKNE, written to
-exercise the app (a long lesson, two very short ones, a lesson tagged for two certs, competencies with no
-lesson, and one deliberately broken question). It is not study material. Every sample file sits under a
-`sample/` folder and sets `mock: true`; the app labels it "Sample content".
+Next to the real lessons, the app still ships a **mock sample set**: 74 questions, 4 labs, 4 practical mock exams
+(CKA full and half, CKAD, CKS) and 3 multiple-choice mock exams (KCNA full and quick, KCSA) across KCNA, KCSA, CKA,
+CKAD, CKS and CKNE, written to exercise the app (competencies with no lesson, and one deliberately broken question).
+It is not study material. Every sample file sits under a `sample/` folder and sets `mock: true`; the app labels it
+"Sample content".
+
+The sample lessons were removed when the real CKA lessons arrived. The ingest deletes them from older databases by
+id (`RETIRED_SAMPLE_LESSON_IDS` in `platform/packages/curriculum/src/db/ingest.ts`), even copies edited in the app.
 
 To remove it:
 
@@ -304,8 +308,8 @@ To remove it:
   CONTENT_INCLUDE_SAMPLE=false DATABASE_URL=... pnpm curriculum:ingest
   ```
 
-- **From the repository**, when real content replaces it: delete `content/lessons/sample/`,
-  `content/questions/sample/`, `content/labs/sample/` and `content/mocks/sample/`.
+- **From the repository**, when real content replaces it: delete `content/questions/sample/`,
+  `content/labs/sample/` and `content/mocks/sample/`.
 
 Learner progress points at content by id, so removing items leaves no broken rows: progress on items that no
 longer exist is simply not shown.

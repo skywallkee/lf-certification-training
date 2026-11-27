@@ -44,7 +44,8 @@ Options for the video:
   diagram library is needed.
 - **New body components:** `<KeyIdea>`, `<DeepDive>` (folded "under the hood" details), `<Example>` and `<Trick>`,
   allowed by the editor's MDX safety check like `<Callout>` and `<Flow>`. content/README.md documents the lesson
-  template; `lessons/sample/cka/services.mdx` is the sample.
+  template. The first sample, `lessons/sample/cka/services.mdx`, was removed with the other sample lessons once the
+  real CKA lessons (`lessons/cka/NN-slug.mdx`) used the format.
 - The lesson table gets `diagrams` and `video` columns (curriculum migration 0007). The admin editor edits diagrams
   as YAML and the video scene by scene, can **draft a video from the lesson's sections**, and its Preview tab plays
   the video with unsaved narration (admin-only narration URLs that carry the text).

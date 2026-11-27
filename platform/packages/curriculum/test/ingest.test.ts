@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ingestContent, ingestCurriculum, migrateAndIngest, removeSampleContent } from "../src/db/ingest.ts";
+import { ingestContent, ingestCurriculum, migrateAndIngest, removeSampleContent, RETIRED_SAMPLE_LESSON_IDS } from "../src/db/ingest.ts";
 import * as schema from "../src/db/schema.ts";
 import { loadContent, loadCurriculum, type Curriculum } from "../src/index.ts";
 
@@ -83,8 +83,8 @@ describe.skipIf(!url)("content ingest", () => {
     ).rows[0];
 
   // The sample set is counted on its own (items marked `mock: true`), so real content can be added without
-  // touching these tests.
-  const SAMPLE = { lessons: 13, questions: 74, labs: 8, quizMocks: 3 };
+  // touching these tests. It has no lessons since the real CKA lessons replaced the sample ones.
+  const SAMPLE = { lessons: 0, questions: 74, labs: 8, quizMocks: 3 };
   const sizes = (c: Awaited<ReturnType<typeof loadContent>>) => ({
     lessons: c.lessons.length,
     questions: c.questions.length,
@@ -92,7 +92,7 @@ describe.skipIf(!url)("content ingest", () => {
     quizMocks: c.quizMocks.length,
   });
 
-  it("loads the sample lessons and questions and records the run", async () => {
+  it("loads the lessons and the sample questions and records the run", async () => {
     const before = (await counts()).runs;
     const content = await loadContent(curriculum);
     const real = sizes(await loadContent(curriculum, { includeSample: false }));
@@ -132,8 +132,8 @@ describe.skipIf(!url)("content ingest", () => {
     const db = drizzle(pool, { schema });
     const content = await loadContent(curriculum);
     await ingestContent(db, content);
-    const edited = content.lessons.find((l) => l.mock)!;
-    await db.update(schema.lesson).set({ title: "Edited in the app", origin: "app" }).where(eq(schema.lesson.id, edited.id));
+    const edited = content.questions.find((q) => q.mock)!;
+    await db.update(schema.question).set({ stem: "Edited in the app", origin: "app" }).where(eq(schema.question.id, edited.id));
     await db.insert(schema.question).values({
       id: "app-only-question",
       certCode: "CKA",
@@ -154,13 +154,39 @@ describe.skipIf(!url)("content ingest", () => {
       contentHash: "x",
     });
     await ingestContent(db, content);
-    const [lessonRow] = await db.select().from(schema.lesson).where(eq(schema.lesson.id, edited.id));
-    expect(lessonRow?.title).toBe("Edited in the app");
+    const [questionRow] = await db.select().from(schema.question).where(eq(schema.question.id, edited.id));
+    expect(questionRow?.stem).toBe("Edited in the app");
     const withoutSample = await loadContent(curriculum, { includeSample: false });
     const result = await ingestContent(db, withoutSample);
-    expect(result).toMatchObject({ removedLessons: SAMPLE.lessons - 1, removedQuestions: SAMPLE.questions });
+    expect(result).toMatchObject({ removedLessons: 0, removedQuestions: SAMPLE.questions - 1 });
     const left = await pool.query("SELECT id FROM lesson UNION ALL SELECT id FROM question");
     const real = [...withoutSample.lessons, ...withoutSample.questions].map((i) => i.id);
     expect(left.rows.map((r) => r.id).sort()).toEqual(["app-only-question", edited.id, ...real].sort());
+  });
+
+  it("deletes the retired sample lessons from an older database, even copies edited in the app", async () => {
+    const db = drizzle(pool, { schema });
+    const content = await loadContent(curriculum);
+    await ingestContent(db, content);
+    const competency = content.questions[0]!.competencies[0]!;
+    const row = (id: string, origin: "file" | "app") => ({
+      id,
+      certCode: content.questions[0]!.cert,
+      title: id,
+      summary: "Left over from the sample set",
+      minutes: 5,
+      body: "Old",
+      docs: [],
+      competencyRefs: [competency],
+      mock: true,
+      origin,
+      file: `lessons/sample/${id}.mdx`,
+      contentHash: "x",
+    });
+    await db.insert(schema.lesson).values([row(RETIRED_SAMPLE_LESSON_IDS[0]!, "file"), row(RETIRED_SAMPLE_LESSON_IDS[1]!, "app")]);
+    const result = await ingestContent(db, content);
+    expect(result.removedLessons).toBe(2);
+    const left = await pool.query("SELECT id FROM lesson WHERE id = ANY($1)", [RETIRED_SAMPLE_LESSON_IDS]);
+    expect(left.rows).toEqual([]);
   });
 });

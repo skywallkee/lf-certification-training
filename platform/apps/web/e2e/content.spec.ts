@@ -7,7 +7,7 @@ test("learners cannot open the content editor", async ({ page }) => {
   await signIn(page, "mid@example.com");
   await page.goto("/admin/content");
   await expect(page).toHaveURL("/today");
-  const res = await page.request.get("/api/admin/content/lesson/sample-cka-rbac");
+  const res = await page.request.get("/api/admin/content/lesson/cka-course-introduction");
   expect(res.status()).toBe(404);
 });
 
@@ -61,7 +61,7 @@ test("the admin creates a question as a draft, fixes its problems and publishes 
 
 test("the admin edits an ingested lesson in the source view, previews it and reverts it", async ({ page }) => {
   await signIn(page, "admin@example.com");
-  const [lesson] = await query<{ id: string; title: string }>("SELECT id, title FROM lesson WHERE origin = 'file' AND mock AND body LIKE '%<Callout%' ORDER BY id LIMIT 1");
+  const [lesson] = await query<{ id: string; title: string }>("SELECT id, title FROM lesson WHERE origin = 'file' AND body LIKE '%<Callout%' ORDER BY id LIMIT 1");
   await page.goto(`/admin/content/lesson/${lesson!.id}`);
   await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveValue(lesson!.title);
 

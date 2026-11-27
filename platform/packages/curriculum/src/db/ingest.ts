@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, eq, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, ne, notInArray, or } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { loadContent, type Content } from "../content.ts";
@@ -145,10 +145,31 @@ export interface ContentIngestResult {
 }
 
 /**
+ * The sample lessons that shipped before the real CKA lessons replaced them. Ingest deletes them from every
+ * database, including copies an admin edited in the app (origin "app"), so no older database keeps them.
+ */
+export const RETIRED_SAMPLE_LESSON_IDS = [
+  "sample-cka-container-logs",
+  "sample-cka-network-policies",
+  "sample-cka-rbac",
+  "sample-cka-rolling-updates",
+  "sample-cka-services",
+  "sample-cka-storage-classes",
+  "sample-ckne-cni-plugins",
+  "sample-ckne-coredns",
+  "sample-ckne-gateway-api",
+  "sample-kcna-container-images",
+  "sample-kcna-core-objects",
+  "sample-kcna-observability-signals",
+  "sample-kcna-pod-networking",
+];
+
+/**
  * Upserts lessons, questions and labs and deletes rows whose file no longer exists (or that were left out,
  * such as the sample set when includeSample is false). Rows created or edited in the admin editor
  * (origin "app") are never overwritten or deleted: the app's version wins until an admin reverts it to the
- * file. Run after ingestCurriculum: rows reference certification.code.
+ * file. Run after ingestCurriculum: rows reference certification.code. The retired sample lessons
+ * (RETIRED_SAMPLE_LESSON_IDS) are the one exception: they are deleted whatever their origin.
  */
 export async function ingestContent(db: Db, content: Content): Promise<ContentIngestResult> {
   return db.transaction(async (tx) => {
@@ -239,7 +260,12 @@ export async function ingestContent(db: Db, content: Content): Promise<ContentIn
     const questionIds = content.questions.map((q) => q.id);
     const removedLessons = await tx
       .delete(schema.lesson)
-      .where(and(eq(schema.lesson.origin, "file"), lessonIds.length > 0 ? notInArray(schema.lesson.id, lessonIds) : undefined))
+      .where(
+        or(
+          and(eq(schema.lesson.origin, "file"), lessonIds.length > 0 ? notInArray(schema.lesson.id, lessonIds) : undefined),
+          inArray(schema.lesson.id, RETIRED_SAMPLE_LESSON_IDS),
+        ),
+      )
       .returning({ id: schema.lesson.id });
     const removedQuestions = await tx
       .delete(schema.question)

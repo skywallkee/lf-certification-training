@@ -10,23 +10,23 @@ test("visitors can browse certs and read a lesson without an account", async ({ 
   await expect(page.getByRole("heading", { name: "Certified Kubernetes Administrator" })).toBeVisible();
   await expect(page.getByText("Sample content").first()).toBeVisible();
 
-  await page.getByText("Storage", { exact: true }).click();
-  await page.getByRole("link", { name: "Implement storage classes and dynamic volume provisioning" }).click();
-  await expect(page.getByRole("heading", { name: "Storage classes and dynamic provisioning", level: 1 })).toBeVisible();
-  await expect(page.getByRole("list", { name: "From claim to mounted volume" })).toBeVisible();
+  await page.getByText("Troubleshooting", { exact: true }).click();
+  await page.getByRole("link", { name: "Troubleshoot clusters and nodes" }).click();
+  await expect(page.getByRole("heading", { name: "Course introduction: how to study for the CKA", level: 1 })).toBeVisible();
+  await expect(page.getByRole("img", { name: "The five exam domains, placed on a cluster" })).toBeVisible();
   await page.getByRole("link", { name: "Sign in to practise" }).click();
   await expect(page).toHaveURL(/\/sign-in\?next=/);
 });
 
 test("lesson code blocks are highlighted and can be copied", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const url = "/certs/cka/domains/servicing-networking/competencies/define-enforce-network-policies";
+  const url = "/certs/cka/domains/troubleshooting/competencies/troubleshoot-clusters-nodes";
   await page.goto(url);
-  const block = page.locator('section[aria-labelledby="lesson-sample-cka-network-policies"]').locator(".code-block").first();
-  await expect(block.locator("code.language-yaml .hljs-attr").first()).toHaveText("apiVersion:");
+  const block = page.locator('section[aria-labelledby="lesson-cka-course-introduction"]').locator(".code-block").filter({ hasText: "kind.x-k8s.io" }).first();
+  await expect(block.locator("code.language-yaml .hljs-attr").first()).toHaveText("kind:");
   await block.getByRole("button", { name: "Copy code" }).click();
   await expect(block.getByRole("button", { name: "Copied code" })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("kind: NetworkPolicy");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("kind: Cluster");
   await expectAccessible(page, url);
 });
 
@@ -44,8 +44,9 @@ test("quizzes and Today need sign-in", async ({ page }) => {
 });
 
 test("search finds lessons, competencies and questions", async ({ page }) => {
+  await page.goto("/search?q=introduction");
+  await expect(page.getByRole("link", { name: "Course introduction: how to study for the CKA" })).toBeVisible();
   await page.goto("/search?q=coredns");
-  await expect(page.getByRole("link", { name: "Customising CoreDNS" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Understand and use CoreDNS" })).toBeVisible();
   await expect(page.getByText(/result/).first()).toBeVisible();
 });
