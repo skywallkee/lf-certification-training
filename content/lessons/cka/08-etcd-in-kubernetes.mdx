@@ -1,0 +1,667 @@
+---
+id: cka-etcd-in-kubernetes
+title: "etcd in Kubernetes: where the cluster keeps its state"
+summary: "What Kubernetes stores in etcd and why only the API server talks to it, how kubeadm runs it as a static Pod, stacked and external topologies, and how to inspect it quickly in the exam."
+minutes: 18
+competencies:
+  - cka/cluster-architecture-installation-configuration/create-manage-kubernetes-clusters-kubeadm
+  - cka/cluster-architecture-installation-configuration/implement-configure-highly-available-control
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Cluster architecture"
+    url: https://kubernetes.io/docs/concepts/architecture/
+  - title: "Kubernetes docs: Operating etcd clusters for Kubernetes"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/
+  - title: "Kubernetes docs: Options for highly available topology"
+    url: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/ha-topology/
+  - title: "Kubernetes docs: Create static Pods"
+    url: https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/
+  - title: "Kubernetes docs: Encrypting confidential data at rest"
+    url: https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/
+diagrams:
+  only-api-server:
+    title: "Only the API server talks to etcd"
+    caption: "Every other component, and you with kubectl, reads and writes cluster state through the API server. The API server is the single client of etcd."
+    nodes:
+      - { id: kubectl, label: "kubectl", sub: "you", icon: user, col: 0, row: 0 }
+      - { id: sched, label: "kube-scheduler", icon: process, col: 0, row: 1 }
+      - { id: cm, label: "Controller manager", icon: process, col: 0, row: 2 }
+      - { id: api, label: "kube-apiserver", sub: "the only etcd client", icon: control-plane, col: 1, row: 1, tone: primary }
+      - { id: kubelet, label: "kubelet", sub: "on every node", icon: node, col: 1, row: 2 }
+      - { id: etcd, label: "etcd", sub: "all cluster state", icon: database, col: 2, row: 1, tone: success }
+    edges:
+      - { from: kubectl, to: api }
+      - { from: sched, to: api }
+      - { from: cm, to: api }
+      - { from: kubelet, to: api }
+      - { from: api, to: etcd, label: "TLS :2379", both: true }
+  write-and-watch:
+    title: "What happens when you create an object"
+    caption: "The API server checks the request, stores the object as one key in etcd, and only then answers. Controllers learn about it through their watch on the API server."
+    nodes:
+      - { id: kubectl, label: "kubectl", sub: "create deployment", icon: user, col: 0, row: 0 }
+      - { id: api, label: "kube-apiserver", sub: "check, then store", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: etcd, label: "etcd", sub: "revision 1042", icon: database, col: 2, row: 0, tone: success }
+      - { id: key, label: "One key", sub: "deployments/shop/web", icon: file, col: 2, row: 1, tone: muted }
+      - { id: ctrl, label: "Controllers", sub: "watching the API", icon: process, col: 1, row: 1 }
+    edges:
+      - { from: kubectl, to: api, label: "1. POST" }
+      - { from: api, to: etcd, label: "2. write" }
+      - { from: etcd, to: key, label: "keeps", dashed: true }
+      - { from: api, to: ctrl, label: "3. event" }
+  kubeadm-etcd:
+    title: "etcd on a kubeadm control plane node"
+    caption: "The kubelet starts etcd from a manifest file, so etcd runs even when the API server is down. The data lives in a host folder, and the API server connects with its own client certificate."
+    nodes:
+      - { id: manifest, label: "Static Pod manifest", sub: "manifests/etcd.yaml", icon: file, col: 0, row: 0 }
+      - { id: kubelet, label: "kubelet", sub: "watches the folder", icon: process, col: 1, row: 0 }
+      - { id: etcd, label: "etcd-controlplane", sub: "static Pod, :2379", icon: pod, col: 2, row: 0, tone: success }
+      - { id: api, label: "kube-apiserver", sub: "--etcd-servers", icon: control-plane, col: 3, row: 0, tone: primary }
+      - { id: certs, label: "pki/etcd", sub: "CA, server, peer", icon: secret, col: 1, row: 1, tone: muted }
+      - { id: data, label: "/var/lib/etcd", sub: "hostPath: the data", icon: volume, col: 2, row: 1, tone: warning }
+      - { id: apicert, label: "Client certificate", sub: "apiserver-etcd-client", icon: secret, col: 3, row: 1, tone: muted }
+    edges:
+      - { from: manifest, to: kubelet, label: "reads" }
+      - { from: kubelet, to: etcd, label: "starts" }
+      - { from: api, to: etcd, label: ":2379" }
+      - { from: etcd, to: data, label: "writes" }
+      - { from: certs, to: etcd, label: "mounted", dashed: true }
+      - { from: apicert, to: api, label: "presents", dashed: true }
+  stacked-etcd:
+    title: "Stacked etcd: one member on every control plane node"
+    caption: "The kubeadm default. Each API server talks only to the etcd member on its own node, and the members replicate to each other on port 2380."
+    nodes:
+      - { id: api-1, label: "kube-apiserver 1", icon: control-plane, col: 0, row: 0, tone: primary }
+      - { id: api-2, label: "kube-apiserver 2", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: api-3, label: "kube-apiserver 3", icon: control-plane, col: 2, row: 0, tone: primary }
+      - { id: etcd-1, label: "etcd member 1", sub: "127.0.0.1:2379", icon: database, col: 0, row: 1, tone: success }
+      - { id: etcd-2, label: "etcd member 2", sub: "127.0.0.1:2379", icon: database, col: 1, row: 1, tone: success }
+      - { id: etcd-3, label: "etcd member 3", sub: "127.0.0.1:2379", icon: database, col: 2, row: 1, tone: success }
+    edges:
+      - { from: api-1, to: etcd-1 }
+      - { from: api-2, to: etcd-2 }
+      - { from: api-3, to: etcd-3 }
+      - { from: etcd-1, to: etcd-2, label: ":2380", both: true }
+      - { from: etcd-2, to: etcd-3, label: ":2380", both: true }
+    groups:
+      - { id: node-1, label: "Control plane 1", nodes: [api-1, etcd-1] }
+      - { id: node-2, label: "Control plane 2", nodes: [api-2, etcd-2] }
+      - { id: node-3, label: "Control plane 3", nodes: [api-3, etcd-3] }
+  external-etcd:
+    title: "External etcd: the members run on their own hosts"
+    caption: "Every API server lists all etcd endpoints. Losing a control plane node no longer takes an etcd member with it, at the price of three more machines."
+    nodes:
+      - { id: api-1, label: "kube-apiserver 1", icon: control-plane, col: 0, row: 0, tone: primary }
+      - { id: api-2, label: "kube-apiserver 2", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: api-3, label: "kube-apiserver 3", icon: control-plane, col: 2, row: 0, tone: primary }
+      - { id: etcd-1, label: "etcd member 1", sub: "10.0.1.11:2379", icon: database, col: 0, row: 2, tone: success }
+      - { id: etcd-2, label: "etcd member 2", sub: "10.0.1.12:2379", icon: database, col: 1, row: 2, tone: success }
+      - { id: etcd-3, label: "etcd member 3", sub: "10.0.1.13:2379", icon: database, col: 2, row: 2, tone: success }
+    edges:
+      - { from: api-1, to: etcd-1 }
+      - { from: api-1, to: etcd-2 }
+      - { from: api-1, to: etcd-3 }
+      - { from: api-2, to: etcd-1 }
+      - { from: api-2, to: etcd-2 }
+      - { from: api-2, to: etcd-3 }
+      - { from: api-3, to: etcd-1 }
+      - { from: api-3, to: etcd-2 }
+      - { from: api-3, to: etcd-3 }
+    groups:
+      - { id: control-plane, label: "Control plane nodes", nodes: [api-1, api-2, api-3] }
+      - { id: etcd-hosts, label: "Dedicated etcd hosts", nodes: [etcd-1, etcd-2, etcd-3] }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "etcd in Kubernetes"
+      narration: >-
+        Every Pod, every Secret and every node you have ever listed with kubectl is stored in one place. That place
+        is etcd. In this lesson you will see what Kubernetes keeps there, how the control plane uses it, and how to
+        find and inspect it on an exam cluster.
+      visual:
+        kind: title
+        heading: "etcd in Kubernetes"
+        subheading: "Where the cluster keeps its state"
+    - id: role
+      title: "The cluster's only memory"
+      narration: >-
+        The control plane components keep nothing on their own disks. All of the cluster's state lives in etcd, as
+        keys and values. That includes what you asked for, and what is actually running. So if you lose etcd without
+        a backup, you lose the cluster, even though the containers keep running.
+      visual:
+        kind: points
+        heading: "Why etcd matters"
+        items:
+          - "The control plane components are stateless"
+          - "All cluster state is keys and values in etcd"
+          - "Desired state and observed state both live there"
+          - "No etcd and no backup means no cluster"
+    - id: single-client
+      title: "Only the API server talks to etcd"
+      narration: >-
+        Here is the API server, with etcd right behind it. The API server is the only component that connects to
+        etcd, over TLS on port 2379. You and kubectl go through the API server. The scheduler and the controller
+        manager do the same. And so does the kubelet on every node.
+      visual:
+        kind: diagram
+        diagram: only-api-server
+        steps:
+          - [api, etcd]
+          - [api-etcd]
+          - [kubectl, kubectl-api]
+          - [sched, cm, sched-api, cm-api]
+          - [kubelet, kubelet-api]
+    - id: write-path
+      title: "From kubectl to a key in etcd"
+      narration: >-
+        Watch what happens when you create a Deployment. Kubectl sends it to the API server, which authenticates,
+        authorizes and validates the request. Then the API server writes the object to etcd, and etcd gives the
+        change a new revision number. The whole object is one key, under the registry prefix. Finally, controllers
+        that watch the API server get an event and start their work.
+      visual:
+        kind: diagram
+        diagram: write-and-watch
+        steps:
+          - [kubectl]
+          - [api, kubectl-api]
+          - [etcd, api-etcd]
+          - [key, etcd-key]
+          - [ctrl, api-ctrl]
+    - id: kubeadm
+      title: "How kubeadm runs etcd"
+      narration: >-
+        On a kubeadm cluster, etcd is a static Pod. The kubelet reads a manifest file from the manifests folder and
+        starts the Pod itself, without the API server. The data is kept on the node, in var lib etcd. The
+        certificates come from the etcd folder under the Kubernetes P K I directory. And the API server connects on
+        port 2379, with a client certificate of its own.
+      visual:
+        kind: diagram
+        diagram: kubeadm-etcd
+        steps:
+          - [etcd]
+          - [manifest, kubelet, manifest-kubelet, kubelet-etcd]
+          - [data, etcd-data]
+          - [certs, certs-etcd]
+          - [api, apicert, api-etcd, apicert-api]
+    - id: manifest
+      title: "Reading the etcd manifest"
+      narration: >-
+        This is the part of the manifest worth knowing. The client URLs are where the API server and etcdctl connect,
+        on port 2379. The peer URL, on port 2380, is only for other etcd members. The data directory is where the
+        database lives on the node. These three flags are the server certificate, its key, and the certificate
+        authority, and etcdctl needs the same three files. At the bottom, a host path volume maps the data directory
+        to the node's disk.
+      visual:
+        kind: code
+        heading: "/etc/kubernetes/manifests/etcd.yaml"
+        lang: yaml
+        code: |
+          spec:
+            containers:
+              - name: etcd
+                command:
+                  - etcd
+                  - --name=controlplane
+                  - --advertise-client-urls=https://192.168.56.10:2379
+                  - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.10:2379
+                  - --listen-peer-urls=https://192.168.56.10:2380
+                  - --data-dir=/var/lib/etcd
+                  - --cert-file=/etc/kubernetes/pki/etcd/server.crt
+                  - --key-file=/etc/kubernetes/pki/etcd/server.key
+                  - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+                  - --client-cert-auth=true
+            volumes:
+              - name: etcd-data
+                hostPath:
+                  path: /var/lib/etcd
+        steps: ["5-6", "7-8", "9", "10", "11-13", "15-18"]
+    - id: inspect
+      title: "Find and inspect etcd"
+      narration: >-
+        First, find the etcd Pod in the kube-system namespace. Next, read its flags straight from the manifest on the
+        control plane node. Then check which etcd the API server points at. Finally, list a few keys with etcdctl
+        inside the Pod, and you can see the namespaces of the cluster as keys under the registry prefix.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl -n kube-system get pods -l component=etcd"
+            out: "NAME                READY   STATUS    RESTARTS   AGE\netcd-controlplane   1/1     Running   0          41d"
+          - cmd: "sudo grep -E 'data-dir|listen-client|-file' /etc/kubernetes/manifests/etcd.yaml"
+            out: "    - --cert-file=/etc/kubernetes/pki/etcd/server.crt\n    - --data-dir=/var/lib/etcd\n    - --key-file=/etc/kubernetes/pki/etcd/server.key\n    - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.10:2379\n    - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt\n    - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key\n    - --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt\n    - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt"
+          - cmd: "sudo grep etcd-servers /etc/kubernetes/manifests/kube-apiserver.yaml"
+            out: "    - --etcd-servers=https://127.0.0.1:2379"
+          - cmd: "P=/etc/kubernetes/pki/etcd; kubectl -n kube-system exec etcd-controlplane -- etcdctl --cacert=$P/ca.crt --cert=$P/server.crt --key=$P/server.key get /registry/namespaces --prefix --keys-only"
+            out: "/registry/namespaces/default\n\n/registry/namespaces/kube-node-lease\n\n/registry/namespaces/kube-public\n\n/registry/namespaces/kube-system\n\n/registry/namespaces/shop"
+    - id: stacked
+      title: "Stacked etcd"
+      narration: >-
+        For high availability you run more than one member. With the stacked topology, the kubeadm default, every
+        control plane node runs an API server and an etcd member side by side. Each API server talks only to the
+        member on its own node. The members replicate to each other on port 2380, and a write succeeds once a
+        majority has stored it.
+      visual:
+        kind: diagram
+        diagram: stacked-etcd
+        steps:
+          - [etcd-1, etcd-2, etcd-3]
+          - [api-1, api-2, api-3, node-1, node-2, node-3]
+          - [api-1-etcd-1, api-2-etcd-2, api-3-etcd-3]
+          - [etcd-1-etcd-2, etcd-2-etcd-3]
+    - id: external
+      title: "External etcd"
+      narration: >-
+        The other topology puts the members on dedicated hosts. Now every API server lists all three endpoints. A
+        failed control plane node no longer takes an etcd member down with it, but you need three more machines.
+      visual:
+        kind: diagram
+        diagram: external-etcd
+        steps:
+          - [etcd-1, etcd-2, etcd-3, etcd-hosts]
+          - [api-1, api-2, api-3, control-plane, api-1-etcd-1, api-1-etcd-2, api-1-etcd-3, api-2-etcd-1, api-2-etcd-2, api-2-etcd-3, api-3-etcd-1, api-3-etcd-2, api-3-etcd-3]
+    - id: quorum
+      title: "Quorum decides what survives"
+      narration: >-
+        A cluster of etcd members needs a majority, called quorum, to accept writes. Three members survive the loss
+        of one. Five members survive the loss of two. An even number buys nothing, because four members still
+        tolerate only one failure. Without quorum the API server cannot store anything, yet the workloads already
+        running stay up.
+      visual:
+        kind: points
+        heading: "How many members?"
+        items:
+          - "Writes need a majority of members: quorum"
+          - "3 members tolerate 1 failure"
+          - "5 members tolerate 2 failures"
+          - "Even numbers add risk, not safety"
+          - "No quorum: no changes, but running Pods keep running"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Do not memorise paths: every certificate and directory is written in the etcd manifest. When kubectl stops
+        answering, switch to crictl on the control plane node, because static Pods run without the API server. Port
+        2379 is for clients, and 2380 is for peers. And remember there are two certificate authorities: etcd has its
+        own, in the etcd folder.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "Read paths and flags from manifests/etcd.yaml"
+          - "kubectl dead? Use crictl ps and crictl logs"
+          - "2379 is for clients, 2380 is for peers"
+          - "etcd has its own CA: pki/etcd/ca.crt"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        All cluster state lives in etcd, one key per object. Only the API server talks to it. Kubeadm runs it as a
+        static Pod, with its data in a folder on the node. Stacked or external, it needs a majority of members to
+        accept writes. In the next lesson you will drive it with etcdctl, including backup and restore.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "All cluster state lives in etcd: one key per object"
+          - "The API server is the only client"
+          - "kubeadm: static Pod, data in /var/lib/etcd"
+          - "Stacked or external, writes need quorum"
+          - "Next: etcdctl, backup and restore"
+---
+
+## Why Kubernetes needs etcd
+
+The control plane is a set of programs that can crash, restart or move to another machine at any moment: the API
+server, the scheduler, the controller manager. None of them keeps anything important on its own disk. That only works
+because all of them agree on one place where the truth is written down.
+
+That place is **etcd**, a distributed key-value store. Every object you have ever seen in `kubectl get` output is a
+key in etcd: Pods, Deployments, Secrets, nodes, RBAC rules, and the leases that say which controller manager is the
+leader. etcd holds both the **desired state** (the `spec` you applied) and the **observed state** (the `status`
+that components report back).
+
+<KeyIdea>
+etcd is the cluster's only memory. Everything else in the control plane can be restarted or rebuilt from it, and
+the API server is the only component that reads or writes it.
+</KeyIdea>
+
+This is why an administrator treats etcd differently from every other component. A broken scheduler is an outage
+you fix by restarting it. A lost etcd with no backup is a lost cluster: the containers keep running on the nodes for
+a while, but Kubernetes no longer knows that they exist.
+
+## What Kubernetes keeps in etcd
+
+<Diagram id="only-api-server" />
+
+The scheduler, the controller manager, the kubelet and `kubectl` all get their view of the cluster from the API
+server. Not one of them has the address of etcd or a certificate to open a connection to it. The API server is the
+single client, and it talks to etcd over mutual TLS on port **2379**.
+
+The API server stores each object as one key under the `/registry` prefix. The layout is predictable:
+
+| Object | Key in etcd |
+|--------|-------------|
+| Pod `web` in namespace `shop` | `/registry/pods/shop/web` |
+| Deployment `web` in `shop` | `/registry/deployments/shop/web` |
+| Secret `db-password` in `shop` | `/registry/secrets/shop/db-password` |
+| Namespace `shop` | `/registry/namespaces/shop` |
+| ClusterRole `view` (no namespace) | `/registry/clusterroles/view` |
+| Node `node01` | `/registry/minions/node01` |
+| A custom resource | `/registry/GROUP/PLURAL/NAMESPACE/NAME` |
+
+Nodes live under `minions` because that is what Kubernetes called them in its first releases, and renaming the keys
+would have broken every existing cluster.
+
+Just as useful is knowing what is **not** in etcd:
+
+- **Container logs and metrics.** Logs are files on each node, and the metrics server keeps its numbers in memory.
+- **The data in your volumes.** etcd stores the PersistentVolume and the claim, which are descriptions. The bytes
+  live on the storage system.
+- **Container images.** They sit in registries and in each node's image cache.
+- **Files on the nodes.** The certificates in `/etc/kubernetes/pki`, the kubeconfig files and the static Pod
+  manifests are plain files. An etcd backup does not contain them.
+
+## How the API server uses etcd
+
+<Diagram id="write-and-watch" />
+
+Follow one `kubectl create deployment web --image=nginx -n shop`:
+
+1. `kubectl` sends a POST request to the API server.
+2. The API server authenticates the caller, checks RBAC, runs admission and validates the object.
+3. It writes the object to etcd at `/registry/deployments/shop/web`. etcd replicates the write to a majority of its
+   members and assigns it a new **revision**, a counter that increases with every change to the store.
+4. Only now does the API server answer `deployment.apps/web created`. If etcd cannot commit the write, you get an
+   error and nothing was created.
+5. The Deployment controller, which has a **watch** open on the API server, receives an event and creates a
+   ReplicaSet. That is another write to etcd, another event, and so on down to the kubelet starting containers.
+
+Three things you already use every day come straight from this design:
+
+- **`resourceVersion`** in an object's metadata is the etcd revision of its last change.
+- **`kubectl get pods --watch`** works because etcd can stream every change after a given revision, and the API
+  server passes that stream on. Controllers never poll; they watch.
+- **Conflict errors.** When two clients update the same object, the API server tells etcd "write this only if the
+  key is still at the revision I read". The second writer loses and sees *the object has been modified; please apply
+  your changes to the latest version and try again*. No locks are needed.
+
+<DeepDive title="Details that explain limits you will meet">
+- **Values are binary.** Built-in objects are stored as protobuf, not as the YAML or JSON you see in `kubectl`. If
+  you read a key with `etcdctl` the value looks like noise with a few readable strings in it. Custom resources are
+  stored as JSON.
+- **Secrets are not encrypted by default.** A Secret's data is only base64 in the API, and in etcd it is stored
+  as it is unless the API server was started with an encryption configuration. Anyone who can read etcd, or a
+  snapshot file, can read every Secret. Treat backups accordingly.
+- **Objects have a size limit.** etcd rejects requests larger than about 1.5 MiB, which is why a ConfigMap or
+  Secret cannot hold more than 1 MiB of data.
+- **The database has a size limit too.** etcd stops accepting writes when its database reaches its quota (2 GiB
+  unless configured otherwise) and raises a `NOSPACE` alarm. The cluster then looks read-only.
+- **History is trimmed.** etcd keeps old revisions of every key so that watches can catch up. The API server asks
+  etcd to compact that history every five minutes. A watcher that falls too far behind gets a "resource version too
+  old" error and has to list everything again.
+- **Events expire.** The API server attaches a one hour lease to each Event, and etcd deletes it when the lease
+  runs out. That is why `kubectl get events` only shows the recent past.
+</DeepDive>
+
+## How etcd is deployed
+
+There are two ways you will meet etcd in a cluster, and the first question in any etcd task is which one you are
+looking at.
+
+| | kubeadm cluster | Installed by hand |
+|---|-----------------|-------------------|
+| Runs as | A static Pod named `etcd-NODENAME` in `kube-system` | A systemd service on the host |
+| Configured in | `/etc/kubernetes/manifests/etcd.yaml` | The unit file, usually `/etc/systemd/system/etcd.service` |
+| Started by | The kubelet | systemd |
+| See it with | `kubectl -n kube-system get pods`, `crictl ps` | `systemctl status etcd` |
+| Logs | `kubectl logs`, `crictl logs` | `journalctl -u etcd` |
+
+The exam clusters are built with kubeadm, so the static Pod is the one to know well.
+
+<Diagram id="kubeadm-etcd" />
+
+A **static Pod** is started by the kubelet directly from a manifest file in `/etc/kubernetes/manifests`. This solves
+a chicken and egg problem: the API server cannot start without etcd, so etcd cannot be something the API server
+schedules. The Pod you see in `kubectl -n kube-system get pods` is only a mirror that the kubelet publishes. You
+cannot change etcd by editing that Pod. You edit the file, and the kubelet restarts etcd when the file changes.
+
+The flags in the manifest answer almost every question you can be asked:
+
+```yaml
+spec:
+  containers:
+    - name: etcd
+      image: registry.k8s.io/etcd:3.6.5-0
+      command:
+        - etcd
+        - --name=controlplane
+        - --advertise-client-urls=https://192.168.56.10:2379
+        - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.10:2379
+        - --listen-peer-urls=https://192.168.56.10:2380
+        - --initial-cluster=controlplane=https://192.168.56.10:2380
+        - --data-dir=/var/lib/etcd
+        - --cert-file=/etc/kubernetes/pki/etcd/server.crt
+        - --key-file=/etc/kubernetes/pki/etcd/server.key
+        - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+        - --client-cert-auth=true
+        - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
+        - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
+        - --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+        - --listen-metrics-urls=http://127.0.0.1:2381
+      volumeMounts:
+        - { name: etcd-data, mountPath: /var/lib/etcd }
+        - { name: etcd-certs, mountPath: /etc/kubernetes/pki/etcd }
+  hostNetwork: true
+  volumes:
+    - name: etcd-data
+      hostPath: { path: /var/lib/etcd, type: DirectoryOrCreate }
+    - name: etcd-certs
+      hostPath: { path: /etc/kubernetes/pki/etcd, type: DirectoryOrCreate }
+```
+
+| Flag | What it tells you |
+|------|-------------------|
+| `--listen-client-urls` | Where clients connect: the API server and `etcdctl`. Port **2379** |
+| `--listen-peer-urls` | Where other etcd members connect to replicate. Port **2380** |
+| `--data-dir` | The folder that holds the database, and the thing a backup protects |
+| `--cert-file`, `--key-file` | The certificate etcd shows to clients |
+| `--trusted-ca-file` | The CA that client certificates must be signed by |
+| `--client-cert-auth=true` | Clients must present a certificate: there are no anonymous connections |
+| `--initial-cluster` | The members this one expects to find: one entry on a single node cluster |
+| `--listen-metrics-urls` | A plain HTTP health and metrics port on localhost, **2381**, used by the Pod's probes |
+
+The other half of the connection is in the API server's own manifest,
+`/etc/kubernetes/manifests/kube-apiserver.yaml`:
+
+```yaml
+- --etcd-servers=https://127.0.0.1:2379
+- --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt
+- --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt
+- --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key
+```
+
+<Callout kind="warning" title="etcd has its own certificate authority">
+kubeadm creates two separate CAs. `/etc/kubernetes/pki/ca.crt` signs the cluster's certificates, and
+`/etc/kubernetes/pki/etcd/ca.crt` signs everything that touches etcd. Passing the cluster CA to `etcdctl` fails with
+"certificate signed by unknown authority". If a path has no `etcd` in it, it is almost certainly the wrong file.
+</Callout>
+
+## Topologies: stacked and external
+
+A single etcd member is fine for practice and is what most exam clusters have. In production you run several
+members so that the cluster survives a machine failure. kubeadm supports two layouts.
+
+<Diagram id="stacked-etcd" />
+
+In the **stacked** topology, the default, every control plane node runs an etcd member next to its API server.
+`kubeadm join --control-plane` adds the new member for you. Each API server points at `https://127.0.0.1:2379`, its
+local member. It is simple and needs no extra machines, but a node failure costs you an API server and an etcd
+member at the same moment.
+
+<Diagram id="external-etcd" />
+
+In the **external** topology the members run on their own hosts, and you tell kubeadm about them in its
+configuration file. Every API server then lists all of them:
+
+```yaml
+- --etcd-servers=https://10.0.1.11:2379,https://10.0.1.12:2379,https://10.0.1.13:2379
+```
+
+| | Stacked | External |
+|---|---------|----------|
+| Machines for a highly available control plane | 3 | 6 (3 control plane, 3 etcd) |
+| etcd Pods in `kube-system` | Yes, one per control plane node | None |
+| `--etcd-servers` on the API server | `https://127.0.0.1:2379` | A list of other hosts |
+| A control plane node fails | Lose one API server and one member | Lose one API server only |
+
+### Quorum
+
+etcd members elect a leader and accept a write only when a **majority** of members, the quorum, has stored it. That
+rule is what keeps two halves of a split cluster from both accepting different writes. It also decides how many
+failures you can afford:
+
+| Members | Quorum | Failures tolerated |
+|---------|--------|--------------------|
+| 1 | 1 | 0 |
+| 2 | 2 | 0 |
+| 3 | 2 | 1 |
+| 4 | 3 | 1 |
+| 5 | 3 | 2 |
+
+<Callout kind="warning" title="Two is worse than one">
+An even number of members never helps. Two members need both to be up, so you have doubled the chance of an outage
+compared with one. Four tolerate one failure, exactly like three. Use three or five.
+</Callout>
+
+When quorum is lost, or the single member is down, the API server cannot read or write. `kubectl` returns errors or
+times out, nothing new is scheduled and nothing heals. The Pods that are already running **keep running**, because
+the kubelet and the container runtime do not need etcd to keep a container alive. The cluster is frozen, not gone.
+
+## Using it
+
+<Example title="Find out how etcd runs on this cluster">
+A task asks for the etcd version, its data directory, or the certificate it serves. Start by finding out which kind
+of etcd you have:
+
+```bash
+kubectl -n kube-system get pods -l component=etcd -o wide
+```
+
+A Pod named `etcd-controlplane` means a kubeadm static Pod, and stacked etcd. Now read the facts instead of
+remembering them. On the control plane node:
+
+```bash
+sudo grep -E 'image:|data-dir|listen-client|-file' /etc/kubernetes/manifests/etcd.yaml
+sudo grep etcd /etc/kubernetes/manifests/kube-apiserver.yaml
+```
+
+If you are not on the node, `kubectl -n kube-system describe pod etcd-controlplane` shows the same command line.
+
+No etcd Pod at all? Look at `--etcd-servers` in the API server manifest. Addresses of other machines mean external
+etcd, and on those machines `systemctl status etcd` and `systemctl cat etcd` show the service and its flags.
+</Example>
+
+<Example title="See the keys Kubernetes wrote">
+The etcd image ships with `etcdctl`, so you can run it inside the Pod, where the certificates are already mounted.
+List the namespaces as etcd sees them:
+
+```bash
+kubectl -n kube-system exec etcd-controlplane -- etcdctl \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  get /registry/namespaces --prefix --keys-only
+```
+
+```text
+/registry/namespaces/default
+
+/registry/namespaces/kube-node-lease
+
+/registry/namespaces/kube-public
+
+/registry/namespaces/kube-system
+
+/registry/namespaces/shop
+```
+
+The three files are the same ones the etcd flags name: `--trusted-ca-file` becomes `--cacert`, `--cert-file` becomes
+`--cert` and `--key-file` becomes `--key`. `etcdctl` connects to `127.0.0.1:2379` unless you pass `--endpoints`,
+which is right inside the Pod. Leave out `--keys-only` and you get the protobuf values as well.
+
+Reading is safe. Never write or delete keys by hand: the API server is the only writer that keeps objects valid.
+</Example>
+
+<Example title="Check etcd when the cluster misbehaves">
+While the API server still answers, ask it about its etcd connection:
+
+```bash
+kubectl get --raw='/readyz/etcd'
+kubectl -n kube-system logs etcd-controlplane --tail=20
+```
+
+When `kubectl` itself fails with "connection refused" or a timeout, go to the control plane node. The static Pods
+do not need the API server, and neither does the container runtime's own tool:
+
+```bash
+sudo crictl ps -a --name etcd              # running, or exited and restarting?
+sudo crictl logs CONTAINER_ID              # why it stopped
+sudo journalctl -u kubelet --since "10 min ago" | grep -i etcd
+```
+
+Typical causes: a typo in a flag in `etcd.yaml`, a certificate path that does not exist, a `--data-dir` that
+does not match the volume, or a full disk. Fix the manifest and the kubelet restarts the Pod within a minute.
+</Example>
+
+## Tricks
+
+<Trick title="Let the manifest give you the etcdctl flags">
+You do not need to remember any path. `grep -- '-file' /etc/kubernetes/manifests/etcd.yaml` prints the CA, the
+certificate and the key, and `grep listen-client` prints the endpoint. Copy them into your `etcdctl` command.
+</Trick>
+
+<Trick title="A path lives in three places">
+The data directory appears as the `--data-dir` flag, as the container's `volumeMounts` path, and as the `hostPath`
+of the `etcd-data` volume. The flag and the mount path are inside the container, the `hostPath` is on the node. To
+point etcd at another folder on the node, changing only the `hostPath` is enough. If you change the flag, change the
+mount to match.
+</Trick>
+
+<Trick title="Stop a static Pod by moving its manifest">
+There is no `kubectl delete` that keeps a static Pod down. Move the file out of the folder and the kubelet stops the
+Pod; move it back and it starts again:
+
+```bash
+sudo mv /etc/kubernetes/manifests/etcd.yaml /tmp/
+sudo mv /tmp/etcd.yaml /etc/kubernetes/manifests/
+```
+</Trick>
+
+<Trick title="Stacked or external in ten seconds">
+`kubectl -n kube-system get pods | grep etcd`. One Pod per control plane node means stacked. No Pods, and
+`--etcd-servers` pointing at other hosts, means external.
+</Trick>
+
+## Common mistakes
+
+- **Thinking other components use etcd.** Only the API server does. A scheduler that cannot schedule is never a
+  scheduler to etcd connection problem.
+- **Mixing up the ports.** 2379 is for clients, 2380 is for members talking to each other. `etcdctl` on 2380 fails
+  with a TLS or deadline error.
+- **Using the wrong CA or certificate.** The etcd files are under `/etc/kubernetes/pki/etcd/`. The API server's
+  client pair, `apiserver-etcd-client`, sits one folder up.
+- **Editing the mirror Pod.** `kubectl edit pod etcd-controlplane` changes nothing that lasts. Edit the manifest
+  file.
+- **Leaving a copy in the manifests folder.** The kubelet runs every file it finds there, so `etcd.yaml.bak` next
+  to `etcd.yaml` starts a second, conflicting etcd. Keep backups of manifests somewhere else.
+- **Expecting a backup of etcd to hold everything.** It holds every API object, but not volume data and not the
+  certificates and manifests on the node.
+
+## Recap
+
+- etcd holds all cluster state, one key per object under `/registry`; lose it without a backup and the cluster is gone.
+- Only the API server talks to etcd, on port 2379 with its own client certificate.
+- On kubeadm clusters etcd is a static Pod: `/etc/kubernetes/manifests/etcd.yaml`, data in `/var/lib/etcd`,
+  certificates in `/etc/kubernetes/pki/etcd`.
+- Stacked puts a member on every control plane node; external uses separate hosts. Either way, writes need quorum,
+  so run three or five members.
+- When `kubectl` fails, use `crictl` on the control plane node, and read every path from the manifest.
