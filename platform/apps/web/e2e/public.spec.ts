@@ -5,7 +5,7 @@ test("visitors can browse certs and read a lesson without an account", async ({ 
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Study for all 17 Golden Kubestronaut certs");
   await page.getByRole("link", { name: "Browse the certs" }).click();
-  await expect(page.getByRole("heading", { name: "Certs", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Certifications", level: 1 })).toBeVisible();
   await page.getByRole("link", { name: /^CKA Certified Kubernetes Administrator/ }).click();
   await expect(page.getByRole("heading", { name: "Certified Kubernetes Administrator" })).toBeVisible();
   await expect(page.getByText("Sample content").first()).toBeVisible();

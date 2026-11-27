@@ -30,12 +30,15 @@ export function StartLab({
   usage,
   block,
   bootSeconds,
+  quiet = [],
 }: {
   lab: Pick<LabRow, "id" | "tier" | "minutes">;
   usage: LabUsage;
   block: StartBlock | null;
   /** Typical boot time of this lab on this machine, when it has run before. */
   bootSeconds?: number | undefined;
+  /** Reasons the page already explains once at the top (the lab list), so each card does not repeat them. */
+  quiet?: StartBlock["reason"][];
 }) {
   if (block?.reason === "active-session") {
     return (
@@ -57,7 +60,7 @@ export function StartLab({
       <p className="text-[13px] text-muted-foreground">
         {bootEstimate(lab.tier, bootSeconds)} · uses up to {lab.minutes} of your {usage.minutesLeft} remaining lab minutes
       </p>
-      {block ? (
+      {block && !quiet.includes(block.reason) ? (
         <p role="status" className="max-w-[60ch] rounded-md bg-warning-soft px-3 py-2 text-sm text-foreground">
           {blockMessage(block, usage, lab.minutes)}
         </p>

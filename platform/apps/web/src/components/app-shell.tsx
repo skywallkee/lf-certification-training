@@ -7,7 +7,7 @@ import { getActiveSession } from "@/server/labs";
 import { getReviewDue } from "@/server/progress";
 import { getProfile, getUser } from "@/server/session";
 import { ActiveSessionBanner } from "./labs/active-session-banner";
-import { BottomNav, SidebarNav, type NavItem } from "./nav-links";
+import { BottomNav, SidebarNav, type NavGroup, type NavItem } from "./nav-links";
 import { QuickSearch } from "./quick-search";
 import { ThemeToggle } from "./theme-toggle";
 import { cn } from "@/lib/utils";
@@ -20,39 +20,57 @@ export async function AppShell({ children }: { children: ReactNode }) {
   const today = todayIn(profile?.timeZone ?? "UTC");
   const [due, active] = user ? await Promise.all([getReviewDue(user.id, today).then((r) => r.count), getActiveSession(user.id)]) : [0, null];
 
-  const items: NavItem[] = user
+  // Sidebar: grouped by what the learner wants to do, each item with a one-line hint. Search lives in the top bar only.
+  const groups: NavGroup[] = user
     ? [
-        { key: "today", href: "/today", label: en.nav.today },
-        { key: "path", href: "/path", label: en.nav.path },
-        { key: "plan", href: "/plan", label: en.nav.plan },
-        { key: "progress", href: "/progress", label: en.nav.progress },
-        { key: "certs", href: "/certs", label: en.nav.certs },
-        { key: "review", href: "/review", label: en.nav.review, badge: due },
-        { key: "search", href: "/search", label: en.nav.search },
-        { key: "saved", href: "/saved", label: en.nav.bookmarks },
-        { key: "labs", href: "/labs", label: en.nav.labs },
-        { key: "mocks", href: "/mocks", label: en.nav.mocks },
+        { items: [{ key: "today", href: "/today", label: en.nav.today, hint: en.nav.hints.today }] },
+        {
+          label: en.nav.groups.learn,
+          items: [
+            { key: "certs", href: "/certs", label: en.nav.certs, short: en.nav.certsShort, hint: en.nav.hints.certs },
+            { key: "review", href: "/review", label: en.nav.review, hint: en.nav.hints.review, badge: due },
+            { key: "saved", href: "/saved", label: en.nav.bookmarks, hint: en.nav.hints.saved },
+          ],
+        },
+        {
+          label: en.nav.groups.practise,
+          items: [
+            { key: "labs", href: "/labs", label: en.nav.labs, hint: en.nav.hints.labs },
+            { key: "mocks", href: "/mocks", label: en.nav.mocks, hint: en.nav.hints.mocks },
+          ],
+        },
+        {
+          label: en.nav.groups.track,
+          items: [
+            { key: "plan", href: "/plan", label: en.nav.plan, hint: en.nav.hints.plan },
+            { key: "progress", href: "/progress", label: en.nav.progress, hint: en.nav.hints.progress },
+          ],
+        },
       ]
-    : [
-        { key: "certs", href: "/certs", label: en.nav.certs },
-        { key: "search", href: "/search", label: en.nav.search },
-      ];
+    : [{ items: [{ key: "certs", href: "/certs", label: en.nav.certs, hint: en.nav.hints.certsPublic }] }];
   const secondary: NavItem[] = user
     ? [
         { key: "account", href: "/account", label: en.nav.account },
         ...(user.role === "admin" ? [{ key: "admin" as const, href: "/admin", label: en.nav.admin }] : []),
       ]
     : [];
-  // Phones: four tabs and a More sheet with the rest. Search is the header button.
+  const all = groups.flatMap((g) => g.items);
+  // Phones: four tabs and a More sheet with the rest, grouped like the sidebar. Search is the header button.
+  const mobileKeys = ["today", "certs", "review", "labs"];
   const mobile: NavItem[] = user
-    ? items.filter((i) => ["today", "path", "certs", "review"].includes(i.key))
+    ? mobileKeys.map((k) => all.find((i) => i.key === k)!)
     : [
         { key: "home", href: "/", label: en.nav.home },
-        { key: "certs", href: "/certs", label: en.nav.certs },
+        { key: "certs", href: "/certs", label: en.nav.certs, short: en.nav.certsShort },
         { key: "signIn", href: "/sign-in", label: en.nav.signIn },
         { key: "signUp", href: "/sign-up", label: en.nav.signUp },
       ];
-  const more: NavItem[] = user ? [...items.filter((i) => !mobile.includes(i)), ...secondary] : [{ key: "search", href: "/search", label: en.nav.search }];
+  const more: NavGroup[] = user
+    ? [
+        ...groups.map((g) => ({ ...g, items: g.items.filter((i) => !mobileKeys.includes(i.key)) })).filter((g) => g.items.length > 0),
+        { label: en.nav.groups.you, items: secondary },
+      ]
+    : [];
 
   return (
     <div className="flex min-h-dvh">
@@ -62,11 +80,11 @@ export async function AppShell({ children }: { children: ReactNode }) {
       >
         {en.nav.skip}
       </a>
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-6 border-r bg-card px-4 py-6 lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r bg-card px-4 py-6 lg:flex">
         <Link href={user ? "/today" : "/"} className="px-3 text-lg font-bold text-foreground no-underline hover:text-foreground">
           {en.appName}
         </Link>
-        <SidebarNav items={items} secondary={secondary} />
+        <SidebarNav groups={groups} secondary={secondary} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-1 border-b bg-card/95 px-4 backdrop-blur sm:gap-2 sm:px-6">

@@ -23,7 +23,7 @@ export default async function ReadinessPage({ params }: { params: Promise<{ code
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-3 text-[13px] text-muted-foreground">
-        <Link href="/certs">Certs</Link> / <Link href={`/certs/${code}`}>{cert.code}</Link> / <span aria-current="page">Readiness</span>
+        <Link href="/certs">Certifications</Link> / <Link href={`/certs/${code}`}>{cert.code}</Link> / <span aria-current="page">Readiness</span>
       </nav>
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-[30px] font-bold">{cert.code} readiness</h1>

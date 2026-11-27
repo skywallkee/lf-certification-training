@@ -13,12 +13,12 @@ const STYLES: Record<CertDisplayStatus, { cls: string; Icon: typeof CheckCircle2
 };
 
 /** Icon plus word: status is never colour alone. */
-export function StatusChip({ status, className }: { status: CertDisplayStatus; className?: string }) {
+export function StatusChip({ status, label, className }: { status: CertDisplayStatus; label?: string; className?: string }) {
   const { cls, Icon } = STYLES[status];
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold", cls, className)}>
       <Icon aria-hidden="true" className="size-3.5" />
-      {en.status[status]}
+      {label ?? en.status[status]}
     </span>
   );
 }

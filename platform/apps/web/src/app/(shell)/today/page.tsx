@@ -104,7 +104,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 : "Everything is current. Review questions keep your knowledge fresh until the next renewal."}
             </p>
             <div>
-              <Link href="/path" className={buttonVariants()}>
+              <Link href="/certs" className={buttonVariants()}>
                 See expiry dates
               </Link>
             </div>
@@ -183,8 +183,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             <Card aria-labelledby="path-summary">
               <div className="flex items-baseline justify-between gap-3">
                 <CardTitle id="path-summary">Path to all {total}</CardTitle>
-                <Link href="/path" className="text-sm">
-                  Open path
+                <Link href="/certs" className="text-sm">
+                  All certifications
                 </Link>
               </div>
               <div className="mt-3 flex gap-1" role="img" aria-label={`${held.size} passed, ${booked} booked, ${total - held.size - booked} to go`}>

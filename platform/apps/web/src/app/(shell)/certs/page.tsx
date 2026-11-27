@@ -3,17 +3,23 @@ import Link from "next/link";
 import { CoverageBadge } from "@/components/coverage-badge";
 import { PageHeader } from "@/components/page-header";
 import { PATH_GROUPS } from "@/lib/path";
+import { PathMap } from "@/components/path-map";
 import { certRefs, coverageOf, getCatalog } from "@/server/catalog";
+import { getProfile, getUser } from "@/server/session";
 
-export const metadata: Metadata = { title: "Certs" };
+export const metadata: Metadata = { title: "Certifications" };
 
+/** Signed-in learners get their own path map here; visitors and learners still onboarding get the public catalogue. */
 export default async function CertsPage() {
+  const user = await getUser();
+  const profile = user ? await getProfile(user.id) : null;
+  if (user && profile?.onboardedAt) return <PathMap userId={user.id} profile={profile} />;
   const catalog = await getCatalog();
   return (
     <>
       <PageHeader
-        title="Certs"
-        lead="All 17 Golden Kubestronaut certs with their official domains, weights and competencies. Open to everyone."
+        title="Certifications"
+        lead="All 17 Golden Kubestronaut certs with their official domains, weights and competencies. Open a cert to read its lessons. Open to everyone."
       />
       <div className="flex flex-col gap-8">
         {PATH_GROUPS.map((group) => (

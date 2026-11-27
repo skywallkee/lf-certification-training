@@ -208,7 +208,7 @@ export default async function PlanPage() {
         {plans.length === 0 ? (
           <Card>
             <p className="text-[15px] text-muted-foreground">
-              No cert in progress. Choose a focus cert on your <Link href="/path">path</Link>, or add an exam date below.
+              No cert in progress. Choose a focus cert on <Link href="/certs">Certifications</Link>, or add an exam date below.
             </p>
           </Card>
         ) : (
