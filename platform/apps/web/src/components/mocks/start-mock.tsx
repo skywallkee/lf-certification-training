@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { MockMode, MockStartBlock } from "@lfct/labs";
 import { startMockAction } from "@/app/actions/mocks";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { QueueWait } from "@/components/labs/queue-wait";
 import { en } from "@/messages/en";
 
 const dateFmt = new Intl.DateTimeFormat("en", { day: "numeric", month: "long", timeZone: "UTC" });
@@ -20,7 +21,7 @@ export function mockBlockMessage(block: MockStartBlock, mode: MockMode): string 
     case "quota":
       return en.mocks.quota(block.allowed, mode === "exam" ? "exam-mode" : "practice-mode", dateFmt.format(block.resetsOn));
     case "capacity":
-      return en.mocks.capacity;
+      return en.mocks.capacity(block.waiting);
     case "controller-down":
       return en.mocks.controllerDown;
   }
@@ -30,7 +31,18 @@ export function mockBlockMessage(block: MockStartBlock, mode: MockMode): string 
  * Mode choice (exam by default) and the Prepare button. Each mode shows its attempts left this month; a mode
  * whose allowance is used up cannot be picked.
  */
-export function StartMock({ mockId, modes, initialMode = "exam" }: { mockId: string; modes: ModeState[]; initialMode?: MockMode }) {
+export function StartMock({
+  mockId,
+  modes,
+  initialMode = "exam",
+  queued,
+}: {
+  mockId: string;
+  modes: ModeState[];
+  initialMode?: MockMode;
+  /** The learner's place in line, when they are waiting for any lab or mock. */
+  queued?: { labId: string; mode: string; position: number } | null | undefined;
+}) {
   const active = modes.find((m) => m.block?.reason === "active-session")?.block;
   if (active?.reason === "active-session") {
     return (
@@ -42,7 +54,13 @@ export function StartMock({ mockId, modes, initialMode = "exam" }: { mockId: str
       </div>
     );
   }
-  const preferred = modes.find((m) => m.mode === initialMode && !m.block) ?? modes.find((m) => !m.block);
+  const capacity = modes.find((m) => m.block?.reason === "capacity")?.block;
+  if (capacity?.reason === "capacity" && capacity.position !== null && queued?.labId === mockId) {
+    return <QueueWait kind="mock" id={mockId} mode={queued.mode} position={capacity.position} waiting={capacity.waiting} />;
+  }
+  // A full server does not stop the choice: Prepare becomes "Join the line".
+  const open = (m: ModeState) => !m.block || m.block.reason === "capacity";
+  const preferred = modes.find((m) => m.mode === initialMode && open(m)) ?? modes.find(open);
   const shared = modes.every((m) => m.block) ? (modes.find((m) => m.mode === initialMode) ?? modes[0]) : null;
   return (
     <form action={startMockAction} className="flex flex-col gap-3">
@@ -70,7 +88,7 @@ export function StartMock({ mockId, modes, initialMode = "exam" }: { mockId: str
         })}
       </fieldset>
       <Button type="submit" disabled={!preferred} className="self-start">
-        {en.mocks.prepare}
+        {preferred?.block?.reason === "capacity" ? en.labs.joinQueue : en.mocks.prepare}
       </Button>
       <p className="text-[13px] text-muted-foreground">{en.mocks.prepareNote}</p>
       {shared?.block ? (
@@ -78,6 +96,7 @@ export function StartMock({ mockId, modes, initialMode = "exam" }: { mockId: str
           {mockBlockMessage(shared.block, shared.mode)}
         </p>
       ) : null}
+      {queued && queued.labId !== mockId ? <p className="max-w-[60ch] text-[13px] text-muted-foreground">{en.labs.queueElsewhere}</p> : null}
     </form>
   );
 }

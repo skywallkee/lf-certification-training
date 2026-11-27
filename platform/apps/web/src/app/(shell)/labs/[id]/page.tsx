@@ -8,7 +8,7 @@ import { Markdown } from "@/components/markdown";
 import { DraftBadge, SampleBadge } from "@/components/status-chip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { competencyPath, getCatalog } from "@/server/catalog";
-import { blockFor, canOpen, getBootTimes, getCapacity, getLab, getUsage } from "@/server/labs";
+import { blockFor, canOpen, getBootTimes, getCapacity, getLab, getUsage, queueEntryFor } from "@/server/labs";
 import { requireUser } from "@/server/session";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -44,7 +44,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
           check, task by task
         </p>
       </header>
-      {blocked && block ? (
+      {blocked && block && block.reason !== "capacity" ? (
         <p role="alert" className="max-w-[72ch] rounded-md bg-warning-soft px-4 py-3 text-[15px]">
           {blockMessage(block, usage, lab.minutes)}
         </p>
@@ -70,7 +70,7 @@ export default async function LabPage({ params, searchParams }: { params: Promis
               You get {lab.clusters.length > 1 ? `${lab.clusters.length} fresh single-node clusters (${lab.clusters.join(", ")}), one kubectl context each,` : "a fresh single-node cluster,"}{" "}
               a terminal with kubectl, the official docs, and {lab.minutes} minutes. Check your work as often as you like.
             </p>
-            <StartLab lab={lab} usage={usage} block={block} bootSeconds={bootSeconds} />
+            <StartLab lab={lab} usage={usage} block={block} bootSeconds={bootSeconds} queued={queueEntryFor(user.id, capacity)} />
           </Card>
           <QuotaMeter usage={usage} capacity={capacity} />
           <Card aria-labelledby="covers">

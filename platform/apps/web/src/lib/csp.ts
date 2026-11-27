@@ -1,3 +1,5 @@
+import { DEFAULT_DOCS_HOSTS, docsSources } from "@lfct/labs/docs";
+
 /**
  * The Content-Security-Policy for app pages. Scripts run only with this request's nonce ('strict-dynamic' lets
  * them load Next's chunks), so injected markup cannot run script even if a rendering bug let it through. The lab
@@ -9,6 +11,8 @@ export interface CspOptions {
   dev: boolean;
   terminalUrl?: string;
   docsUrl?: string;
+  /** The allowlisted docs sites (LAB_DOCS_HOSTS), for a LAB_DOCS_URL that lists one URL per site. */
+  docsHosts?: readonly string[];
   /** GitHub sign-in on: a sign-in form that posts without JavaScript is redirected to github.com. */
   github: boolean;
 }
@@ -23,16 +27,10 @@ function originOf(url: string | undefined): string | null {
   }
 }
 
-/** "http://{host}.localhost:4001" -> "http://*.localhost:4001", a CSP source that matches every docs site. */
-export function docsSource(template: string | undefined): string | null {
-  if (!template?.includes("{host}")) return originOf(template);
-  const sample = originOf(template.replace("{host}", "docs-site"));
-  return sample ? sample.replace("docs-site", "*") : null;
-}
 
 export function buildCsp(o: CspOptions): string {
   const terminal = originOf(o.terminalUrl);
-  const docs = docsSource(o.docsUrl);
+  const docs = docsSources(o.docsUrl, o.docsHosts ?? DEFAULT_DOCS_HOSTS);
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": ["'self'", `'nonce-${o.nonce}'`, "'strict-dynamic'", ...(o.dev ? ["'unsafe-eval'"] : [])],
@@ -41,7 +39,7 @@ export function buildCsp(o: CspOptions): string {
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "font-src": ["'self'", "data:"],
     "connect-src": ["'self'", ...(terminal ? [terminal] : []), ...(o.dev ? ["ws:"] : [])],
-    "frame-src": docs ? [docs] : ["'none'"],
+    "frame-src": docs.length > 0 ? docs : ["'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'", ...(o.github ? ["https://github.com"] : [])],

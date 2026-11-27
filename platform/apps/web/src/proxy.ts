@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { parseDocsHosts } from "@lfct/labs/docs";
 import { buildCsp } from "@/lib/csp";
 
 /**
@@ -12,6 +13,7 @@ export function proxy(request: NextRequest) {
     dev: process.env.NODE_ENV === "development",
     terminalUrl: process.env.LAB_TERMINAL_URL ?? "ws://localhost:4001",
     docsUrl: process.env.LAB_DOCS_URL ?? "http://{host}.localhost:4001",
+    docsHosts: parseDocsHosts(process.env.LAB_DOCS_HOSTS),
     github: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
   });
   const requestHeaders = new Headers(request.headers);

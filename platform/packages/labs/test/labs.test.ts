@@ -100,8 +100,7 @@ describe("quota", () => {
       minutesUsed: 0,
       monthlyMinutes: 600,
       activeSessionId: null,
-      activeSessions: 0,
-      maxActiveSessions: 3,
+      slot: { ok: true } as const,
       now,
     };
     expect(startBlock(base)).toBeNull();
@@ -113,10 +112,10 @@ describe("quota", () => {
       reason: "quota",
       minutesLeft: 20,
     });
-    expect(startBlock({ ...base, activeSessions: 3 })).toEqual({
+    expect(startBlock({ ...base, slot: { ok: false, position: null, waiting: 2 } })).toEqual({
       reason: "capacity",
-      active: 3,
-      max: 3,
+      position: null,
+      waiting: 2,
     });
   });
 });
@@ -204,14 +203,14 @@ describe("docs viewer links", () => {
 describe("mock exams", async () => {
   const { domainScores, mockStartBlock, taskScores } = await import("../src/mock.ts");
   const now = new Date("2026-11-25T12:00:00Z");
-  const base = { used: 0, allowed: 2, activeSessionId: null, activeSessions: 0, maxActiveSessions: 3, controllerUp: true, now };
+  const base = { used: 0, allowed: 2, activeSessionId: null, slot: { ok: true } as const, controllerUp: true, now };
 
   it("allows a start inside the monthly attempts and refuses past them", () => {
     expect(mockStartBlock(base)).toBeNull();
     expect(mockStartBlock({ ...base, used: 2 })).toMatchObject({ reason: "quota", used: 2, allowed: 2 });
     expect(mockStartBlock({ ...base, activeSessionId: "s1", used: 9 })).toEqual({ reason: "active-session", sessionId: "s1" });
     expect(mockStartBlock({ ...base, controllerUp: false })).toEqual({ reason: "controller-down" });
-    expect(mockStartBlock({ ...base, activeSessions: 3 })).toMatchObject({ reason: "capacity" });
+    expect(mockStartBlock({ ...base, slot: { ok: false, position: 1, waiting: 1 } })).toMatchObject({ reason: "capacity" });
   });
 
   it("scores tasks with partial credit and groups them by domain, weakest first", () => {
@@ -232,5 +231,34 @@ describe("mock exams", async () => {
       ["troubleshooting", 33],
       ["storage", 50],
     ]);
+  });
+});
+
+describe("capacity and the waiting line", async () => {
+  const { slotFor, turns } = await import("../src/capacity.ts");
+  const limits = { maxSessions: 3, maxClusters: 6 };
+
+  it("starts at once while there is room and nobody waits", () => {
+    expect(slotFor("u1", 1, [], { sessions: 2, clusters: 2 }, limits)).toEqual({ ok: true });
+    expect(slotFor("u1", 3, [], { sessions: 2, clusters: 4 }, limits)).toEqual({ ok: false, position: null, waiting: 0 });
+    expect(slotFor("u1", 1, [], { sessions: 3, clusters: 3 }, limits)).toEqual({ ok: false, position: null, waiting: 0 });
+  });
+
+  it("never lets a newcomer jump the line", () => {
+    const queue = [{ userId: "a", clusters: 3 }];
+    expect(slotFor("u1", 1, queue, { sessions: 1, clusters: 4 }, limits)).toEqual({ ok: false, position: null, waiting: 1 });
+    expect(slotFor("a", 3, queue, { sessions: 1, clusters: 4 }, limits)).toEqual({ ok: false, position: 1, waiting: 1 });
+    expect(slotFor("a", 3, queue, { sessions: 1, clusters: 3 }, limits)).toEqual({ ok: true });
+  });
+
+  it("gives turns strictly in order, as far as the room goes", () => {
+    const queue = [
+      { userId: "a", clusters: 1 },
+      { userId: "b", clusters: 3 },
+      { userId: "c", clusters: 1 },
+    ];
+    expect([...turns(queue, { sessions: 0, clusters: 0 }, limits)]).toEqual(["a", "b", "c"]);
+    expect([...turns(queue, { sessions: 1, clusters: 3 }, limits)]).toEqual(["a"]);
+    expect([...turns(queue, { sessions: 0, clusters: 0 }, { maxSessions: 2, maxClusters: null })]).toEqual(["a", "b"]);
   });
 });

@@ -11,7 +11,8 @@
     "./docs": "./src/docs.ts",
     "./mock": "./src/mock.ts",
     "./player": "./src/player.ts",
-    "./trends": "./src/trends.ts"
+    "./trends": "./src/trends.ts",
+    "./capacity": "./src/capacity.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -66,7 +66,15 @@ export const en = {
     booting: "Starting your cluster. Read the task while you wait.",
     quotaUsed: (month: string, reset: string, minutes: number) =>
       `You've used your ${minutes} lab minutes for ${month}. They reset on ${reset}. Questions and lessons are still open.`,
-    capacity: "Every lab slot is in use right now. Try again in a few minutes; lessons and questions are still open.",
+    capacity: (waiting: number) =>
+      `Every lab slot on this server is in use${waiting > 0 ? ` and ${waiting} ${waiting === 1 ? "learner is" : "learners are"} waiting` : ""}. Join the line and your lab starts by itself when it is your turn.`,
+    joinQueue: "Join the line",
+    queuePosition: (position: number, waiting: number, what: string) =>
+      position === 1 ? `You're next. Your ${what} starts as soon as a slot frees up.` : `You're number ${position} of ${waiting} in line. Your ${what} starts by itself when it's your turn.`,
+    queueTurn: (what: string) => `It's your turn. Starting your ${what}…`,
+    queueKeepOpen: "Keep this page open to hold your place. Lessons and questions in another tab are fine meanwhile.",
+    queueLeft: "You're no longer in line. Press Start or Join the line again.",
+    queueElsewhere: "You're in line for another lab or mock exam. Joining here moves your place in line to this one.",
     controllerDown:
       "The lab controller is not running, so labs cannot start. Locally, start the whole stack with docker compose up.",
     activeSession: "You already have a lab running. Finish it before starting another.",
@@ -93,7 +101,8 @@ export const en = {
     left: (used: number, allowed: number) => `${Math.max(0, allowed - used)} of ${allowed} left this month`,
     quota: (allowed: number, mode: string, reset: string) =>
       `You've used your ${allowed} ${mode} attempts for this cert this month. They reset on ${reset}.`,
-    capacity: "Every environment slot is in use right now. Try again in a few minutes.",
+    capacity: (waiting: number) =>
+      `Every environment slot on this server is in use${waiting > 0 ? ` and ${waiting} ${waiting === 1 ? "learner is" : "learners are"} waiting` : ""}. Join the line and your clusters start by themselves when it is your turn.`,
     controllerDown: "The lab controller is not running, so mock exams cannot start. Locally, start the whole stack with docker compose up.",
     activeSession: "You already have a lab or mock exam running. Finish it before starting another.",
     prepare: "Prepare",

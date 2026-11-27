@@ -25,3 +25,4 @@ in the code. To change a decision, add a new record that supersedes the old one.
 | [0020](0020-admin-analytics-from-existing-tables.md) | Admin analytics are computed from existing tables, with a seeded sample cohort | Accepted |
 | [0021](0021-mock-exams-per-exam-format.md) | Mock exams follow each exam's format: CKAD and CKS layouts, and multiple-choice mocks | Accepted |
 | [0022](0022-community-discussions.md) | Community discussions under lessons, questions, labs and mock tasks, locked during exams | Accepted |
+| [0024](0024-self-hosting-over-tailscale.md) | Self-hosting on a home server over Tailscale, with a waiting line for lab slots | Accepted |

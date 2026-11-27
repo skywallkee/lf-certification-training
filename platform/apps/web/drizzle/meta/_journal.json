@@ -57,6 +57,13 @@
       "when": 1795704684604,
       "tag": "0007_discussions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795771675446,
+      "tag": "0008_lab_queue",
+      "breakpoints": true
     }
   ]
 }

@@ -44,6 +44,10 @@ Emails the app sends (sign-up verification, password reset links and study remin
 at http://localhost:4025. Study reminders are off until a learner turns them on under Account; the web app checks for due
 reminders every 10 minutes (`REMINDERS_INTERVAL_MINUTES`), and "Email me this week's plan" on the Plan page sends one at once. Discussion emails (new posts in discussions a learner follows, accepted answers) are on by default and can be turned off under Account or from the link in each email. Nothing reaches real addresses unless you set `SMTP_URL` in `.env` to a real provider.
 
+Three labs or mock attempts run at once by default (`LAB_MAX_ACTIVE_SESSIONS`; `LAB_MAX_CLUSTERS` also caps
+clusters in all). When the machine is full, learners join a waiting line and their lab starts by itself on their
+turn, as long as they keep the page open.
+
 Lab containers run privileged (k3s needs it), are labelled `lfct.managed=true`, and are deleted when the
 lab ends. A lab can boot up to three clusters (one k3s container each, about 600 MB of memory apiece). The
 lab player's Documentation tab shows kubernetes.io and helm.sh through the controller at
@@ -71,6 +75,14 @@ A restore asks first, saves the current database to `backups/pre-restore-<time>.
 stops the web app and the lab controller, ends running labs, and starts everything again. Backups are
 `pg_dump` custom-format archives, so `pg_restore` can also read them directly. `docker compose down -v` deletes
 the database volume but not `backups/`.
+
+## Host it on your own server
+
+To run it on a home server for yourself and a few invited people, reached over Tailscale with HTTPS and nothing
+opened to the internet, follow [docs/self-hosting.md](docs/self-hosting.md) (CentOS Stream 9, Docker CE). It adds
+`compose.selfhost.yaml` on top of `compose.yaml`: required secrets, no sample learners, real email over SMTP, log
+limits, and a cap of 3 labs and 6 clusters at once on 16 GB of RAM, with a first-come, first-served waiting line
+when the server is full.
 
 ## Develop
 

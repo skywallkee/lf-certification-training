@@ -162,6 +162,7 @@ services:
       LAB_PROVIDER_NAME: ${LAB_PROVIDER_NAME:-local-docker}
       LAB_MONTHLY_MINUTES: ${LAB_MONTHLY_MINUTES:-600}
       LAB_MAX_ACTIVE_SESSIONS: ${LAB_MAX_ACTIVE_SESSIONS:-3}
+      LAB_MAX_CLUSTERS: ${LAB_MAX_CLUSTERS:-}
       MOCK_EXAMS_PER_MONTH: ${MOCK_EXAMS_PER_MONTH:-2}
       MOCK_PRACTICE_PER_MONTH: ${MOCK_PRACTICE_PER_MONTH:-2}
       # Study reminder emails: minutes between checks for due reminders (0 turns them off).

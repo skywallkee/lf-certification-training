@@ -1,5 +1,6 @@
 import { loadConfig, type Config } from "./config.ts";
 import { connect } from "./db.ts";
+import http from "node:http";
 import { createDocsProxy } from "./docs-proxy.ts";
 import { DockerProvider } from "./provider/docker.ts";
 import { FakeProvider } from "./provider/fake.ts";
@@ -23,10 +24,25 @@ export async function start(config = loadConfig()) {
   const recovered = await sessions.recoverAfterRestart();
   if (recovered > 0) console.log(`Marked ${recovered} half-started lab session(s) as failed after a restart.`);
 
-  const docs = createDocsProxy({ hosts: config.docsHosts, allowedOrigins: config.allowedOrigins });
+  const docs = createDocsProxy({ hosts: config.docsHosts, allowedOrigins: config.allowedOrigins, viewerUrl: config.docsUrl });
   const server = createServer({ sessions, relay, secret: config.controllerSecret, providerName: provider.name, docs });
   await new Promise<void>((resolve) => server.listen(config.port, resolve));
   console.log(`Lab controller (${provider.name}) listening on :${config.port}`);
+  // One port per docs site (self-hosting): everything on that port is that site, nothing else is served there.
+  const docsServers: http.Server[] = [];
+  for (const [site, port] of config.docsPorts) {
+    if (!config.docsHosts.includes(site)) throw new Error(`LAB_DOCS_PORTS names ${site}, which is not in LAB_DOCS_HOSTS`);
+    const s = http.createServer((req, res) => {
+      docs.handle(req, res, site).catch((err) => {
+        console.error("[docs] request failed", err);
+        if (!res.headersSent) res.writeHead(500);
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => s.listen(port, resolve));
+    docsServers.push(s);
+    console.log(`Docs viewer for ${site} listening on :${port}`);
+  }
 
   let sweeping = false;
   const timer = setInterval(async () => {
@@ -44,7 +60,7 @@ export async function start(config = loadConfig()) {
 
   return async () => {
     clearInterval(timer);
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await Promise.all([server, ...docsServers].map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
     await pool.end();
   };
 }

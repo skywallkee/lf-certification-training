@@ -310,6 +310,27 @@ export const labSession = pgTable(
   ],
 );
 
+/**
+ * The waiting line for lab and mock slots when the machine is full (one entry per learner, first come first
+ * served). The waiting page checks in every few seconds (seenAt); an entry it stops refreshing drops out, so a
+ * learner who closed the tab never holds up the line.
+ */
+export const labQueue = pgTable(
+  "lab_queue",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    labId: text("lab_id").notNull(),
+    mode: text("mode").$type<"lab" | "exam" | "practice">().notNull().default("lab"),
+    /** Clusters the lab or mock boots, so the line knows how much room the first in line needs. */
+    clusters: integer("clusters").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lab_queue_order_idx").on(t.createdAt)],
+);
+
 export const labCheckKind = pgEnum("lab_check_kind", ["check", "final"]);
 
 /** One grading run: "Check my work" during the lab, or the final grading when it ends. */

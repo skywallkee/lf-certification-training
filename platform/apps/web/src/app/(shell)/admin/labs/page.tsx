@@ -5,6 +5,7 @@ import { ACTIVE_STATUSES, minutesUsed, monthStart } from "@lfct/labs";
 import { killLabAction } from "@/app/actions/labs";
 import { PageHeader } from "@/components/page-header";
 import { SessionStatus, dateTime } from "@/components/labs/session-status";
+import { capacitySummary } from "@/components/labs/quota-meter";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getDb } from "@/db";
@@ -49,7 +50,7 @@ export default async function AdminLabsPage() {
         <Card aria-labelledby="live">
           <CardTitle id="live">Live sessions</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
-            {capacity.controllerUp ? `Lab controller online (${capacity.provider}).` : "Lab controller offline."} {capacity.active} of {capacity.max} slots in use.
+            {capacity.controllerUp ? `Lab controller online (${capacity.provider}).` : "Lab controller offline."} {capacitySummary(capacity)}.
           </p>
           {live.length === 0 ? (
             <p className="mt-3 text-[15px] text-muted-foreground">No labs are running.</p>
