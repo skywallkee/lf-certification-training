@@ -79,7 +79,7 @@ the database volume but not `backups/`.
 ## Host it on your own server
 
 To run it on a home server for yourself and a few invited people, reached over Tailscale with HTTPS and nothing
-opened to the internet, follow [docs/self-hosting.md](docs/self-hosting.md) (CentOS Stream 9, Docker CE). It adds
+opened to the internet, follow [docs/self-hosting.md](docs/self-hosting.md) (CentOS Stream 9 with Docker CE, or a Windows PC with Docker Desktop). It adds
 `compose.selfhost.yaml` on top of `compose.yaml`: required secrets, no sample learners, real email over SMTP, log
 limits, and a cap of 3 labs and 6 clusters at once on 16 GB of RAM, with a first-come, first-served waiting line
 when the server is full.

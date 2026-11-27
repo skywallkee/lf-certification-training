@@ -5,6 +5,9 @@
 #
 #   scripts/selfhost-init.sh you@example.com                        Tailscale name from `tailscale status`
 #   scripts/selfhost-init.sh you@example.com server.tail1234.ts.net name given by hand
+#   LAB_MAX_ACTIVE_SESSIONS=4 LAB_MAX_CLUSTERS=8 scripts/selfhost-init.sh ...   other lab limits (default 3 and 6)
+#
+# Works in Git Bash on Windows too.
 #
 # It never overwrites an existing .env: move it away first if you mean to start over (the database keeps the
 # POSTGRES_PASSWORD it was created with, so keep that value when you do).
@@ -25,7 +28,10 @@ esac
 
 host="${2:-}"
 if [ -z "$host" ] && command -v tailscale > /dev/null 2>&1; then
-  host=$(tailscale status --json 2> /dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2> /dev/null || true)
+  py=$(command -v python3 || command -v python || true)
+  if [ -n "$py" ]; then
+    host=$(tailscale status --json 2> /dev/null | "$py" -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2> /dev/null || true)
+  fi
 fi
 case "$host" in
   *.ts.net) ;;
@@ -58,9 +64,9 @@ POSTGRES_PASSWORD=$(secret)
 # SMTP_URL=smtps://you%40gmail.com:app-password@smtp.gmail.com:465
 # MAIL_FROM=LF Cert Trainer <you@gmail.com>
 
-# Labs at once on this server (16 GB of RAM): sessions, and clusters in all (a 3-cluster mock counts 3).
-LAB_MAX_ACTIVE_SESSIONS=3
-LAB_MAX_CLUSTERS=6
+# Labs at once on this machine: sessions, and clusters in all (a 3-cluster mock counts 3). 3 and 6 suit 16 GB.
+LAB_MAX_ACTIVE_SESSIONS=${LAB_MAX_ACTIVE_SESSIONS:-3}
+LAB_MAX_CLUSTERS=${LAB_MAX_CLUSTERS:-6}
 # LAB_MONTHLY_MINUTES=600
 # LAB_CLUSTER_MEMORY_MB=1536
 

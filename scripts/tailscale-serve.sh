@@ -13,7 +13,8 @@ set -eu
 
 command -v tailscale > /dev/null 2>&1 || { echo "Tailscale is not installed (see docs/self-hosting.md)." >&2; exit 1; }
 ts="tailscale"
-[ "$(id -u)" = "0" ] || ts="sudo tailscale"
+# Linux needs root for serve settings; on Windows (Git Bash) run it from a terminal opened as administrator.
+if [ "$(id -u)" != "0" ] && command -v sudo > /dev/null 2>&1; then ts="sudo tailscale"; fi
 
 web="${WEB_PORT:-4000}"
 controller="${LAB_CONTROLLER_PORT:-4001}"

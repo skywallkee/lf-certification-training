@@ -5,7 +5,8 @@ over [Tailscale](https://tailscale.com). Nothing is opened on your router and no
 `https://<server>.<your-tailnet>.ts.net`, with a real HTTPS certificate, for devices in your tailnet only.
 
 It is written for **CentOS Stream 9** (Rocky Linux and AlmaLinux 9 work the same way) on a machine with about
-**8 cores and 16 GB of RAM**, which runs three labs at once. Why it is built this way: [ADR 0024](adr/0024-self-hosting-over-tailscale.md).
+**8 cores and 16 GB of RAM**, which runs three labs at once. To run it on a **Windows PC** as well, see
+[Run it on a Windows PC](#run-it-on-a-windows-pc) at the end. Why it is built this way: [ADR 0024](adr/0024-self-hosting-over-tailscale.md).
 
 | What | Where |
 |------|-------|
@@ -194,3 +195,62 @@ Migrations and content load run automatically in the `setup` step. Running labs 
 | No emails arrive | `docker compose logs web` shows SMTP errors; check `SMTP_URL`, and the Mailpit inbox |
 
 Logs: `docker compose logs -f web lab-controller` (each container keeps at most 50 MB of logs).
+
+## Run it on a Windows PC
+
+The same app runs on a Windows PC with Docker Desktop, either just for you on that PC or, like the server, for your
+tailnet. The two installs are independent: each has its own database and accounts.
+
+**Prepare Windows once.**
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) with the WSL 2 backend (the default)
+   and [Git for Windows](https://git-scm.com/download/win), which brings Git Bash for the scripts.
+2. Give Docker's VM enough memory and the inotify limits k3s needs. Create or edit `%UserProfile%\.wslconfig`:
+
+   ```ini
+   [wsl2]
+   memory=20GB
+   kernelCommandLine = sysctl.fs.inotify.max_user_instances=1024 sysctl.fs.inotify.max_user_watches=524288
+   ```
+
+   Then run `wsl --shutdown` in PowerShell and start Docker Desktop again. WSL 2 otherwise takes half of the RAM
+   at most; 20 GB of 32 leaves Windows comfortable.
+3. Clone the repository in Git Bash (`git clone https://github.com/skywallkee/lf-certification-training.git`). The
+   repository's `.gitattributes` keeps the scripts' line endings right.
+
+**Just you, on this PC.** Copy `.env.example` to `.env`, set the lab limits for the PC, and start it:
+
+```sh
+cp .env.example .env
+echo "LAB_MAX_ACTIVE_SESSIONS=4" >> .env    # 32 GB PC with memory=20GB for WSL: 4 labs, 8 clusters
+echo "LAB_MAX_CLUSTERS=8" >> .env
+docker compose up -d --build
+```
+
+Open http://localhost:4000. This is the laptop setup from the [README](../README.md): sample learners, the
+Mailpit inbox at http://localhost:4025 for emails, and the docs pane at `*.localhost`. It is only reachable from this PC.
+Use `SEED=never` in `.env` before the first start if you want it to begin empty.
+
+**Your tailnet, like the server.** Install [Tailscale for Windows](https://tailscale.com/download/windows), sign
+in, and turn on MagicDNS and HTTPS Certificates (step 2 above). Then, in Git Bash in the repository folder:
+
+```sh
+LAB_MAX_ACTIVE_SESSIONS=4 LAB_MAX_CLUSTERS=8 scripts/selfhost-init.sh you@example.com your-pc.tailXXXX.ts.net
+docker compose up -d --build
+scripts/tailscale-serve.sh     # from Git Bash opened with "Run as administrator"
+```
+
+Pass the PC's Tailscale name (shown in the Tailscale app or the admin console) if the script cannot read it. If
+the PC already has a laptop-style `.env`, move it away first, and run `docker compose down` (add `-v` only if you
+are fine losing that database), since the self-hosting setup creates the database with a new password. Everything
+else in this guide (email, inviting people, backups, updates) works the same; in `.env`, `BACKUP_COPY_DIR` takes a
+Windows path such as `D:/lfct-backups`.
+
+| Windows RAM | `memory=` in `.wslconfig` | `LAB_MAX_ACTIVE_SESSIONS` | `LAB_MAX_CLUSTERS` |
+|-----|-----|-----|-----|
+| 16 GB | 10GB | 2 | 4 |
+| 32 GB | 20GB | 4 | 8 |
+| 64 GB | 40GB | 8 | 18 |
+
+The PC serves the app only while it is on and Docker Desktop is running. Turn on "Start Docker Desktop when you
+sign in" in Docker Desktop's settings if it should come back after a restart.
