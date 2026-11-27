@@ -31,7 +31,7 @@ diagrams:
     edges:
       - { from: admin, to: architecture, label: "kubectl" }
       - { from: architecture, to: workloads, label: "schedules" }
-      - { from: networking, to: workloads, label: "routes to" }
+      - { from: networking, to: workloads, label: "route" }
       - { from: workloads, to: storage, label: "mounts" }
     groups:
       - { id: troubleshooting, label: "Troubleshooting 30%: all of it", nodes: [architecture, workloads, storage, networking] }
@@ -44,8 +44,8 @@ diagrams:
       - { id: controllers, label: "Controllers", sub: "compare, then act", icon: process, col: 2, row: 0 }
       - { id: nodes, label: "Nodes", sub: "kubelet runs Pods", icon: node, col: 1, row: 1, tone: success }
     edges:
-      - { from: you, to: api, label: "what I want" }
-      - { from: api, to: controllers, label: "watch, update", both: true }
+      - { from: you, to: api, label: "wants" }
+      - { from: api, to: controllers, label: "watch", both: true }
       - { from: api, to: nodes, label: "Pods out, status back", both: true }
   study-loop:
     title: "One study session, from reading to doing"
@@ -393,7 +393,7 @@ troubleshooting starts.
 ## Tricks
 
 <Trick title="Study in a loop, not in a line">
-<Flow label="One topic" steps={["Read the lesson", "Watch the video", "Answer the questions", "Do the lab", "Review what you missed"]} />
+<Diagram id="study-loop" />
 
 Reading a lesson once feels like progress and fades in days. For each topic, read, then answer the practice
 questions without looking back, then do the work on a cluster. Come back to the questions you missed a few days
