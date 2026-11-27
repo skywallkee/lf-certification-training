@@ -135,6 +135,20 @@ test("a learner books an exam and then marks it passed", async ({ page }) => {
   await expect(page.getByText("Passed").first()).toBeVisible();
 });
 
+test("a passed or expiring cert can be the focus, for renewal or a refresh", async ({ page }) => {
+  await signIn(page, "mid@example.com");
+  await page.goto("/certs");
+  // KCNA is expiring soon for the mid learner.
+  await page.getByRole("button", { name: "Set as focus cert: KCNA", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Focus: KCNA" })).toBeVisible();
+  await page.goto("/plan");
+  await expect(page.getByRole("region", { name: "KCNA Kubernetes and Cloud Native Associate" })).toBeVisible();
+  // Put the mid learner back on CKA for the tests that follow.
+  await page.goto("/certs");
+  await page.getByRole("button", { name: "Set as focus cert: CKA", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Focus: CKA" })).toBeVisible();
+});
+
 test("signed-in pages pass the accessibility checks in light and dark", async ({ page }) => {
   await signIn(page, "mid@example.com");
   for (const theme of ["light", "dark"] as const) {

@@ -49,8 +49,8 @@ export async function getPlans(
 ): Promise<CertPlan[]> {
   const [dates, labs, mocks] = await Promise.all([getExamDates(userId), listLabs(), listMocks()]);
   const codes = new Set([...dates.keys()]);
-  const reported = await getReported(userId);
-  if (opts.focusCert && reported.get(opts.focusCert)?.state !== "passed") codes.add(opts.focusCert);
+  // A passed focus cert is being refreshed or renewed: it gets a plan too (with a prompt to set the renewal exam date).
+  if (opts.focusCert) codes.add(opts.focusCert);
   const plans = await Promise.all(
     [...codes].flatMap((code) => {
       const cert = catalog.certs.get(code);
