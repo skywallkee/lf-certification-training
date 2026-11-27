@@ -1,0 +1,445 @@
+---
+id: cka-course-introduction
+title: "Course introduction: how to study for the CKA"
+summary: "What the CKA asks of you, how this course is laid out, the one idea behind all of Kubernetes, and how to set up a practice cluster and take a first look at it."
+minutes: 14
+competencies:
+  - cka/troubleshooting/troubleshoot-clusters-nodes
+docs:
+  - title: "Linux Foundation: Certified Kubernetes Administrator (CKA)"
+    url: https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/
+  - title: "CNCF curriculum: the public list of exam topics"
+    url: https://github.com/cncf/curriculum
+  - title: "Kubernetes docs: Controllers"
+    url: https://kubernetes.io/docs/concepts/architecture/controller/
+  - title: "Kubernetes docs: kubectl quick reference"
+    url: https://kubernetes.io/docs/reference/kubectl/quick-reference/
+  - title: "Kubernetes docs: Install tools"
+    url: https://kubernetes.io/docs/tasks/tools/
+  - title: "kind: Quick start"
+    url: https://kind.sigs.k8s.io/docs/user/quick-start/
+diagrams:
+  course-map:
+    title: "The five exam domains, placed on a cluster"
+    caption: "Four domains each cover one part of a cluster. The fifth, troubleshooting, covers all of them at once, and it is the largest."
+    nodes:
+      - { id: admin, label: "You, the admin", sub: "kubectl", icon: user, col: 0, row: 1 }
+      - { id: architecture, label: "Control plane", sub: "Architecture 25%", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: workloads, label: "Pods", sub: "Workloads 15%", icon: pod, col: 1, row: 1, tone: success }
+      - { id: storage, label: "Volumes", sub: "Storage 10%", icon: volume, col: 1, row: 2 }
+      - { id: networking, label: "Services", sub: "Networking 20%", icon: service, col: 2, row: 1 }
+    edges:
+      - { from: admin, to: architecture, label: "kubectl" }
+      - { from: architecture, to: workloads, label: "schedules" }
+      - { from: networking, to: workloads, label: "route" }
+      - { from: workloads, to: storage, label: "mounts" }
+    groups:
+      - { id: troubleshooting, label: "Troubleshooting 30%: all of it", nodes: [architecture, workloads, storage, networking] }
+  control-loop:
+    title: "Desired state: the idea behind every lesson"
+    caption: "You never start a container yourself. You tell the API server what should exist, and controllers and the kubelet on each node keep working until the cluster matches."
+    nodes:
+      - { id: you, label: "You", sub: "kubectl apply", icon: user, col: 0, row: 0 }
+      - { id: api, label: "API server", sub: "stores desired state", icon: control-plane, col: 1, row: 0, tone: primary }
+      - { id: controllers, label: "Controllers", sub: "compare, then act", icon: process, col: 2, row: 0 }
+      - { id: nodes, label: "Nodes", sub: "kubelet runs Pods", icon: node, col: 1, row: 1, tone: success }
+    edges:
+      - { from: you, to: api, label: "wants" }
+      - { from: api, to: controllers, label: "watch", both: true }
+      - { from: api, to: nodes, label: "Pods out, status back", both: true }
+  study-loop:
+    title: "One study session, from reading to doing"
+    caption: "Reading and watching only prepare you. The marks in the exam come from the bottom row: doing the work on a real cluster, against the clock."
+    nodes:
+      - { id: lesson, label: "Read the lesson", sub: "what, how and why", icon: file, col: 0, row: 0 }
+      - { id: video, label: "Watch the video", sub: "the same, narrated", icon: process, col: 1, row: 0 }
+      - { id: questions, label: "Answer questions", sub: "check you got it", icon: config, col: 2, row: 0 }
+      - { id: lab, label: "Do a lab", sub: "real cluster, graded", icon: cluster, col: 2, row: 1, tone: primary }
+      - { id: mock, label: "Sit a mock exam", sub: "2 hours, timed", icon: policy, col: 1, row: 1, tone: warning }
+      - { id: review, label: "Review misses", sub: "then go round again", icon: generic, col: 0, row: 1 }
+    edges:
+      - { from: lesson, to: video }
+      - { from: video, to: questions }
+      - { from: questions, to: lab }
+      - { from: lab, to: mock }
+      - { from: mock, to: review }
+      - { from: review, to: lesson, label: "weak spots", dashed: true }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Welcome"
+      narration: >-
+        Welcome to the course for the Certified Kubernetes Administrator exam. This first lesson has no Kubernetes
+        theory to memorise. Instead, it shows you what the exam asks of you, how the course is laid out, and how to
+        get a cluster you can practise on today.
+      visual:
+        kind: title
+        heading: "Course introduction"
+        subheading: "How to study for the CKA"
+    - id: why
+      title: "A practical exam"
+      narration: >-
+        The CKA has no multiple choice questions. You get a terminal, real clusters, and two hours to finish a set
+        of tasks. Only the result on the cluster counts, not the way you got there. So knowing an answer is not
+        enough: you have to be able to do it, quickly. That is why this course keeps sending you to the keyboard.
+      visual:
+        kind: points
+        heading: "What the exam is like"
+        items:
+          - "No multiple choice: every task is hands-on"
+          - "A terminal, real clusters and two hours"
+          - "Graded on the result, not on your method"
+          - "Speed matters as much as knowledge"
+    - id: course-map
+      title: "What the course covers"
+      narration: >-
+        Picture yourself as the administrator, talking to a cluster with kubectl. The control plane is the brain of
+        the cluster, and installing and configuring it is a quarter of the exam. The control plane schedules your
+        workloads onto nodes, which is fifteen percent. Services and the network that reaches those workloads are
+        twenty percent. Storage is the smallest part, at ten percent. And troubleshooting is the largest, at thirty
+        percent, because it can touch every one of the others.
+      visual:
+        kind: diagram
+        diagram: course-map
+        steps:
+          - [admin]
+          - [architecture, admin-architecture]
+          - [workloads, architecture-workloads]
+          - [networking, networking-workloads]
+          - [storage, workloads-storage]
+          - [troubleshooting]
+    - id: control-loop
+      title: "The one idea behind it all"
+      narration: >-
+        Almost everything in Kubernetes works the same way. You tell the API server what you want, for example
+        three copies of a web server. The API server stores that as the desired state. Controllers watch it, compare
+        it with what is really running, and act on the difference. The kubelet on each node starts the Pods and
+        reports back what happened. This loop never stops, which is why a deleted Pod comes back on its own.
+      visual:
+        kind: diagram
+        diagram: control-loop
+        steps:
+          - [you]
+          - [api, you-api]
+          - [api]
+          - [controllers, api-controllers]
+          - [nodes, api-nodes]
+    - id: study-loop
+      title: "How to study each topic"
+      narration: >-
+        Every topic follows the same loop. Read the lesson first. Then watch the video, which tells the same story
+        with moving pictures. Answer the practice questions to check that it stuck. Then open a lab and do the work
+        on a real cluster. When a whole domain feels solid, sit a timed mock exam. Finally, review what you missed
+        and go round again.
+      visual:
+        kind: diagram
+        diagram: study-loop
+        steps:
+          - [lesson]
+          - [lesson]
+          - [video, lesson-video]
+          - [questions, video-questions]
+          - [lab, questions-lab]
+          - [mock, lab-mock]
+          - [review, mock-review, review-lesson]
+    - id: practice-cluster
+      title: "Get a practice cluster"
+      narration: >-
+        You need a cluster that you are allowed to break. The labs in this app start one for you in the browser,
+        with nothing to install. On your own machine, kind runs a cluster with several nodes inside Docker
+        containers. Later in the course, you will build a cluster with kubeadm on virtual machines, because the exam
+        expects that too. Avoid managed cloud clusters for now, because they hide the control plane from you.
+      visual:
+        kind: points
+        heading: "Where to practise"
+        items:
+          - "A cluster you are allowed to break"
+          - "Labs in this app: nothing to install"
+          - "kind: several nodes on your own machine"
+          - "kubeadm on virtual machines, later on"
+          - "Not managed clusters: the control plane is hidden"
+    - id: kind-config
+      title: "A three-node cluster with kind"
+      narration: >-
+        This short file describes a practice cluster for kind. It asks for one control plane node. And it asks for
+        two worker nodes, so that scheduling and draining have somewhere to move Pods to.
+      visual:
+        kind: code
+        heading: "cka.yaml"
+        lang: yaml
+        code: |
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+            - role: worker
+            - role: worker
+        steps: ["1-2", "4", "5-6"]
+    - id: first-look
+      title: "A first look at any cluster"
+      narration: >-
+        Run the same four commands every time you meet a new cluster. First, list the nodes and check that each one
+        is ready. Second, list the Pods in the kube-system namespace, where the cluster's own components run. Third,
+        ask the API server for its own health checks. And fourth, list every kind of object this cluster knows
+        about.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get nodes"
+            out: "NAME                STATUS   ROLES           AGE   VERSION\ncka-control-plane   Ready    control-plane   2m    v1.37.0\ncka-worker          Ready    <none>          90s   v1.37.0\ncka-worker2         Ready    <none>          90s   v1.37.0"
+          - cmd: "kubectl get pods -n kube-system"
+            out: "NAME                                        READY   STATUS    RESTARTS   AGE\ncoredns-5d78c9869d-4xkqp                    1/1     Running   0          2m\netcd-cka-control-plane                      1/1     Running   0          2m\nkube-apiserver-cka-control-plane            1/1     Running   0          2m\nkube-controller-manager-cka-control-plane   1/1     Running   0          2m\nkube-proxy-7c2lw                            1/1     Running   0          2m\nkube-scheduler-cka-control-plane            1/1     Running   0          2m"
+          - cmd: "kubectl get --raw='/readyz?verbose' | tail -n 2"
+            out: "[+]shutdown ok\nreadyz check passed"
+          - cmd: "kubectl api-resources | head -n 4"
+            out: "NAME         SHORTNAMES   APIVERSION   NAMESPACED   KIND\nbindings                  v1           true         Binding\nconfigmaps   cm           v1           true         ConfigMap\nendpoints    ep           v1           true         Endpoints"
+    - id: tricks
+      title: "Habits that pay off"
+      narration: >-
+        Type every command yourself, because your fingers learn what your eyes skip. Use the short alias k and tab
+        completion from the first day. Let kubectl explain and the help flag answer your questions before you reach
+        for a browser. And break things on purpose, then fix them, because that is what troubleshooting tasks are.
+      visual:
+        kind: points
+        heading: "Start these on day one"
+        items:
+          - "Type it yourself: no copy and paste"
+          - "alias k=kubectl, plus tab completion"
+          - "kubectl explain and --help before the browser"
+          - "Break it on purpose, then fix it"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        The CKA is a hands-on exam, graded on what the cluster looks like when you finish. It has five domains, and
+        troubleshooting is the largest. Under all of them sits one idea: you declare a desired state, and control
+        loops make it real. Study in a loop of reading, questions, labs and mock exams. Now set up your shell and
+        take your first look at a cluster.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Hands-on exam, graded on the end state"
+          - "Five domains; troubleshooting is 30%"
+          - "Desired state plus control loops"
+          - "Read, answer, do a lab, sit a mock, review"
+          - "Next: set up your shell and look around"
+---
+
+## Why this course exists
+
+A Kubernetes administrator is the person who keeps the cluster itself working: installing it, upgrading it, giving
+people the access they need, and finding out why something stopped at three in the morning. The **Certified
+Kubernetes Administrator (CKA)** exam tests exactly that job, and it tests it the honest way. There are no
+multiple-choice questions. You get a terminal, a handful of real clusters and two hours, and you are asked to do
+things: fix this node, expose that Deployment, restore this backup.
+
+That changes how you have to study. Recognising the right answer is not enough, and neither is understanding it. You
+have to be able to **produce** it, on a live cluster, with the clock running. So this course does two things for every
+topic: it explains how the thing works underneath, so you can reason when a task looks unfamiliar, and it sends you
+to a cluster to practise until the commands come without thinking.
+
+<KeyIdea>
+The CKA is graded on what the cluster looks like when you finish, not on what you know. Study by doing: every topic
+ends at the keyboard, on a cluster you are allowed to break.
+</KeyIdea>
+
+This lesson has no Kubernetes theory to memorise. It gives you the map of the course, the one idea that every later
+lesson builds on, and a working practice cluster. The next lesson, **About the CKA certification**, covers the exam
+itself: registration, rules, the exam environment and what you may look up.
+
+## What the course is made of
+
+<Diagram id="course-map" />
+
+The exam's public curriculum has five domains, each with a weight. The course follows them, but not in the order of
+the list: it starts with the concepts everything else needs, and it comes back to troubleshooting again and again,
+because troubleshooting is simply every other domain with something broken in it.
+
+| Domain | Weight | What you will be able to do |
+|--------|--------|-----------------------------|
+| Troubleshooting | 30% | Find out why a node, a control plane component, an application or a Service is not working, and fix it |
+| Cluster architecture, installation and configuration | 25% | Build and upgrade a cluster with kubeadm, manage access with RBAC, install components with Helm and Kustomize |
+| Servicing and networking | 20% | Connect Pods, expose them with Services, Ingress and the Gateway API, restrict traffic with NetworkPolicies, use CoreDNS |
+| Workloads and scheduling | 15% | Run and update applications, configure them, scale them, and control where Pods land |
+| Storage | 10% | Give Pods storage that outlives them, with volumes, claims and storage classes |
+
+The weights tell you where the marks are, so they tell you where to spend your time. More than half of the exam is
+troubleshooting plus cluster architecture: the two domains about the cluster itself rather than the applications
+on it. That is the difference between this exam and the developer exam (CKAD).
+
+The first part of the course is **core concepts**: the parts of a cluster and what each one does (the API server,
+etcd, the scheduler, the controller manager, the kubelet and kube-proxy), and the objects you will handle in almost
+every task (Pods, ReplicaSets, Deployments, Services and Namespaces). It ends with the ways of working with kubectl
+that make you fast. Nothing later makes sense without it, so do not skip ahead.
+
+## How it works: one idea under everything
+
+<Diagram id="control-loop" />
+
+Kubernetes has hundreds of object types, and it would be hopeless to learn each one from scratch. You do not have
+to, because they nearly all work in the same way:
+
+1. **You declare what you want.** You send the API server an object that describes the result: "three copies of
+   this web server", not "start a container on node 2". That description is the **desired state**, and it lives in
+   the object's `spec`.
+2. **The API server stores it.** It checks the object and writes it to etcd, the cluster's database. At this point
+   nothing is running yet.
+3. **Controllers close the gap.** A controller is a loop that never ends: it watches objects through the API server,
+   compares the desired state with the **current state**, and acts on the difference. Three copies wanted and one
+   running? Create two more.
+4. **Nodes do the work and report back.** The kubelet on each node starts the containers for the Pods assigned to it
+   and writes what really happened into the object's `status`.
+
+The Kubernetes documentation compares this to a thermostat: you set a temperature, and the thermostat switches the
+heating on and off for as long as it takes, and keeps doing so when someone opens a window. You do not operate the
+heater; you change the setting.
+
+This one idea explains most of what will surprise you in the first weeks. A Pod you delete comes back, because a
+controller still wants it to exist. A change you make by hand on a node is undone, because the stored desired state
+did not change. And when something does not work, the question is always the same: **which loop is not closing the
+gap, and what is stopping it?** That question is the whole troubleshooting domain.
+
+<DeepDive title="Why this makes the exam fair, and what it means for your method">
+- Because the cluster only cares about the end state, there are usually several correct ways to solve a task: an
+  imperative `kubectl create` command, a manifest you wrote, or an edit to a live object. The labs and mock exams in
+  this app are graded the same way: a grader looks at the cluster after you finish, never at your shell history.
+- It also means partial work can count for nothing. A Deployment that exists but has the wrong image is not "almost
+  right" to a check that looks at the image. Always verify the result with a `kubectl get` or `kubectl describe`
+  before you move on.
+- `spec` is yours to write and `status` is the cluster's to write. When the two disagree, the events at the bottom
+  of `kubectl describe` usually say why. You will use that in nearly every lesson.
+- Controllers do not talk to each other directly. Each one only reads and writes objects through the API server.
+  That is why the API server is the first thing to check when "nothing happens" on a cluster.
+</DeepDive>
+
+## Where to practise
+
+You need a cluster that you are allowed to break. These are the options, in the order you will meet them:
+
+| Practice cluster | Good for | Limits |
+|------------------|----------|--------|
+| **Labs in this app** | Guided tasks with automatic grading, and the timed mock exams. Nothing to install: the cluster starts in your browser | Lab time is limited per month, and a lab's cluster is deleted when the lab ends |
+| **kind** on your own machine | Daily practice. Several nodes, each one a Docker container; a new cluster in about a minute | The "nodes" are containers, so tasks about the node's operating system are not realistic |
+| **minikube** | A quick single-node cluster with add-ons | One node by default, so little to schedule or drain |
+| **kubeadm on virtual machines** | What the exam itself uses: installing, upgrading, backing up etcd, repairing a kubelet | Needs two or three virtual machines and more of your time. The course builds this with you later |
+
+<Callout kind="warning" title="A managed cluster is not enough">
+Managed clusters from a cloud provider (EKS, AKS, GKE) are fine for practising workloads, but the provider runs the
+control plane and hides it from you. You cannot read the API server's manifest, back up etcd or break the scheduler
+there, and those are exactly the things an administrator is examined on.
+</Callout>
+
+## Using it
+
+<Example title="Set up your shell once">
+Two lines save more time than any other trick in this course. Add them to `~/.bashrc` on every machine you practise
+on, then open a new shell:
+
+```bash
+source <(kubectl completion bash)          # tab completion for commands, flags and object names
+alias k=kubectl                            # one letter instead of seven
+complete -o default -F __start_kubectl k   # make completion work for the alias too
+```
+
+Now `k get po<TAB>` completes to `pods`, and `k -n kube-system logs kube-api<TAB>` completes the Pod's name. On
+zsh, use `source <(kubectl completion zsh)` instead of the first line; the alias then completes without the third
+one.
+</Example>
+
+<Example title="Create a three-node practice cluster with kind">
+With Docker and `kind` installed, describe the cluster in a file and create it. Two workers give the scheduler a
+choice and give you a node to drain.
+
+```yaml
+# cka.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+```
+
+```bash
+kind create cluster --name cka --config cka.yaml
+kubectl config current-context    # kind-cka
+kind delete cluster --name cka    # when you want a clean start
+```
+
+Deleting and recreating the cluster is the fastest way out of a mess, so never be afraid of making one.
+</Example>
+
+<Example title="Take a first look at a cluster you have never seen">
+Every exam task starts on a cluster somebody else set up. Run the same few commands each time and you will know in
+half a minute whether it is healthy and what is on it:
+
+```bash
+kubectl config current-context            # which cluster am I talking to?
+kubectl get nodes -o wide                 # is every node Ready? which version, which IPs?
+kubectl get pods -n kube-system           # are the cluster's own components Running?
+kubectl get --raw='/readyz?verbose'       # the API server's own health checks
+kubectl get pods -A                       # everything that runs, in all namespaces
+```
+
+On the kind cluster from the previous example, the second command lists three nodes, one with the role
+`control-plane`. The third shows the components you will study one by one in the coming lessons:
+`etcd`, `kube-apiserver`, `kube-controller-manager` and `kube-scheduler` on the control plane node, a `kube-proxy`
+Pod for every node, and CoreDNS. A node that is `NotReady`, or a Pod here that is not `Running`, is where
+troubleshooting starts.
+</Example>
+
+## Tricks
+
+<Trick title="Study in a loop, not in a line">
+<Diagram id="study-loop" />
+
+Reading a lesson once feels like progress and fades in days. For each topic, read, then answer the practice
+questions without looking back, then do the work on a cluster. Come back to the questions you missed a few days
+later. When a whole domain feels solid, sit a mock exam under the timer: it is the only way to find out how fast you
+really are.
+</Trick>
+
+<Trick title="Type every command yourself">
+Do not copy and paste from the lessons. Typing is how you find out that you did not know where the namespace flag
+goes or what the resource is called. The exam gives you about seven minutes for an average task, and the candidates
+who run out of time are almost never short of knowledge. They are short of practice.
+</Trick>
+
+<Trick title="Let the cluster be your documentation">
+Before you open a browser, ask kubectl. `kubectl explain pod.spec.containers` describes every field of an object,
+straight from the cluster's own API. `kubectl create deployment --help` ends with examples you can adapt.
+`kubectl api-resources` lists every object type with its short name (`po`, `deploy`, `svc`, `ns`) and says whether
+it lives in a namespace. These work offline, are always right for the cluster's version, and are faster than
+searching.
+</Trick>
+
+<Trick title="Break it on purpose">
+After each lab, damage something and repair it: stop a kubelet, misspell an image, delete a Service's labels. Since
+troubleshooting is 30% of the exam and the largest domain, the symptoms you have already seen once are the cheapest
+marks you will ever get.
+</Trick>
+
+## Common mistakes
+
+- **Only reading and watching.** Lessons and videos feel productive, but the exam has nothing to read. If a study
+  session did not include a terminal, it was preparation for studying, not studying.
+- **Skipping the core concepts.** Jumping straight to "exam topics" such as etcd backups or upgrades without knowing
+  what each component does turns every task into steps to memorise. With the concepts, most tasks can be worked out.
+- **Practising only on a managed cluster.** You never see the control plane there, and a quarter of the exam is about
+  it.
+- **Not checking your work.** A command that printed `created` proves that the object exists, not that it is right.
+  Look at the result every time.
+- **Working on the wrong cluster or namespace.** The exam moves you between clusters. Make
+  `kubectl config current-context` a reflex before every task, starting now.
+- **Memorising YAML.** You are not expected to know manifests by heart. You are expected to generate, find and adapt
+  them quickly, and the course shows you how.
+
+## Recap
+
+- The CKA is a two-hour, hands-on exam, graded on the state of the cluster when you finish.
+- Five domains: troubleshooting (30%), cluster architecture (25%), networking (20%), workloads (15%), storage (10%).
+- One idea runs through all of them: you declare a **desired state**, and control loops work to make it real.
+- For every topic: read, answer the questions, do the lab, review. Sit mock exams once a domain feels solid.
+- Today: set up the `k` alias and completion, create a practice cluster, and take a first look around it.

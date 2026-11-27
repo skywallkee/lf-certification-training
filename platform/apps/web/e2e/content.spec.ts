@@ -61,7 +61,7 @@ test("the admin creates a question as a draft, fixes its problems and publishes 
 
 test("the admin edits an ingested lesson in the source view, previews it and reverts it", async ({ page }) => {
   await signIn(page, "admin@example.com");
-  const [lesson] = await query<{ id: string; title: string }>("SELECT id, title FROM lesson WHERE origin = 'file' AND body LIKE '%<Callout%' ORDER BY id LIMIT 1");
+  const [lesson] = await query<{ id: string; title: string }>("SELECT id, title FROM lesson WHERE origin = 'file' AND mock AND body LIKE '%<Callout%' ORDER BY id LIMIT 1");
   await page.goto(`/admin/content/lesson/${lesson!.id}`);
   await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveValue(lesson!.title);
 
