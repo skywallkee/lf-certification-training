@@ -77,6 +77,14 @@ export const env = {
       return Number(process.env.LAB_MAX_ACTIVE_SESSIONS ?? 3);
     },
     /**
+     * Concurrent clusters across all sessions (a three-cluster mock takes three); unset or 0 for no limit beyond
+     * LAB_MAX_ACTIVE_SESSIONS. Each k3s cluster needs about 600 MB of memory.
+     */
+    get maxClusters(): number | null {
+      const n = Number(process.env.LAB_MAX_CLUSTERS ?? 0);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    },
+    /**
      * Docs viewer: the lab controller serves allowlisted docs sites at this template (`{host}` is the site), so
      * the lab player can show them in a frame. `*.localhost` resolves to this machine in every major browser.
      */

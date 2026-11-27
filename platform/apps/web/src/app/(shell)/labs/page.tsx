@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
-import { blockFor, getBootTimes, getCapacity, getHistory, getUsage, listLabs } from "@/server/labs";
+import { blockFor, getBootTimes, getCapacity, getHistory, getUsage, listLabs, queueEntryFor } from "@/server/labs";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Labs" };
@@ -76,7 +76,7 @@ export default async function LabsPage() {
                         </p>
                       ) : null}
                       <div className="mt-auto">
-                        <StartLab lab={lab} usage={usage} block={blockFor(lab, usage, capacity)} bootSeconds={bootTimes.get(lab.id)} />
+                        <StartLab lab={lab} usage={usage} block={blockFor(lab, usage, capacity)} bootSeconds={bootTimes.get(lab.id)} queued={queueEntryFor(user.id, capacity)} />
                       </div>
                     </Card>
                   </li>

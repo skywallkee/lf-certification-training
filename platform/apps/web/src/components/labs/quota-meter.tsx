@@ -1,6 +1,13 @@
 import { Progress } from "@/components/ui/progress";
 import type { Capacity, LabUsage } from "@/server/labs";
 
+/** "2 of 3 lab slots in use (4 of 6 clusters), 1 waiting" */
+export function capacitySummary(c: Capacity): string {
+  const clusters = c.maxClusters !== null ? ` (${c.clusters} of ${c.maxClusters} clusters)` : "";
+  const waiting = c.queue.length > 0 ? `, ${c.queue.length} waiting` : "";
+  return `${c.sessions} of ${c.maxSessions} lab slots in use${clusters}${waiting}`;
+}
+
 const dateFmt = new Intl.DateTimeFormat("en", { day: "numeric", month: "long", timeZone: "UTC" });
 
 /** Lab minutes used of the monthly allowance, the one-active-session rule and the platform's capacity. */
@@ -24,7 +31,7 @@ export function QuotaMeter({ usage, capacity }: { usage: LabUsage; capacity: Cap
         <li>One lab at a time. Time counts from when your terminal is ready until you finish.</li>
         <li>
           {capacity.controllerUp
-            ? `Runs on ${capacity.provider === "local-docker" ? "local Docker" : capacity.provider}: ${capacity.active} of ${capacity.max} lab slots in use.`
+            ? `Runs on ${capacity.provider === "local-docker" ? "local Docker" : capacity.provider}: ${capacitySummary(capacity)}.`
             : "Lab controller offline: labs are paused."}
         </li>
       </ul>

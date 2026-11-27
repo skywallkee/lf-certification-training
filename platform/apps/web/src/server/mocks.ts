@@ -5,7 +5,7 @@ import { lab as labTable } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
 import { labCheckRun, labSession } from "@/db/schema";
 import { env } from "@/env";
-import type { Capacity, LabRow, LabUsage } from "./labs";
+import { slotForLab, type Capacity, type LabRow, type LabUsage } from "./labs";
 
 /** Published practical mock exams, by cert then length (full first). Tasks include checks: keep them on the server. */
 export async function listMocks(): Promise<LabRow[]> {
@@ -49,7 +49,7 @@ export function usedFor(used: MockAttemptsUsed, cert: string, mode: MockMode): n
 
 /** Why this learner cannot start this mock in this mode now, or null. */
 export function mockBlockFor(
-  mock: Pick<LabRow, "certCode">,
+  mock: Pick<LabRow, "certCode" | "clusters">,
   mode: MockMode,
   used: MockAttemptsUsed,
   usage: LabUsage,
@@ -60,8 +60,7 @@ export function mockBlockFor(
     used: usedFor(used, mock.certCode, mode),
     allowed: mockAllowance(mode),
     activeSessionId: usage.active?.id ?? null,
-    activeSessions: capacity.active,
-    maxActiveSessions: capacity.max,
+    slot: slotForLab(usage.userId, mock, capacity),
     controllerUp: capacity.controllerUp,
     now,
   });

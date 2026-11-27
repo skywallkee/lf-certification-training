@@ -82,3 +82,29 @@ describe("docs viewer proxy", () => {
     expect((await get("/", "localhost")).status).toBe(404);
   });
 });
+
+describe("docs viewer on a port of its own (self-hosted)", () => {
+  it("rewrites links to the public URL of each site", async () => {
+    const site = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end('<a href="https://kubernetes.io/docs/">k</a> <a href="//helm.sh/docs/">h</a>');
+    });
+    await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
+    const docs = createDocsProxy({
+      hosts: ["kubernetes.io", "helm.sh"],
+      allowedOrigins: ["https://box.tail1.ts.net"],
+      viewerUrl: "kubernetes.io=https://box.tail1.ts.net:8444,helm.sh=https://box.tail1.ts.net:8445",
+      upstream: () => `http://127.0.0.1:${(site.address() as AddressInfo).port}`,
+    });
+    const viewer = http.createServer((req, res) => void docs.handle(req, res, "kubernetes.io"));
+    await new Promise<void>((r) => viewer.listen(0, "127.0.0.1", r));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(viewer.address() as AddressInfo).port}/docs/`);
+      expect(res.headers.get("content-security-policy")).toBe("frame-ancestors https://box.tail1.ts.net");
+      expect(await res.text()).toBe('<a href="https://box.tail1.ts.net:8444/docs/">k</a> <a href="https://box.tail1.ts.net:8445/docs/">h</a>');
+    } finally {
+      viewer.close();
+      site.close();
+    }
+  });
+});

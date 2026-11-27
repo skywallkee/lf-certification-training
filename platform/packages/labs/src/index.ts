@@ -6,3 +6,4 @@ export * from "./docs.ts";
 export * from "./mock.ts";
 export * from "./player.ts";
 export * from "./trends.ts";
+export * from "./capacity.ts";

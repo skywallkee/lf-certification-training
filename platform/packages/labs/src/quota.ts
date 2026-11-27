@@ -1,3 +1,5 @@
+import type { SlotDecision } from "./capacity.ts";
+
 /**
  * Lab allowance. Each learner gets a monthly allowance of lab minutes (calendar month, UTC) and one active
  * session at a time; the platform has a ceiling on concurrent sessions (local Docker capacity now, the cloud
@@ -36,7 +38,8 @@ export function minutesUsed(rows: UsageRow[], now: Date): number {
 export type StartBlock =
   | { reason: "active-session"; sessionId: string }
   | { reason: "quota"; minutesLeft: number; resetsOn: Date }
-  | { reason: "capacity"; active: number; max: number }
+  /** Every slot is taken or others are waiting: the learner can join the line (position null) or is in it. */
+  | { reason: "capacity"; position: number | null; waiting: number }
   | { reason: "controller-down" };
 
 export interface StartInput {
@@ -44,8 +47,8 @@ export interface StartInput {
   minutesUsed: number;
   monthlyMinutes: number;
   activeSessionId: string | null;
-  activeSessions: number;
-  maxActiveSessions: number;
+  /** Room on the machine for this learner now (capacity.ts slotFor). */
+  slot: SlotDecision;
   now: Date;
 }
 
@@ -57,7 +60,7 @@ export function startBlock(input: StartInput): StartBlock | null {
   if (input.activeSessionId) return { reason: "active-session", sessionId: input.activeSessionId };
   const left = Math.max(0, input.monthlyMinutes - input.minutesUsed);
   if (left < input.labMinutes) return { reason: "quota", minutesLeft: left, resetsOn: nextMonthStart(input.now) };
-  if (input.activeSessions >= input.maxActiveSessions) return { reason: "capacity", active: input.activeSessions, max: input.maxActiveSessions };
+  if (!input.slot.ok) return { reason: "capacity", position: input.slot.position, waiting: input.slot.waiting };
   return null;
 }
 

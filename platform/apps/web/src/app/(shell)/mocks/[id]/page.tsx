@@ -7,7 +7,7 @@ import { DraftBadge, SampleBadge } from "@/components/status-chip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { en } from "@/messages/en";
 import { getCatalog } from "@/server/catalog";
-import { bootEstimate, canOpen, getBootTimes, getCapacity, getUsage } from "@/server/labs";
+import { bootEstimate, canOpen, getBootTimes, getCapacity, getUsage, queueEntryFor } from "@/server/labs";
 import { domainName, getMock, getMockAttemptsUsed, mockAllowance, mockBlockFor, usedFor } from "@/server/mocks";
 import { requireUser } from "@/server/session";
 
@@ -63,7 +63,7 @@ export default async function MockPage({
           {mock.passPercent ?? 66}%
         </p>
       </header>
-      {blockedNow ? (
+      {blockedNow && blockedNow.reason !== "capacity" ? (
         <p role="alert" className="max-w-[72ch] rounded-md bg-warning-soft px-4 py-3 text-[15px]">
           {mockBlockMessage(blockedNow, initialMode)}
         </p>
@@ -109,7 +109,7 @@ export default async function MockPage({
               You get {mock.clusters.length} fresh single-node clusters, one kubectl context each, a terminal, the official docs, and {mock.minutes} minutes.{" "}
               {bootEstimate(mock.tier, bootTimes.get(mock.id))}; the clock starts only when you press Start.
             </p>
-            <StartMock mockId={mock.id} modes={modes} initialMode={initialMode} />
+            <StartMock mockId={mock.id} modes={modes} initialMode={initialMode} queued={queueEntryFor(user.id, capacity)} />
           </Card>
           {mock.docs.length > 0 ? (
             <Card aria-labelledby="docs">

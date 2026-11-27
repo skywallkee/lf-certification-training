@@ -1,9 +1,22 @@
 import "server-only";
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
-import { ACTIVE_STATUSES, minutesUsed, monthStart, nextMonthStart, startBlock, type StartBlock } from "@lfct/labs";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  ACTIVE_STATUSES,
+  minutesUsed,
+  monthStart,
+  nextMonthStart,
+  QUEUE_STALE_SECONDS,
+  slotFor,
+  startBlock,
+  type CapacityLimits,
+  type Running,
+  type SlotDecision,
+  type StartBlock,
+  type Waiting,
+} from "@lfct/labs";
 import { lab as labTable } from "@lfct/curriculum/db";
 import { getDb } from "@/db";
-import { labCheckRun, labHintUse, labSession } from "@/db/schema";
+import { labCheckRun, labHintUse, labQueue, labSession } from "@/db/schema";
 import { env } from "@/env";
 
 export type LabRow = typeof labTable.$inferSelect;
@@ -35,6 +48,7 @@ export async function labsForCompetency(ref: string): Promise<Pick<LabRow, "id" 
 }
 
 export interface LabUsage {
+  userId: string;
   minutesUsed: number;
   monthlyMinutes: number;
   minutesLeft: number;
@@ -56,7 +70,7 @@ export async function getUsage(userId: string, now = new Date()): Promise<LabUsa
   );
   const monthly = env.labs.monthlyMinutes;
   const active = rows.find((r) => (ACTIVE_STATUSES as readonly string[]).includes(r.status)) ?? null;
-  return { minutesUsed: used, monthlyMinutes: monthly, minutesLeft: Math.max(0, monthly - used), resetsOn: nextMonthStart(now), active };
+  return { userId, minutesUsed: used, monthlyMinutes: monthly, minutesLeft: Math.max(0, monthly - used), resetsOn: nextMonthStart(now), active };
 }
 
 /** The learner's running lab or mock attempt with its title, for the banner on every page; null if none. */
@@ -87,33 +101,119 @@ export async function getActiveSession(userId: string): Promise<import("@/compon
   };
 }
 
-export interface Capacity {
+export interface Capacity extends Running, CapacityLimits {
   provider: string;
-  active: number;
-  max: number;
+  /** The waiting line, first in line first (entries whose page stopped checking in are left out). */
+  queue: (Waiting & { labId: string; mode: string })[];
   controllerUp: boolean;
 }
 
-export async function getCapacity(): Promise<Capacity> {
-  const [row] = await getDb()
-    .select({ n: count() })
+type DbOrTx = Pick<ReturnType<typeof getDb>, "select" | "delete">;
+
+/** Sessions and clusters running now: each active session counts its lab's clusters (a mock may boot three). */
+export async function getRunning(db: DbOrTx = getDb()): Promise<Running> {
+  const [row] = await db
+    .select({
+      sessions: sql<number>`count(*)::int`,
+      clusters: sql<number>`coalesce(sum(greatest(coalesce(cardinality(${labTable.clusters}), 1), 1)), 0)::int`,
+    })
     .from(labSession)
+    .leftJoin(labTable, eq(labTable.id, labSession.labId))
     .where(inArray(labSession.status, [...ACTIVE_STATUSES]));
-  return { provider: env.labs.provider, active: row?.n ?? 0, max: env.labs.maxActiveSessions, controllerUp: await controllerHealthy() };
+  return { sessions: row?.sessions ?? 0, clusters: row?.clusters ?? 0 };
+}
+
+/** The live waiting line. Entries not refreshed for QUEUE_STALE_SECONDS are removed first. */
+export async function getQueue(db: DbOrTx = getDb()): Promise<Capacity["queue"]> {
+  await db.delete(labQueue).where(lt(labQueue.seenAt, sql`now() - make_interval(secs => ${QUEUE_STALE_SECONDS})`));
+  return db
+    .select({ userId: labQueue.userId, clusters: labQueue.clusters, labId: labQueue.labId, mode: labQueue.mode })
+    .from(labQueue)
+    .orderBy(asc(labQueue.createdAt), asc(labQueue.userId));
+}
+
+export function capacityLimits(): CapacityLimits {
+  return { maxSessions: env.labs.maxActiveSessions, maxClusters: env.labs.maxClusters };
+}
+
+export async function getCapacity(): Promise<Capacity> {
+  const [running, queue, controllerUp] = await Promise.all([getRunning(), getQueue(), controllerHealthy()]);
+  return { provider: env.labs.provider, ...running, ...capacityLimits(), queue, controllerUp };
+}
+
+/** Clusters a lab or mock boots (one per kubectl context). */
+export function clustersOf(lab: Pick<LabRow, "clusters">): number {
+  return Math.max(1, lab.clusters.length);
+}
+
+/** Room for this learner to start this lab now, given the line. */
+export function slotForLab(userId: string, lab: Pick<LabRow, "clusters">, capacity: Capacity): SlotDecision {
+  return slotFor(userId, clustersOf(lab), capacity.queue, capacity, capacity);
+}
+
+/** The learner's place in line, or null when they are not waiting. */
+export function queueEntryFor(userId: string, capacity: Capacity): { labId: string; mode: string; position: number } | null {
+  const i = capacity.queue.findIndex((w) => w.userId === userId);
+  return i < 0 ? null : { labId: capacity.queue[i]!.labId, mode: capacity.queue[i]!.mode, position: i + 1 };
 }
 
 /** Why this learner cannot start this lab now, or null. */
-export function blockFor(lab: Pick<LabRow, "minutes">, usage: LabUsage, capacity: Capacity, now = new Date()): StartBlock | null {
+export function blockFor(lab: Pick<LabRow, "minutes" | "clusters">, usage: LabUsage, capacity: Capacity, now = new Date()): StartBlock | null {
   if (!capacity.controllerUp) return { reason: "controller-down" };
   return startBlock({
     labMinutes: lab.minutes,
     minutesUsed: usage.minutesUsed,
     monthlyMinutes: usage.monthlyMinutes,
     activeSessionId: usage.active?.id ?? null,
-    activeSessions: capacity.active,
-    maxActiveSessions: capacity.max,
+    slot: slotForLab(usage.userId, lab, capacity),
     now,
   });
+}
+
+export type StartOrQueue = { started: string } | { queued: { position: number; waiting: number } };
+
+/**
+ * Starts a session when there is room for this learner, else puts them in line (or refreshes their place). Runs
+ * under one advisory lock, so two learners pressing Start at the same moment can never overfill the machine.
+ * Throws when the one-active-session index refuses the insert (another tab started a lab a moment ago).
+ */
+export async function startOrQueue(userId: string, lab: Pick<LabRow, "id" | "certCode" | "minutes" | "clusters">, mode: "lab" | "exam" | "practice"): Promise<StartOrQueue> {
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('lfct:lab-capacity'))`);
+    const [running, queue] = await Promise.all([getRunning(tx), getQueue(tx)]);
+    const slot = slotFor(userId, clustersOf(lab), queue, running, capacityLimits());
+    if (slot.ok) {
+      const [row] = await tx
+        .insert(labSession)
+        .values({ userId, labId: lab.id, certCode: lab.certCode, provider: env.labs.provider, minutes: lab.minutes, mode })
+        .returning({ id: labSession.id });
+      await tx.delete(labQueue).where(eq(labQueue.userId, userId));
+      return { started: row!.id };
+    }
+    // Joining again (or for another lab) keeps the learner's place in line.
+    await tx
+      .insert(labQueue)
+      .values({ userId, labId: lab.id, mode, clusters: clustersOf(lab) })
+      .onConflictDoUpdate({ target: labQueue.userId, set: { labId: lab.id, mode, clusters: clustersOf(lab), seenAt: sql`now()` } });
+    const position = slot.position ?? queue.length + 1;
+    return { queued: { position, waiting: Math.max(queue.length, position) } };
+  });
+}
+
+/** The waiting page checks in: keeps the entry alive and says where the learner stands. */
+export async function touchQueue(userId: string): Promise<{ position: number; waiting: number; turn: boolean; labId: string; mode: string } | null> {
+  const [row] = await getDb().update(labQueue).set({ seenAt: sql`now()` }).where(eq(labQueue.userId, userId)).returning({ userId: labQueue.userId });
+  if (!row) return null;
+  const [running, queue] = await Promise.all([getRunning(), getQueue()]);
+  const i = queue.findIndex((w) => w.userId === userId);
+  if (i < 0) return null;
+  const entry = queue[i]!;
+  const slot = slotFor(userId, entry.clusters, queue, running, capacityLimits());
+  return { position: i + 1, waiting: queue.length, turn: slot.ok, labId: entry.labId, mode: entry.mode };
+}
+
+export async function leaveQueue(userId: string): Promise<void> {
+  await getDb().delete(labQueue).where(eq(labQueue.userId, userId));
 }
 
 export async function getSession(id: string, userId: string): Promise<LabSessionRow | null> {

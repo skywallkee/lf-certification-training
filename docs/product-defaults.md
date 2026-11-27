@@ -30,7 +30,7 @@ named next to it.
 
 | # | Default | Where |
 |---|---------|-------|
-| C1 | 600 lab minutes per learner per month, 1 active lab per learner, 3 per machine | `LAB_MONTHLY_MINUTES`, `LAB_MAX_ACTIVE_SESSIONS` |
+| C1 | 600 lab minutes per learner per month, 1 active lab per learner, 3 per machine (self-hosted: also 6 clusters in all); when full, a first-come, first-served waiting line | `LAB_MONTHLY_MINUTES`, `LAB_MAX_ACTIVE_SESSIONS`, `LAB_MAX_CLUSTERS` |
 | C2 | One 15-minute extension, up to 3 hints, 10-minute boot timeout | `LAB_BOOT_TIMEOUT_SECONDS`, lab player |
 
 ## D. Readiness (ADR 0016)

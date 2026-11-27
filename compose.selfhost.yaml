@@ -1,0 +1,96 @@
+# LF Cert Trainer on a home server, reached by you and a few others over Tailscale. Layered on compose.yaml:
+#
+#   scripts/selfhost-init.sh          once: writes .env with random secrets and this server's Tailscale name
+#   docker compose up -d --build      .env sets COMPOSE_FILE=compose.yaml:compose.selfhost.yaml, so this file applies
+#   scripts/tailscale-serve.sh        once: HTTPS on the tailnet for the app, the terminal and the docs pane
+#
+# What changes from the laptop setup: every secret must be set, no sample learners, real email over SMTP (Mailpit
+# stays as a fallback inbox on the server only), a cap on concurrent labs and clusters with a waiting line, logs
+# that cannot fill the disk, and the browser-facing URLs point at the server's Tailscale name. Everything still
+# listens on 127.0.0.1 only; `tailscale serve` is the one way in. See docs/self-hosting.md.
+# Needs Docker Compose 2.24 or later (for !override).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (scripts/selfhost-init.sh does)}
+    logging: *logging
+
+  db-backup:
+    environment:
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # A second copy of every automatic backup, e.g. on another disk or a NAS share mounted on the server.
+      BACKUP_COPY: ${BACKUP_COPY_DIR:+on}
+    volumes:
+      # :z relabels the folders for SELinux (CentOS); harmless where SELinux is off.
+      - ./backups:/backups:z
+      - ${BACKUP_COPY_DIR:-./backups}:/backups-copy:z
+    logging: *logging
+
+  mailpit:
+    logging: *logging
+
+  narrator:
+    logging: *logging
+
+  setup:
+    environment:
+      # A real server starts empty: no sample learners or cohort (SEED=if-missing adds them).
+      SEED: ${SEED:-never}
+    logging: *logging
+
+  lab-controller:
+    environment:
+      LAB_CONTROLLER_SECRET: ${LAB_CONTROLLER_SECRET:?Set LAB_CONTROLLER_SECRET in .env}
+      LAB_TOKEN_SECRET: ${LAB_TOKEN_SECRET:?Set LAB_TOKEN_SECRET in .env}
+      LAB_ALLOWED_ORIGINS: ${APP_URL:?Set APP_URL in .env, e.g. https://server.your-tailnet.ts.net}
+      # The docs pane: one port per docs site (Tailscale names have no wildcard subdomains), and the URLs browsers
+      # use for them, so links inside the docs stay in the pane.
+      LAB_DOCS_PORTS: kubernetes.io=4011,helm.sh=4012
+      LAB_DOCS_HOSTS: kubernetes.io,helm.sh
+      LAB_DOCS_URL: ${LAB_DOCS_URL:?Set LAB_DOCS_URL in .env}
+      # A memory ceiling per cluster container, so one runaway lab cannot starve the server.
+      LAB_CLUSTER_MEMORY_MB: ${LAB_CLUSTER_MEMORY_MB:-1536}
+    ports:
+      # Added to the terminal port 4001 from compose.yaml.
+      - "127.0.0.1:4011:4011"
+      - "127.0.0.1:4012:4012"
+    logging: *logging
+
+  web:
+    environment:
+      LAB_CONTROLLER_SECRET: ${LAB_CONTROLLER_SECRET:?Set LAB_CONTROLLER_SECRET in .env}
+      LAB_TOKEN_SECRET: ${LAB_TOKEN_SECRET:?Set LAB_TOKEN_SECRET in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      BETTER_AUTH_URL: ${APP_URL:?Set APP_URL in .env}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?Set ADMIN_EMAILS in .env (your email, so your account is the admin)}
+      # Real email. Without SMTP_URL the mail goes to the server-only Mailpit inbox (see docs/self-hosting.md).
+      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+      MAIL_FROM: ${MAIL_FROM:-LF Cert Trainer <no-reply@lfct.localhost>}
+      MAIL_INBOX_URL: ""
+      # A real deployment: production auth checks, and the verify page never shows email links.
+      APP_ENV: production
+      SHOW_DEV_EMAILS: "false"
+      LAB_TERMINAL_URL: ${LAB_TERMINAL_URL:?Set LAB_TERMINAL_URL in .env}
+      LAB_DOCS_URL: ${LAB_DOCS_URL:?Set LAB_DOCS_URL in .env}
+      LAB_DOCS_HOSTS: kubernetes.io,helm.sh
+      LAB_PROVIDER_NAME: ${LAB_PROVIDER_NAME:-home-server}
+      # 16 GB of RAM: 3 labs at once, 6 clusters in all (a 3-cluster mock counts 3). More learners wait in line.
+      LAB_MAX_ACTIVE_SESSIONS: ${LAB_MAX_ACTIVE_SESSIONS:-3}
+      LAB_MAX_CLUSTERS: ${LAB_MAX_CLUSTERS:-6}
+    # Mailpit is only the fallback inbox; the app does not wait for it.
+    depends_on: !override
+      setup:
+        condition: service_completed_successfully
+      lab-controller:
+        condition: service_healthy
+      narrator:
+        condition: service_started
+    logging: *logging

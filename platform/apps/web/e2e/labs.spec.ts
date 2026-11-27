@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectAccessible, signIn } from "./helpers";
+import { expectAccessible, query, signIn } from "./helpers";
 
 // The lab controller runs with the fake provider: boots take a second and typing "solve" passes every check.
 const LAB = "sample-cka-rbac-pod-reader";
@@ -129,4 +129,37 @@ test("an admin sees live lab sessions and can kill one", async ({
   // The player notices the session ended and moves to its results page.
   await expect(learner).toHaveURL(/\/labs\/history\//, { timeout: 30_000 });
   await expect(learner.getByText("Ended by an admin")).toBeVisible();
+});
+
+test("a full server puts the learner in line and starts their lab on their turn", async ({ page }) => {
+  // Fill all three slots with sessions of other learners (rows only; the fake controller has nothing to delete).
+  const others = await query<{ id: string }>(`SELECT id FROM "user" WHERE email LIKE '%@cohort.example.com' ORDER BY email LIMIT 3`);
+  expect(others).toHaveLength(3);
+  const fillers = await query<{ id: string }>(
+    `INSERT INTO lab_session (user_id, lab_id, cert_code, provider, minutes, status, ready_at, expires_at)
+     SELECT u, $2, 'CKA', 'fake', 30, 'ready', now(), now() + interval '1 hour' FROM unnest($1::text[]) AS u RETURNING id`,
+    [others.map((o) => o.id), LAB],
+  );
+  try {
+    await signIn(page, "mid@example.com");
+    await page.goto(`/labs/${LAB}`);
+    await expect(page.getByText(/Every lab slot on this server is in use/).first()).toBeVisible();
+    await page.getByRole("button", { name: "Join the line" }).first().click();
+    await expect(page.getByText("You're next. Your lab starts as soon as a slot frees up.")).toBeVisible();
+    await expect(page).toHaveTitle(/^#1 in line · /);
+    await expectAccessible(page, "Waiting in line");
+    expect(await query(`SELECT 1 FROM lab_queue`)).toHaveLength(1);
+
+    // A slot frees up: the waiting page presses Start by itself.
+    await query(`UPDATE lab_session SET status = 'finished', ended_at = now() WHERE id = $1`, [fillers[0]!.id]);
+    await expect(page).toHaveURL(/\/labs\/sessions\//, { timeout: 20_000 });
+    expect(await query(`SELECT 1 FROM lab_queue`)).toHaveLength(0);
+    await page.locator("[data-region=terminal][data-state=connected]").waitFor({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Finish" }).click();
+    await page.getByRole("button", { name: "Finish and delete cluster" }).click();
+    await expect(page).toHaveURL(/\/labs\/history\//, { timeout: 30_000 });
+  } finally {
+    await query(`UPDATE lab_session SET status = 'finished', ended_at = now() WHERE id = ANY($1::uuid[]) AND ended_at IS NULL`, [fillers.map((f) => f.id)]);
+    await query(`DELETE FROM lab_queue`);
+  }
 });

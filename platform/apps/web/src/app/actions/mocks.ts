@@ -7,8 +7,7 @@ import * as z from "zod";
 import { MOCK_MODES, type CheckResult } from "@lfct/labs";
 import { getDb } from "@/db";
 import { labSession } from "@/db/schema";
-import { env } from "@/env";
-import { callController, ControllerError, getCapacity, getSession, getUsage } from "@/server/labs";
+import { callController, ControllerError, getCapacity, getSession, getUsage, startOrQueue, type StartOrQueue } from "@/server/labs";
 import { getMock, getMockAttemptsUsed, mockBlockFor } from "@/server/mocks";
 import { canOpen } from "@/server/labs";
 import { requireUser } from "@/server/session";
@@ -29,19 +28,17 @@ export async function startMockAction(form: FormData): Promise<void> {
   const block = mockBlockFor(mock, mode, used, usage, capacity);
   // The lab session page sends a mock attempt on to the mock player.
   if (block?.reason === "active-session") redirect(`/labs/sessions/${block.sessionId}`);
-  if (block) redirect(`/mocks/${mock.id}?blocked=${block.reason}&mode=${mode}`);
+  if (block && block.reason !== "capacity") redirect(`/mocks/${mock.id}?blocked=${block.reason}&mode=${mode}`);
 
-  let sessionId: string;
+  let result: StartOrQueue;
   try {
-    const [row] = await getDb()
-      .insert(labSession)
-      .values({ userId: user.id, labId: mock.id, certCode: mock.certCode, provider: env.labs.provider, minutes: mock.minutes, mode })
-      .returning({ id: labSession.id });
-    sessionId = row!.id;
+    result = await startOrQueue(user.id, mock, mode);
   } catch {
     // The one-active-session index: another tab started a lab or mock a moment ago.
     redirect("/mocks");
   }
+  if ("queued" in result) redirect(`/mocks/${mock.id}?mode=${mode}`);
+  const sessionId = result.started;
   try {
     await callController(`/sessions/${sessionId}/provision`, { timeoutMs: 10_000 });
   } catch (err) {

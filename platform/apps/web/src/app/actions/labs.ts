@@ -7,13 +7,28 @@ import * as z from "zod";
 import { EXTEND_MINUTES, type CheckResult } from "@lfct/labs";
 import { getDb } from "@/db";
 import { labHintUse, labSession } from "@/db/schema";
-import { env } from "@/env";
-import { blockFor, callController, ControllerError, getCapacity, getHintUses, getLab, getSession, getUsage, canOpen } from "@/server/labs";
+import {
+  blockFor,
+  callController,
+  ControllerError,
+  getCapacity,
+  getHintUses,
+  getLab,
+  getSession,
+  getUsage,
+  canOpen,
+  leaveQueue,
+  startOrQueue,
+  type StartOrQueue,
+} from "@/server/labs";
 import { requireAdmin, requireUser } from "@/server/session";
 
 const SessionId = z.uuid();
 
-/** Starts a lab: checks the allowance and capacity, records the session and asks the controller to boot it. */
+/**
+ * Starts a lab: checks the allowance, then records the session and asks the controller to boot it, or, when the
+ * machine is full, puts the learner in line (the lab page then waits and presses Start again on their turn).
+ */
 export async function startLabAction(form: FormData): Promise<void> {
   const labId = z.string().min(1).max(64).parse(form.get("lab"));
   const user = await requireUser(`/labs/${labId}`);
@@ -23,19 +38,17 @@ export async function startLabAction(form: FormData): Promise<void> {
   const [usage, capacity] = await Promise.all([getUsage(user.id), getCapacity()]);
   const block = blockFor(lab, usage, capacity);
   if (block?.reason === "active-session") redirect(`/labs/sessions/${block.sessionId}`);
-  if (block) redirect(`/labs/${lab.id}?blocked=${block.reason}`);
+  if (block && block.reason !== "capacity") redirect(`/labs/${lab.id}?blocked=${block.reason}`);
 
-  let sessionId: string;
+  let result: StartOrQueue;
   try {
-    const [row] = await getDb()
-      .insert(labSession)
-      .values({ userId: user.id, labId: lab.id, certCode: lab.certCode, provider: env.labs.provider, minutes: lab.minutes })
-      .returning({ id: labSession.id });
-    sessionId = row!.id;
+    result = await startOrQueue(user.id, lab, "lab");
   } catch {
     // The one-active-session index: another tab started a lab a moment ago.
     redirect("/labs");
   }
+  if ("queued" in result) redirect(`/labs/${lab.id}`);
+  const sessionId = result.started;
   try {
     await callController(`/sessions/${sessionId}/provision`, { timeoutMs: 10_000 });
   } catch (err) {
@@ -120,6 +133,14 @@ export async function revealHintAction(sessionId: string, taskId: string): Promi
   if (used >= task.hints.length) return { ok: false, error: "No more hints for this task." };
   await getDb().insert(labHintUse).values({ sessionId: id, taskId, hintIndex: used }).onConflictDoNothing();
   return { ok: true, index: used, text: task.hints[used]! };
+}
+
+/** Leaves the waiting line for a lab or mock slot. */
+export async function leaveQueueAction(form: FormData): Promise<void> {
+  const back = z.string().regex(/^\/(labs|mocks)\/[\w-]{1,64}$/).catch("/labs").parse(form.get("back"));
+  const user = await requireUser(back);
+  await leaveQueue(user.id);
+  redirect(back);
 }
 
 /** Admin: end a session without grading. */

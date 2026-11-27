@@ -22,6 +22,19 @@ export const K3S_SYSTEM_IMAGES = [
   "rancher/local-path-provisioner:v0.0.37",
 ];
 
+/** "kubernetes.io=4011,helm.sh=4012" -> [["kubernetes.io", 4011], ["helm.sh", 4012]] */
+export function parseDocsPorts(raw: string | undefined): [string, number][] {
+  const out: [string, number][] = [];
+  for (const part of (raw ?? "").split(",")) {
+    if (!part.trim()) continue;
+    const [site, port] = part.split("=").map((x) => x.trim().toLowerCase());
+    const n = Number(port);
+    if (!site || !Number.isInteger(n) || n < 1 || n > 65535) throw new Error(`LAB_DOCS_PORTS: "${part.trim()}" is not site=port`);
+    out.push([site, n]);
+  }
+  return out;
+}
+
 export function loadConfig() {
   const provider = (process.env.LAB_PROVIDER ?? "docker") as "docker" | "fake";
   if (provider !== "docker" && provider !== "fake") throw new Error("LAB_PROVIDER must be docker or fake");
@@ -43,6 +56,13 @@ export function loadConfig() {
       .filter(Boolean),
     /** Documentation sites the docs pane may show (LAB_DOCS_HOSTS, comma-separated). */
     docsHosts: parseDocsHosts(process.env.LAB_DOCS_HOSTS),
+    /** Where browsers reach the docs viewer (the web app's LAB_DOCS_URL), so rewritten links stay in it. */
+    docsUrl: process.env.LAB_DOCS_URL || undefined,
+    /**
+     * Extra ports that each serve one docs site at their root (LAB_DOCS_PORTS="kubernetes.io=4011,helm.sh=4012"),
+     * for hosts where `<site>.localhost` does not reach this server, such as a home server over Tailscale.
+     */
+    docsPorts: parseDocsPorts(process.env.LAB_DOCS_PORTS),
     sweepSeconds: int("LAB_SWEEP_SECONDS", 30),
     /** A session still booting after this long is marked failed and removed. */
     bootTimeoutSeconds: int("LAB_BOOT_TIMEOUT_SECONDS", 600),

@@ -5,6 +5,7 @@
  * window. No Node imports: the browser bundle uses this file.
  */
 import { nextMonthStart } from "./quota.ts";
+import type { SlotDecision } from "./capacity.ts";
 import type { CheckResult, TaskWeight } from "./status.ts";
 
 export const MOCK_MODES = ["exam", "practice"] as const;
@@ -24,7 +25,7 @@ export const DEFAULT_MOCK_QUOTA: Record<MockMode, number> = { exam: 2, practice:
 export type MockStartBlock =
   | { reason: "active-session"; sessionId: string }
   | { reason: "quota"; used: number; allowed: number; resetsOn: Date }
-  | { reason: "capacity"; active: number; max: number }
+  | { reason: "capacity"; position: number | null; waiting: number }
   | { reason: "controller-down" };
 
 export interface MockStartInput {
@@ -32,8 +33,8 @@ export interface MockStartInput {
   used: number;
   allowed: number;
   activeSessionId: string | null;
-  activeSessions: number;
-  maxActiveSessions: number;
+  /** Room on the machine for this learner now (capacity.ts slotFor). */
+  slot: SlotDecision;
   controllerUp: boolean;
   now: Date;
 }
@@ -47,7 +48,7 @@ export function mockStartBlock(input: MockStartInput): MockStartBlock | null {
   if (input.activeSessionId) return { reason: "active-session", sessionId: input.activeSessionId };
   if (!input.controllerUp) return { reason: "controller-down" };
   if (input.used >= input.allowed) return { reason: "quota", used: input.used, allowed: input.allowed, resetsOn: nextMonthStart(input.now) };
-  if (input.activeSessions >= input.maxActiveSessions) return { reason: "capacity", active: input.activeSessions, max: input.maxActiveSessions };
+  if (!input.slot.ok) return { reason: "capacity", position: input.slot.position, waiting: input.slot.waiting };
   return null;
 }
 

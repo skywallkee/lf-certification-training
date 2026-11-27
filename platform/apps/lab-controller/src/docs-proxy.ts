@@ -1,4 +1,5 @@
 import type http from "node:http";
+import { docsBaseFor } from "@lfct/labs/docs";
 
 /**
  * Serves allowlisted documentation sites for the lab player's docs pane. A request to
@@ -11,6 +12,11 @@ export interface DocsProxyOptions {
   hosts: readonly string[];
   /** Origins allowed to frame the docs (the web app). */
   allowedOrigins: readonly string[];
+  /**
+   * Where browsers reach the viewer (LAB_DOCS_URL: a `{host}` template or one URL per site), for rewritten links.
+   * Unset: `http://<site>.localhost:<port of the request>`.
+   */
+  viewerUrl?: string | undefined;
   /** Base URL of a site; tests point it at a local server. */
   upstream?: (host: string) => string;
   fetchImpl?: typeof fetch;
@@ -49,7 +55,8 @@ export function createDocsProxy(opts: DocsProxyOptions) {
       return;
     }
     const port = /:(\d+)$/.exec(req.headers.host ?? "")?.[1];
-    const viewerOrigin = (h: string) => `http://${h}.localhost${port ? `:${port}` : ""}`;
+    const viewerOrigin = (h: string) =>
+      (opts.viewerUrl ? docsBaseFor(opts.viewerUrl, h) : null) ?? `http://${h}.localhost${port ? `:${port}` : ""}`;
     let upstreamRes: Response;
     try {
       upstreamRes = await doFetch(target, {
