@@ -1,0 +1,607 @@
+---
+id: cka-docker-vs-containerd
+title: "Docker vs containerd: what really runs your containers"
+summary: "Why Kubernetes talks to containerd instead of Docker, what CRI and OCI are, how a Pod becomes processes on a node, and how to debug a node with crictl when kubectl cannot help."
+minutes: 20
+competencies:
+  - cka/cluster-architecture-installation-configuration/extension-interfaces-cni-csi-cri
+  - cka/troubleshooting/troubleshoot-cluster-components
+docs:
+  - title: "Kubernetes docs: Container Runtimes"
+    url: https://kubernetes.io/docs/setup/production-environment/container-runtimes/
+  - title: "Kubernetes docs: Container Runtime Interface (CRI)"
+    url: https://kubernetes.io/docs/concepts/architecture/cri/
+  - title: "Kubernetes docs: Debugging Kubernetes nodes with crictl"
+    url: https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/
+  - title: "Kubernetes docs: Mapping from dockercli to crictl"
+    url: https://kubernetes.io/docs/reference/tools/map-crictl-dockercli/
+  - title: "Kubernetes blog: Don't Panic: Kubernetes and Docker"
+    url: https://kubernetes.io/blog/2020/12/02/dont-panic-kubernetes-and-docker/
+  - title: "containerd: Getting started"
+    url: https://github.com/containerd/containerd/blob/main/docs/getting-started.md
+diagrams:
+  docker-inside:
+    title: "What is inside Docker"
+    caption: "Docker is a stack, not one program. The part that actually runs containers is containerd, which calls runc. Everything to the left of containerd is tooling for people."
+    nodes:
+      - { id: cli, label: "docker CLI", sub: "build, run, push", icon: user, col: 0, row: 0 }
+      - { id: dockerd, label: "dockerd", sub: "API, build, volumes", icon: process, col: 1, row: 0 }
+      - { id: containerd, label: "containerd", sub: "images, lifecycle", icon: process, col: 2, row: 0, tone: primary }
+      - { id: runc, label: "runc", sub: "OCI runtime", icon: process, col: 3, row: 0 }
+      - { id: ctr, label: "Container", sub: "namespaces, cgroups", icon: container, col: 3, row: 1, tone: success }
+    edges:
+      - { from: cli, to: dockerd, label: "REST API" }
+      - { from: dockerd, to: containerd, label: "gRPC" }
+      - { from: containerd, to: runc, label: "via a shim" }
+      - { from: runc, to: ctr, label: "creates" }
+    groups:
+      - { id: engine, label: "Docker Engine", nodes: [dockerd, containerd, runc] }
+  before-after:
+    title: "The kubelet's path to a container, then and now"
+    caption: "Docker never spoke CRI, so the kubelet carried a translator called dockershim. Removing it in v1.24 cut two hops: the kubelet now talks straight to the containerd that Docker was using all along."
+    nodes:
+      - { id: kubelet-old, label: "kubelet", sub: "up to v1.23", icon: process, col: 0, row: 0, tone: muted }
+      - { id: dockershim, label: "dockershim", sub: "inside the kubelet", icon: proxy, col: 1, row: 0, tone: warning }
+      - { id: dockerd-old, label: "dockerd", sub: "Docker Engine", icon: process, col: 2, row: 0, tone: warning }
+      - { id: containerd-old, label: "containerd", icon: process, col: 3, row: 0, tone: muted }
+      - { id: runc-old, label: "runc", icon: process, col: 4, row: 0, tone: muted }
+      - { id: kubelet, label: "kubelet", sub: "v1.24 and later", icon: process, col: 0, row: 1 }
+      - { id: containerd, label: "containerd", sub: "CRI plugin built in", icon: process, col: 3, row: 1, tone: primary }
+      - { id: runc, label: "runc", sub: "OCI runtime", icon: process, col: 4, row: 1, tone: success }
+    edges:
+      - { from: kubelet-old, to: dockershim, label: "CRI" }
+      - { from: dockershim, to: dockerd-old, label: "Docker API" }
+      - { from: dockerd-old, to: containerd-old }
+      - { from: containerd-old, to: runc-old }
+      - { from: kubelet, to: containerd, label: "CRI (gRPC on a Unix socket)" }
+      - { from: containerd, to: runc }
+  cri-runtimes:
+    title: "One interface, several runtimes"
+    caption: "The kubelet is a CRI client. Any runtime that serves CRI on a socket will do, and they all end at an OCI runtime such as runc."
+    nodes:
+      - { id: kubelet, label: "kubelet", sub: "CRI client", icon: process, col: 0, row: 1 }
+      - { id: containerd, label: "containerd", sub: "containerd.sock", icon: process, col: 1, row: 0, tone: primary }
+      - { id: crio, label: "CRI-O", sub: "crio.sock", icon: process, col: 1, row: 1 }
+      - { id: cri-dockerd, label: "cri-dockerd", sub: "cri-dockerd.sock", icon: proxy, col: 1, row: 2, tone: muted }
+      - { id: docker, label: "Docker Engine", sub: "dockerd", icon: process, col: 2, row: 2, tone: muted }
+      - { id: runc, label: "runc", sub: "OCI runtime", icon: process, col: 2, row: 1, tone: success }
+      - { id: pods, label: "Containers", sub: "Linux processes", icon: container, col: 3, row: 1, tone: success }
+    edges:
+      - { from: kubelet, to: containerd, label: "CRI" }
+      - { from: kubelet, to: crio, label: "CRI" }
+      - { from: kubelet, to: cri-dockerd, label: "CRI", dashed: true }
+      - { from: cri-dockerd, to: docker, dashed: true }
+      - { from: containerd, to: runc }
+      - { from: crio, to: runc }
+      - { from: docker, to: runc, dashed: true }
+      - { from: runc, to: pods }
+  pod-on-node:
+    title: "What containerd builds for one Pod"
+    caption: "A Pod becomes a sandbox (the pause container, which holds the network namespace) plus one container per entry in the Pod spec, all watched by one shim process."
+    nodes:
+      - { id: kubelet, label: "kubelet", sub: "sees a new Pod", icon: process, col: 0, row: 0 }
+      - { id: containerd, label: "containerd", sub: "namespace k8s.io", icon: process, col: 1, row: 0, tone: primary }
+      - { id: shim, label: "shim", sub: "one per Pod", icon: process, col: 2, row: 0 }
+      - { id: pause, label: "pause", sub: "holds the Pod IP", icon: container, col: 3, row: 0, tone: muted }
+      - { id: app, label: "nginx", sub: "app container", icon: container, col: 3, row: 1, tone: success }
+      - { id: image, label: "Image store", sub: "pulled layers", icon: volume, col: 1, row: 1, tone: muted }
+    edges:
+      - { from: kubelet, to: containerd, label: "RunPodSandbox" }
+      - { from: containerd, to: shim, label: "starts" }
+      - { from: shim, to: pause, label: "runc" }
+      - { from: shim, to: app, label: "runc" }
+      - { from: image, to: containerd, label: "PullImage", dashed: true }
+    groups:
+      - { id: sandbox, label: "Pod sandbox", nodes: [pause, app] }
+  cli-tools:
+    title: "Three command line tools, two doors"
+    caption: "ctr and nerdctl use containerd's own API. crictl uses the CRI socket, the same door the kubelet uses, so it sees exactly what Kubernetes sees."
+    nodes:
+      - { id: ctr, label: "ctr", sub: "ships with containerd", icon: user, col: 0, row: 0, tone: muted }
+      - { id: nerdctl, label: "nerdctl", sub: "Docker-like CLI", icon: user, col: 0, row: 1 }
+      - { id: crictl, label: "crictl", sub: "debug CRI runtimes", icon: user, col: 0, row: 2, tone: primary }
+      - { id: native, label: "containerd API", sub: "all namespaces", icon: process, col: 1, row: 0 }
+      - { id: cri, label: "CRI socket", sub: "containerd or CRI-O", icon: proxy, col: 1, row: 2, tone: primary }
+      - { id: kubelet, label: "kubelet", sub: "uses the same socket", icon: process, col: 2, row: 2 }
+    edges:
+      - { from: ctr, to: native }
+      - { from: nerdctl, to: native }
+      - { from: crictl, to: cri }
+      - { from: kubelet, to: cri }
+video:
+  voice: af_heart
+  speed: 1
+  scenes:
+    - id: intro
+      title: "Docker vs containerd"
+      narration: >-
+        Kubernetes started out running Docker containers, yet a modern cluster has no Docker on its nodes at all.
+        In this lesson you will see what replaced it and why nothing broke. You will also learn the one tool that
+        lets you debug a node when kubectl cannot help.
+      visual:
+        kind: title
+        heading: "Docker vs containerd"
+        subheading: "What really runs your containers"
+    - id: history
+      title: "How we got here"
+      narration: >-
+        In the beginning, Docker was the only runtime that mattered, so the kubelet was written to call Docker
+        directly. Then other runtimes appeared, and Kubernetes did not want special code for each of them. So in
+        2016 it defined one interface that any runtime could implement: the Container Runtime Interface, or C R I.
+        Docker was built for people, not for orchestrators, and it never implemented that interface. Kubernetes
+        kept a translator for Docker, called dockershim, until version 1.24 removed it.
+      visual:
+        kind: points
+        heading: "A short history"
+        items:
+          - "2015: the kubelet calls Docker directly"
+          - "Other runtimes arrive, and want in"
+          - "2016: CRI, one interface for every runtime"
+          - "Docker never implements CRI"
+          - "v1.24 (2022): dockershim is removed"
+    - id: docker-inside
+      title: "What is inside Docker"
+      narration: >-
+        Docker is not one program. You type commands into the docker command line tool. It calls the Docker daemon,
+        which handles builds, volumes, networks and logins. To run a container, the daemon hands the work to
+        container-d, a smaller daemon that pulls images and manages the container lifecycle. Container-d in turn
+        calls run-c, which sets up the namespaces and cgroups that make a process a container.
+      visual:
+        kind: diagram
+        diagram: docker-inside
+        steps:
+          - [engine]
+          - [cli]
+          - [dockerd, cli-dockerd]
+          - [containerd, dockerd-containerd]
+          - [runc, containerd-runc, ctr, runc-ctr]
+    - id: before-after
+      title: "Cutting out the middle"
+      narration: >-
+        Here is the old path. The kubelet spoke C R I to dockershim, which lived inside the kubelet itself.
+        Dockershim translated every call for the Docker daemon. The daemon passed it on to container-d and run-c,
+        just as before. Now look at the new path. The kubelet speaks C R I straight to container-d, the same
+        component that was doing the real work all along. Two hops are gone, and so is everything Docker added that
+        Kubernetes never used.
+      visual:
+        kind: diagram
+        diagram: before-after
+        steps:
+          - [kubelet-old]
+          - [dockershim, kubelet-old-dockershim]
+          - [dockerd-old, dockershim-dockerd-old]
+          - [containerd-old, runc-old, dockerd-old-containerd-old, containerd-old-runc-old]
+          - [kubelet]
+          - [containerd, kubelet-containerd, runc, containerd-runc]
+    - id: standards
+      title: "Why your images still work"
+      narration: >-
+        Two standards make the swap invisible. The Open Container Initiative, or O C I, defines what an image is
+        and how a container is started. Docker builds O C I images, and container-d runs O C I images. So an image
+        you build with Docker on your laptop runs on a container-d node without any change. C R I is the other
+        standard: it is how the kubelet asks a runtime to do the work.
+      visual:
+        kind: points
+        heading: "Two standards, two jobs"
+        items:
+          - "OCI: the image format and how a container starts"
+          - "Docker builds OCI images"
+          - "containerd runs OCI images"
+          - "So images built with Docker run unchanged"
+          - "CRI: how the kubelet talks to the runtime"
+    - id: runtimes
+      title: "One interface, several runtimes"
+      narration: >-
+        The kubelet is simply a C R I client. Container-d is the most common runtime, and the one kubeadm clusters
+        usually run. C R I O is an alternative built only for Kubernetes. If you really need Docker Engine on a
+        node, an adapter called C R I dockerd puts the translator back, outside the kubelet. Whichever you pick,
+        the work ends at run-c, which turns the request into ordinary Linux processes.
+      visual:
+        kind: diagram
+        diagram: cri-runtimes
+        steps:
+          - [kubelet]
+          - [containerd, kubelet-containerd]
+          - [crio, kubelet-crio]
+          - [cri-dockerd, docker, kubelet-cri-dockerd, cri-dockerd-docker]
+          - [runc, pods, containerd-runc, crio-runc, docker-runc, runc-pods]
+    - id: pod-on-node
+      title: "From Pod to processes"
+      narration: >-
+        Follow one Pod onto a node. The kubelet sees the new Pod and asks container-d for a sandbox. Container-d
+        starts a small shim process for that Pod. The shim starts the pause container, which does nothing except
+        hold the Pod's network namespace and its IP address. The image is pulled if the node does not have it yet.
+        Then the application container is created and started inside the same sandbox.
+      visual:
+        kind: diagram
+        diagram: pod-on-node
+        steps:
+          - [kubelet]
+          - [containerd, kubelet-containerd]
+          - [shim, containerd-shim]
+          - [pause, shim-pause, sandbox]
+          - [image, image-containerd]
+          - [app, shim-app]
+    - id: cli-tools
+      title: "Which tool to type"
+      narration: >-
+        Without Docker there is no docker command on the node, so what do you type? C T R ships with container-d,
+        but it is a bare tool meant for debugging container-d itself. Nerd control is a friendly replacement that
+        copies the Docker commands, build and compose included. C R I control, spelled c r i c t l, is the one to
+        learn for Kubernetes. It goes through the C R I socket, the same door the kubelet uses, so it shows you
+        exactly what Kubernetes sees.
+      visual:
+        kind: diagram
+        diagram: cli-tools
+        steps:
+          - [native]
+          - [ctr, ctr-native]
+          - [nerdctl, nerdctl-native]
+          - [crictl]
+          - [cri, crictl-cri, kubelet, kubelet-cri]
+    - id: crictl-config
+      title: "Point crictl at the runtime"
+      narration: >-
+        The tool needs to know which socket to use. Put it in a small file, etc crictl dot yaml. The runtime
+        endpoint is the socket of container-d. The image endpoint is the same socket. With this file in place,
+        every command works without extra flags or warnings.
+      visual:
+        kind: code
+        heading: "/etc/crictl.yaml"
+        lang: yaml
+        code: |
+          runtime-endpoint: unix:///run/containerd/containerd.sock
+          image-endpoint: unix:///run/containerd/containerd.sock
+          timeout: 10
+        steps: ["1-3", "1-3", "1", "2"]
+    - id: debug
+      title: "Debug a node without kubectl"
+      narration: >-
+        Imagine the API server is down, so kubectl only returns connection refused. Log in to the control plane
+        node and list all containers, including the ones that exited. The API server container has exited, and it
+        is on its fifth attempt. Read its logs by container ID, and the reason is right there. You can also list
+        the Pod sandboxes to check that the kubelet is still trying.
+      visual:
+        kind: terminal
+        lines:
+          - cmd: "kubectl get nodes"
+            out: "The connection to the server 192.168.56.10:6443 was refused - did you specify the right host or port?"
+          - cmd: "sudo crictl ps -a --name kube-apiserver"
+            out: "CONTAINER      IMAGE          CREATED         STATE    NAME            ATTEMPT  POD ID\n3f1c0b7a9d2e4  9a1b2c3d4e5f6  40 seconds ago  Exited   kube-apiserver  5        b7d0e4c1a8f23"
+          - cmd: "sudo crictl logs 3f1c0b7a9d2e4"
+            out: "Error: unknown flag: --etcd-server"
+          - cmd: "sudo crictl pods --name kube-apiserver"
+            out: "POD ID         CREATED        STATE  NAME                    NAMESPACE    ATTEMPT\nb7d0e4c1a8f23  2 minutes ago  Ready  kube-apiserver-cp1      kube-system  0"
+    - id: tricks
+      title: "Tricks for the exam"
+      narration: >-
+        Find out which runtime a node runs with kubectl get nodes, output wide. Use C R I control to look, not to
+        fix: if you stop a container, the kubelet just starts it again. When a control plane component will not
+        come up, list all containers and read the logs of the one that exited. And remember that a Docker build on
+        a node does not put the image where Kubernetes can find it.
+      visual:
+        kind: points
+        heading: "Save minutes"
+        items:
+          - "kubectl get nodes -o wide shows the runtime"
+          - "crictl is for looking; the kubelet undoes your changes"
+          - "API server down? crictl ps -a, then crictl logs"
+          - "docker build on a node does not feed Kubernetes"
+    - id: recap
+      title: "Recap"
+      narration: >-
+        Docker is a stack of tools, and container-d is the part inside it that runs containers. Kubernetes talks to
+        runtimes through C R I, and Docker never implemented it. Since version 1.24 the kubelet talks to
+        container-d directly, and your images still work because they follow the O C I standard. A Pod on a node
+        is a sandbox plus its containers. And C R I control shows them to you, even when the API server is down.
+      visual:
+        kind: points
+        heading: "Remember"
+        items:
+          - "Docker is a stack; containerd is its engine room"
+          - "CRI: kubelet to runtime. Docker never spoke it"
+          - "Since v1.24: kubelet → containerd → runc; OCI images still run"
+          - "Pod = sandbox (pause) + containers"
+          - "crictl works when kubectl does not"
+---
+
+## Why this matters
+
+Most people meet containers through Docker, so it is natural to assume that Kubernetes "runs Docker containers".
+It used to. Today a typical node has **no Docker on it at all**, and the `docker` command you may reach for when
+something breaks is simply not there.
+
+That raises three questions, and this lesson answers each of them:
+
+1. If Docker is gone, what runs the containers?
+2. Why did the images you built with Docker keep working?
+3. What do you type on a node instead of `docker ps`?
+
+<KeyIdea>
+Docker is a toolbox for people; containerd is the engine inside it. Kubernetes only ever needed the engine, so it
+now talks to containerd directly, through a standard interface called CRI.
+</KeyIdea>
+
+## What Docker really is
+
+<Diagram id="docker-inside" />
+
+"Docker" is not one program. It is a stack, and each layer has a different job:
+
+| Layer | What it does | Does Kubernetes need it? |
+|-------|--------------|--------------------------|
+| `docker` CLI | Commands for people: `build`, `run`, `push`, `compose` | No. Kubernetes has its own API and `kubectl` |
+| `dockerd` (the Docker daemon) | REST API, image builds, volumes, networks, registry logins | No. Kubernetes has volumes, CNI and image pull secrets of its own |
+| **containerd** | Pulls and stores images, creates and supervises containers | **Yes** |
+| **runc** | Starts one container: sets up namespaces and cgroups, then runs the process | **Yes** |
+
+containerd was written by Docker as the core of Docker Engine, then split out and donated to the CNCF in 2017, where
+it is now a graduated project. runc was donated even earlier, as the reference implementation of the Open Container
+Initiative (OCI) runtime specification.
+
+So when Kubernetes "dropped Docker", it did not swap one runtime for a rival. It stopped going through the top two
+layers and kept talking to the bottom two, which had been doing the real work all along.
+
+## How Kubernetes talks to a runtime
+
+<Diagram id="before-after" />
+
+### CRI, the plug
+
+In the first Kubernetes releases, the kubelet contained code that called Docker directly. When other runtimes
+appeared (rkt was the first), each one needed more special code inside the kubelet. That does not scale, so in
+Kubernetes v1.5 (December 2016) the project defined the **Container Runtime Interface (CRI)**: a gRPC API, served
+by the runtime on a Unix socket, with two services:
+
+- **RuntimeService**: Pod sandboxes and containers (`RunPodSandbox`, `CreateContainer`, `StartContainer`,
+  `StopContainer`, `ExecSync`, and so on).
+- **ImageService**: images (`PullImage`, `ListImages`, `RemoveImage`).
+
+Any runtime that serves those two services can run under the kubelet. The kubelet does not know or care what is
+behind the socket.
+
+### dockershim, the adapter that had to go
+
+Docker predates CRI, and it never implemented it, because Docker is built for people and not for orchestrators. To
+keep Docker working, the Kubernetes maintainers wrote an adapter, **dockershim**, and carried it *inside the
+kubelet*. Every call went kubelet → dockershim → dockerd → containerd → runc.
+
+That was a burden for two reasons: the Kubernetes project had to maintain code for one vendor's product, and new
+runtime features (cgroups v2, user namespaces) had to be wired through Docker before Kubernetes could use them.
+Dockershim was deprecated in v1.20 and **removed in v1.24** (May 2022). The next lesson, on the Docker
+deprecation, covers what that meant for running clusters.
+
+### OCI, the reason nothing broke
+
+Two specifications from the Open Container Initiative make runtimes interchangeable:
+
+- The **image specification** defines what an image is: a manifest, a config and a set of layer tarballs.
+- The **runtime specification** defines how to start a container from an unpacked image.
+
+`docker build` produces OCI images. containerd pulls and runs OCI images. That is the whole reason an image built
+with Docker on a laptop runs on a containerd node without any change: there is no such thing as a "Docker image"
+that only Docker can run.
+
+<Callout kind="note" title="Three acronyms, three layers">
+**CRI** is how the kubelet talks to a runtime. **OCI** is what an image and a container look like. **runc** is the
+program that implements the OCI runtime specification. A question that mixes them up is usually testing whether you
+know which layer each one belongs to.
+</Callout>
+
+## The runtimes you can choose
+
+<Diagram id="cri-runtimes" />
+
+| Runtime | What it is | Default CRI socket |
+|---------|------------|--------------------|
+| **containerd** | General-purpose runtime with a built-in CRI plugin. The usual choice for kubeadm, and what most managed clusters and k3s use | `unix:///run/containerd/containerd.sock` |
+| **CRI-O** | A runtime built only for Kubernetes, released in step with it. Default in OpenShift | `unix:///var/run/crio/crio.sock` |
+| **Docker Engine + cri-dockerd** | The dockershim code moved out of the kubelet into a separate adapter, for people who must keep Docker on their nodes | `unix:///run/cri-dockerd.sock` |
+
+The kubelet finds its runtime through one setting, the **container runtime endpoint**. kubeadm detects the socket
+when you run `kubeadm init` or `kubeadm join`; if a node has more than one runtime installed you must choose with
+`--cri-socket`.
+
+<Callout kind="warning" title="The runtime and the kubelet must agree on the cgroup driver">
+On a systemd host, both the kubelet and the runtime should use the `systemd` cgroup driver. If containerd is left on
+its own default (`cgroupfs`) while the kubelet uses `systemd`, Pods fail to start or the node becomes unstable under
+load. In containerd's `/etc/containerd/config.toml` that is the `SystemdCgroup = true` option of the runc runtime.
+Recent kubelets ask the runtime for its driver over CRI, but containerd itself still has to be set correctly.
+</Callout>
+
+## What happens on the node when a Pod starts
+
+<Diagram id="pod-on-node" />
+
+Walk through it once and `crictl` output will make sense forever:
+
+1. The kubelet learns that a Pod was scheduled to its node and calls `RunPodSandbox`.
+2. containerd starts a **shim** process for the Pod (`containerd-shim-runc-v2`). The shim is the parent of the
+   Pod's containers and keeps their stdio and exit codes.
+3. The shim uses runc to start the **pause container**. It does nothing; it exists to hold the Pod's network
+   namespace, so the Pod keeps its IP while app containers restart. The CNI plugin then wires that namespace up.
+4. The kubelet calls `PullImage` for each image the node does not have yet.
+5. For each container in the Pod spec, the kubelet calls `CreateContainer` and `StartContainer`. runc starts the
+   process inside the sandbox's namespaces, with the cgroup limits from the Pod spec.
+
+This is why a Pod with one container shows up on the node as **one sandbox and one container**, and why
+`crictl pods` and `crictl ps` are separate commands.
+
+<DeepDive title="Details that explain odd behaviour">
+- **Restarting containerd does not restart your Pods.** Containers are children of their shim, not of containerd.
+  You can `systemctl restart containerd` after changing its config and running containers keep running.
+- **containerd has its own namespaces**, which have nothing to do with Kubernetes namespaces. Everything the kubelet
+  creates lives in the containerd namespace `k8s.io`; Docker Engine uses `moby`. That is why a bare `ctr containers
+  ls` on a busy node prints nothing: it looks in the namespace `default`.
+- **`docker build` on a node does not feed Kubernetes.** Even if Docker is installed next to containerd, an image
+  built or pulled with Docker is stored for Docker, not in the `k8s.io` namespace the kubelet looks in. The Pod
+  reports `ErrImagePull` unless you push the image to a registry or import it with
+  `ctr -n k8s.io images import app.tar`.
+- **Container logs are files.** The runtime writes each container's output to
+  `/var/log/pods/<namespace>_<pod>_<uid>/<container>/<restart>.log`, and `kubectl logs` asks the kubelet to read
+  that file. When the API server is down you can read the file directly.
+- **The Docker socket is gone.** Anything that mounted `/var/run/docker.sock` from the host (old CI agents that ran
+  `docker build` in a Pod, some monitoring agents) breaks on a containerd node. Build with a tool that needs no
+  daemon, such as BuildKit or Kaniko.
+</DeepDive>
+
+## The command line tools
+
+<Diagram id="cli-tools" />
+
+| Tool | Comes from | Meant for | Talks to |
+|------|------------|-----------|----------|
+| `ctr` | containerd | Debugging containerd itself. Few features, unfriendly syntax | containerd's own API |
+| `nerdctl` | containerd (separate install) | A general Docker replacement: same commands, plus build and compose | containerd's own API |
+| `crictl` | Kubernetes (cri-tools) | **Debugging a Kubernetes node**. Works with every CRI runtime | The CRI socket |
+
+`crictl` is the one to learn. It uses the same socket and the same API as the kubelet, so it shows Pods and
+containers exactly as Kubernetes sees them, and it works the same on containerd and CRI-O.
+
+Most of what you know from Docker carries over:
+
+| Docker | crictl | Notes |
+|--------|--------|-------|
+| `docker ps -a` | `crictl ps -a` | Add `--name`, `--state` or `--pod` to filter |
+| `docker images` | `crictl images` | |
+| `docker pull` | `crictl pull` | |
+| `docker rmi` | `crictl rmi` | `crictl rmi --prune` removes unused images |
+| `docker logs` | `crictl logs` | Takes a container ID; `-f` and `--tail` work |
+| `docker exec -it` | `crictl exec -it` | |
+| `docker inspect` | `crictl inspect` | `crictl inspecti` for images, `crictl inspectp` for Pods |
+| `docker stats` | `crictl stats` | |
+| `docker info` | `crictl info` | Shows runtime status and config, including the cgroup driver |
+| (no equivalent) | `crictl pods` | Lists Pod sandboxes; filter with `--name` and `--namespace` |
+| `docker build`, `push`, `tag` | (no equivalent) | crictl is a debugging tool, not a build tool |
+
+<Callout kind="warning" title="crictl is for looking, not for fixing">
+The kubelet owns everything on the node. If you `crictl stop` or `crictl rm` a container that belongs to a Pod, the
+kubelet notices and starts it again. And a Pod you create by hand with `crictl runp` is one the kubelet knows nothing
+about, so it will be removed. Change Pods through the API (or the static Pod manifest), and use crictl to see what
+happened.
+</Callout>
+
+## Using it
+
+<Example title="Find out which runtime a cluster uses">
+From anywhere with `kubectl`, the last column of the wide node list names the runtime and its version:
+
+```bash
+kubectl get nodes -o wide
+```
+
+```text
+NAME   STATUS   ROLES           VERSION   ...   CONTAINER-RUNTIME
+cp1    Ready    control-plane   v1.34.2   ...   containerd://2.1.4
+w1     Ready    <none>          v1.34.2   ...   containerd://2.1.4
+```
+
+On the node itself, check the service and the socket the kubelet was told to use:
+
+```bash
+systemctl status containerd --no-pager
+grep -r containerRuntimeEndpoint /var/lib/kubelet/config.yaml
+cat /var/lib/kubelet/kubeadm-flags.env      # older kubeadm versions keep the flag here
+```
+</Example>
+
+<Example title="Point crictl at the runtime">
+Without configuration, `crictl` tries a list of well-known sockets and prints a warning each time, or fails with
+a permission error because the socket belongs to root. Tell it once where to connect, then run it with `sudo`:
+
+```yaml
+# /etc/crictl.yaml
+runtime-endpoint: unix:///run/containerd/containerd.sock
+image-endpoint: unix:///run/containerd/containerd.sock
+timeout: 10
+```
+
+```bash
+sudo crictl version          # proves the connection: prints the runtime name and version
+sudo crictl info | grep -i -A3 cgroup
+```
+
+For one command only, the flag does the same: `crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps`.
+</Example>
+
+<Example title="The API server is down: debug without kubectl">
+`kubectl` answers `The connection to the server ... was refused`. The control plane runs as static Pods, so the
+containers are on the control plane node, and the runtime can show them even though the API cannot.
+
+```bash
+sudo crictl ps -a --name kube-apiserver     # -a includes exited containers
+sudo crictl logs <container-id>              # the reason it exited is usually the last line
+sudo crictl pods --name kube-apiserver       # is the kubelet still creating the sandbox?
+```
+
+A high number in the ATTEMPT column with the state `Exited` means the container starts and crashes in a loop: read
+its logs. **No container at all** means the kubelet could not even create it: the manifest in
+`/etc/kubernetes/manifests/` is probably invalid YAML, so read the kubelet's log with
+`journalctl -u kubelet --since "5 min ago"` instead.
+</Example>
+
+<Example title="Follow one Pod from the API down to the process">
+The Pod `web` in the namespace `shop` runs on node `w1`. Find its sandbox, its container and its process there:
+
+```bash
+sudo crictl pods --namespace shop --name web          # the sandbox: note the POD ID
+sudo crictl ps --pod <pod-id>                          # the containers inside it
+sudo crictl inspect <container-id> | grep -m1 '"pid"'  # the process ID on the host
+ps -fp <pid>                                           # an ordinary Linux process
+```
+
+The last command is the point of the whole lesson: a container is a normal process on the node, started by runc
+with its own namespaces and cgroup.
+</Example>
+
+## Tricks
+
+<Trick title="Filter instead of scrolling">
+A control plane node runs dozens of containers. `crictl ps -a --name etcd`, `crictl ps --state exited` and
+`crictl pods --namespace kube-system` get you to the right line at once. `crictl ps -a | grep -v Running` is a quick
+way to see only what is broken.
+</Trick>
+
+<Trick title="Short IDs are enough">
+Like Docker, `crictl` accepts any unique prefix of an ID: `crictl logs 3f1` works as long as only one container
+starts with `3f1`.
+</Trick>
+
+<Trick title="No crictl? Read the log files">
+`/var/log/containers/` holds one symlink per container, named `<pod>_<namespace>_<container>-<id>.log`. So
+`sudo tail /var/log/containers/kube-apiserver-*` shows why the API server exited without any runtime tool at all.
+</Trick>
+
+<Trick title="Free disk space on a node">
+A node under disk pressure evicts Pods. `sudo crictl rmi --prune` removes every image that no container uses, and
+`sudo crictl imagefsinfo` shows how full the image filesystem is.
+</Trick>
+
+<Trick title="If you must use ctr or nerdctl, name the namespace">
+Kubernetes containers live in the containerd namespace `k8s.io`: `sudo ctr -n k8s.io containers ls`,
+`sudo nerdctl -n k8s.io ps`. Without it you look at an empty namespace and conclude, wrongly, that nothing is running.
+</Trick>
+
+## Common mistakes
+
+- **Reaching for `docker ps` on a node.** On a containerd node the command is missing, and where Docker *is*
+  installed beside containerd it lists Docker's own containers, not the Pods. Use `crictl`.
+- **Thinking images must be rebuilt.** Images built with Docker are OCI images. Nothing about them changes when the
+  node runs containerd.
+- **Fixing a Pod with crictl.** Stopping or removing a container by hand only makes the kubelet recreate it. Fix the
+  cause (the manifest, the image, the config) and let the kubelet do the rest.
+- **Forgetting `-a`.** `crictl ps` lists running containers only. A crashed control plane component is not running,
+  so without `-a` it looks as if it never existed.
+- **Confusing the two kinds of namespace.** `crictl pods --namespace` filters by *Kubernetes* namespace. `ctr -n`
+  and `nerdctl -n` choose a *containerd* namespace, which for Kubernetes is always `k8s.io`.
+- **Editing containerd's config and not restarting it.** Changes to `/etc/containerd/config.toml` apply after
+  `sudo systemctl restart containerd`. Running Pods survive the restart.
+
+## Recap
+
+- Docker is a stack: CLI → dockerd → **containerd** → **runc**. Kubernetes only needs the last two.
+- The kubelet talks to runtimes through **CRI**; Docker never implemented it, so dockershim translated until it was
+  removed in **v1.24**.
+- Images built with Docker still run, because images and runtimes follow the **OCI** specifications.
+- On the node a Pod is a **sandbox** (the pause container) plus its containers, supervised by a shim.
+- **`crictl`** sees what the kubelet sees and works when the API server is down: `ps -a`, `logs`, `pods`, `inspect`.
