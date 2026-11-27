@@ -1,8 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { migrateCurriculum } from "@lfct/curriculum/ingest";
+import { migrateCurriculum, migrateFolder } from "@lfct/curriculum/ingest";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 
 /** The web app's migrations, next to this script. */
@@ -14,7 +13,7 @@ export async function migrateAll(url: string): Promise<void> {
   try {
     const db = drizzle(pool);
     await migrateCurriculum(db as never);
-    await migrate(db, { migrationsFolder: WEB_MIGRATIONS_DIR, migrationsTable: "__drizzle_migrations_web" });
+    await migrateFolder(db as never, WEB_MIGRATIONS_DIR, "__drizzle_migrations_web");
     console.log("Migrations applied.");
   } finally {
     await pool.end();

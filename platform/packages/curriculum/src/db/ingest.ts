@@ -3,11 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { and, eq, ne, notInArray } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { loadContent, type Content } from "../content.ts";
 import { loadCurriculum, type Cert, type Curriculum } from "../load.ts";
 import { sourceUrl } from "../queries.ts";
+import { migrateFolder } from "./migrate.ts";
 import * as schema from "./schema.ts";
 
 export const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../drizzle");
@@ -279,8 +279,10 @@ export async function removeSampleContent(db: Db): Promise<{ lessons: number; qu
 
 /** Applies the curriculum package's migrations. */
 export async function migrateCurriculum(db: Db): Promise<void> {
-  await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+  await migrateFolder(db as never, MIGRATIONS_DIR, "__drizzle_migrations");
 }
+
+export { migrateFolder };
 
 /** Opens a pool, applies migrations, ingests, and closes the pool. Content is optional so the curriculum can load alone. */
 export async function migrateAndIngest(
